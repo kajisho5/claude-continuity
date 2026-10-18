@@ -154,6 +154,8 @@ async function recordUsage(entry: { model: string; inputTokens: number; outputTo
   await fs.writeFile(usageFile(), JSON.stringify(rows.slice(-10000)), "utf8");
 }
 function fitContext(messages: NormalizedMessage[], maxChars = 120000): NormalizedMessage[] {
+  // Anthropic Messages expects a user message to start the conversation. Keep a recent
+  // contiguous suffix, then normalize adjacent roles to avoid malformed imported turns.
   const selected: NormalizedMessage[] = [];
   let remaining = maxChars;
   for (let i = messages.length - 1; i >= 0 && remaining > 0; i--) {
@@ -163,13 +165,21 @@ function fitContext(messages: NormalizedMessage[], maxChars = 120000): Normalize
       selected.push({ role: message.role, content: message.content });
       remaining -= message.content.length;
     } else if (selected.length === 0) {
-      selected.push({ role: message.role, content: message.content.slice(0, remaining) });
+      selected.push({ role: message.role, content: message.content.slice(-remaining) });
       remaining = 0;
     } else {
       break;
     }
   }
-  return selected.reverse();
+  let ordered = selected.reverse();
+  while (ordered.length && ordered[0].role !== "user") ordered.shift();
+  const merged: NormalizedMessage[] = [];
+  for (const message of ordered) {
+    const last = merged[merged.length - 1];
+    if (last && last.role === message.role) last.content += "\\n\\n" + message.content;
+    else merged.push({ ...message });
+  }
+  return merged;
 }
 
 ipcMain.handle("key:save", async (_event, apiKey: string) => {
