@@ -1,9 +1,5 @@
-name: Build check
+name: Build check (manual only)
 on:
-  push:
-    branches: [main]
-  pull_request:
-    branches: [main]
   workflow_dispatch:
 permissions:
   contents: read
