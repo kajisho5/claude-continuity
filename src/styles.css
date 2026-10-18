@@ -21,3 +21,6 @@
 .chat-search{width:100%;margin:8px 0 4px;background:#111214;border:1px solid #303137;border-radius:7px;padding:9px 10px;color:#e7e8eb;font-size:10px;outline:none}
 .chat-search:focus{border-color:#777b84}
 .chat-search::placeholder{color:#6f727b}
+
+.header-actions{display:flex;align-items:center;gap:4px}
+.header-actions .nav{width:auto;white-space:nowrap;font-size:10px}
