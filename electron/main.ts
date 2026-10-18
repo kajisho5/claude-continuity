@@ -93,6 +93,19 @@ function parseExportText(text: string, source: string): NormalizedConversation[]
   return [...unique.values()];
 }
 
+
+ipcMain.handle("dialog:export-chat", async (_event, payload: { fileName: string; data: string }) => {
+  const safeName = String(payload?.fileName ?? "claude-conversation").replace(/[\\\\/:*?"<>|]/g, "_").slice(0, 100) || "claude-conversation";
+  const result = await dialog.showSaveDialog({
+    title: "会話をJSONでエクスポート",
+    defaultPath: safeName.endsWith(".json") ? safeName : safeName + ".json",
+    filters: [{ name: "JSON", extensions: ["json"] }]
+  });
+  if (result.canceled || !result.filePath) return { canceled: true };
+  await fs.writeFile(result.filePath, String(payload?.data ?? ""), "utf8");
+  return { canceled: false, filePath: result.filePath };
+});
+
 ipcMain.handle("dialog:import-export", async () => {
   const result = await dialog.showOpenDialog({
     title: "Claudeのエクスポートデータを選択", properties: ["openFile"],
