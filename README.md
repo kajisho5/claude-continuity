@@ -9,6 +9,9 @@ Local-first desktop prototype for importing Claude conversation exports and cont
 - Import picker for Claude export JSON and ZIP archives
 - Best-effort parser for common `conversations.json` structures and message fields
 - Local chat persistence in the Electron user-data directory
+- Conversation search by title and message content
+- Persistent local token usage ledger and cumulative usage panel
+- Context window bounded to a recent 120,000-character suffix, with adjacent roles normalized before sending
 - Token usage shown for the most recent response
 - GitHub Actions build check
 
@@ -18,6 +21,7 @@ Local-first desktop prototype for importing Claude conversation exports and cont
 - Imported conversations are converted to plain-text user/assistant messages; continuing a conversation sends the selected message history to the Anthropic API.
 - Very long conversations are currently truncated to the most recent 60 messages for API requests; summarization/token budgeting is not implemented.
 - API credit balance and expiration are not queried automatically.
+- GitHub Actions has been configured, but runs are currently failing before any steps are reported. This is an environment/repository Actions issue until job logs or step-level errors become available; local build success has not yet been verified.
 - No signed Windows/macOS installers yet.
 
 ## Requirements
