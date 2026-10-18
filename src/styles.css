@@ -24,3 +24,7 @@
 
 .header-actions{display:flex;align-items:center;gap:4px}
 .header-actions .nav{width:auto;white-space:nowrap;font-size:10px}
+
+.composer-toolbar{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+.composer-toolbar label{font-size:10px;color:#a0a2aa}
+.composer-toolbar select{background:#202126;color:#e7e8eb;border:1px solid #393a42;border-radius:6px;padding:5px 8px;font-size:10px}
