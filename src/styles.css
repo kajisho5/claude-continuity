@@ -17,3 +17,7 @@
 .usage-card strong small{font-size:10px;font-weight:400;color:#a0a2aa}
 .usage-card span{font-size:9px;line-height:1.6;color:#a0a2aa}
 .usage-card em{font-size:8px;line-height:1.5;color:#777b84;font-style:normal}
+
+.chat-search{width:100%;margin:8px 0 4px;background:#111214;border:1px solid #303137;border-radius:7px;padding:9px 10px;color:#e7e8eb;font-size:10px;outline:none}
+.chat-search:focus{border-color:#777b84}
+.chat-search::placeholder{color:#6f727b}
