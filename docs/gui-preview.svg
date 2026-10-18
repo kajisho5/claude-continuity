@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="760" viewBox="0 0 1200 760">
+<rect width="1200" height="760" rx="16" fill="#111214"/>
+<rect width="236" height="760" rx="16" fill="#17181b"/>
+<path d="M235 0V760M236 60H1200" stroke="#2b2c31"/>
+<g font-family="Inter,Arial,sans-serif">
+<rect x="22" y="20" width="32" height="32" rx="9" fill="#e6e5e2"/><path d="M38 25l3 8 8 3-8 3-3 8-3-8-8-3 8-3z" fill="#17181b"/>
+<text x="64" y="34" fill="#eeeef0" font-size="13" font-weight="700">Claude Continuity</text><text x="64" y="47" fill="#82858e" font-size="8" letter-spacing="1.5">LOCAL WORKSPACE</text>
+<rect x="16" y="74" width="204" height="36" rx="7" fill="#e6e5e2"/><text x="32" y="96" fill="#191a1d" font-size="11" font-weight="600">＋　新しい会話</text>
+<rect x="16" y="120" width="204" height="34" rx="7" fill="#24252a"/><text x="29" y="141" fill="#c5c6cc" font-size="10">↥　Claudeエクスポートを読み込む</text>
+<text x="24" y="181" fill="#858790" font-size="9" letter-spacing="1.1">会話履歴 · 12</text>
+<rect x="18" y="192" width="200" height="38" rx="6" fill="#2a2b31"/><text x="31" y="215" fill="#f0f0f2" font-size="10">▤　プロジェクトの設計相談</text>
+<text x="31" y="252" fill="#b2b4bc" font-size="10">▤　動画処理パイプライン</text><text x="31" y="286" fill="#b2b4bc" font-size="10">▤　配信システムの改善案</text><text x="31" y="320" fill="#b2b4bc" font-size="10">▤　READMEの更新</text>
+<rect x="18" y="366" width="200" height="92" rx="8" fill="#202126" stroke="#303137"/><text x="29" y="385" fill="#a8aab2" font-size="9">この端末で記録したAPI使用量</text><text x="29" y="412" fill="#f0f0f2" font-size="19" font-weight="600">84,250 <tspan font-size="10" fill="#a8aab2">tokens</tspan></text><text x="29" y="430" fill="#a8aab2" font-size="8">18 回 · input / output</text><text x="29" y="446" fill="#777b84" font-size="7.5">ローカル記録。残高ではありません</text>
+<path d="M18 708H218" stroke="#303137"/><text x="28" y="733" fill="#b2b4bc" font-size="10">⚙　API設定</text>
+<rect x="236" y="0" width="964" height="60" fill="#151619"/><text x="264" y="35" fill="#858790" font-size="11">Workspace /</text><text x="340" y="35" fill="#f0f0f2" font-size="11" font-weight="600">プロジェクトの設計相談</text>
+<rect x="916" y="16" width="91" height="28" rx="6" fill="#222328" stroke="#393a41"/><text x="932" y="34" fill="#c5c6cc" font-size="9">⇩ JSON保存</text>
+<rect x="1015" y="16" width="30" height="28" rx="6" fill="#222328" stroke="#393a41"/><text x="1025" y="34" fill="#c5c6cc" font-size="11">×</text>
+<rect x="1053" y="16" width="130" height="28" rx="6" fill="#222328" stroke="#393a41"/><circle cx="1066" cy="30" r="3" fill="#72c59b"/><text x="1075" y="34" fill="#c5c6cc" font-size="9">API設定済み　⚙</text>
+<rect x="274" y="83" width="890" height="562" rx="12" fill="#131417" stroke="#24252a"/>
+<rect x="300" y="108" width="590" height="86" rx="10" fill="#202126" stroke="#303137"/><rect x="314" y="122" width="26" height="26" rx="7" fill="#2e3036"/><path d="M327 126l2 6 6 2-6 2-2 6-2-6-6-2 6-2z" fill="#e2e1dc"/><text x="351" y="135" fill="#c8c9cf" font-size="10" font-weight="600">Claude</text><text x="351" y="157" fill="#e1e2e6" font-size="11">既存の構成を維持しながら、処理を小さな単位に分けて実装すると、</text><text x="351" y="175" fill="#e1e2e6" font-size="11">問題が発生した箇所を特定しやすくなります。</text>
+<rect x="452" y="218" width="686" height="72" rx="10" fill="#292a30" stroke="#383940"/><rect x="466" y="232" width="26" height="26" rx="7" fill="#3a3b42"/><text x="472" y="249" fill="#f0f0f2" font-size="8" font-weight="600">You</text><text x="504" y="244" fill="#d9dae0" font-size="11">このリポジトリの構成を整理して、次の実装ステップを提案して。</text><text x="504" y="265" fill="#a8aab2" font-size="10">関連するファイルと制約も考慮してほしい。</text>
+<rect x="300" y="314" width="720" height="108" rx="10" fill="#202126" stroke="#303137"/><rect x="314" y="328" width="26" height="26" rx="7" fill="#2e3036"/><path d="M327 332l2 6 6 2-6 2-2 6-2-6-6-2 6-2z" fill="#e2e1dc"/><text x="351" y="341" fill="#c8c9cf" font-size="10" font-weight="600">Claude</text><text x="351" y="363" fill="#e1e2e6" font-size="11">まずは、会話履歴の保存形式とAPIに送る文脈の範囲を明確にします。</text><text x="351" y="382" fill="#e1e2e6" font-size="11">長い会話は必要な範囲に絞り、重要な情報を落とさないようにします。</text><text x="351" y="401" fill="#e1e2e6" font-size="11">次にテストケースを追加し、インポート形式ごとの差異を検証します。</text>
+<rect x="300" y="553" width="838" height="70" rx="10" fill="#1b1c20" stroke="#414249"/><text x="317" y="577" fill="#777a83" font-size="11">Claudeにメッセージ…（Enterで送信、Shift+Enterで改行）</text><path d="M316 590H1122" stroke="#303137"/><text x="317" y="610" fill="#858790" font-size="9">Claude Sonnet 4.5　⌄</text><text x="967" y="610" fill="#858790" font-size="9">APIキー保存済み</text><rect x="1060" y="595" width="62" height="22" rx="6" fill="#e6e5e2"/><text x="1074" y="610" fill="#191a1d" font-size="9" font-weight="600">➤ 送信</text>
+<text x="300" y="665" fill="#777b84" font-size="9">プレビュー画像：実際のアプリ起動画面ではなく、現在のUIコードをもとに作成した概念図です。</text>
+<text x="720" y="729" text-anchor="middle" fill="#62656d" font-size="9">CLAUDE CONTINUITY · LOCAL-FIRST CONVERSATION WORKSPACE</text>
+</g></svg>
