@@ -11,6 +11,7 @@ declare global {
       loadChats: () => Promise<ContinuityConversation[]>;
       loadUsage: () => Promise<{ model: string; inputTokens: number; outputTokens: number; createdAt: string }[]>;
       saveChats: (chats: ContinuityConversation[]) => Promise<boolean>;
+      listModels: () => Promise<{ id: string; displayName: string; createdAt?: string }[]>;
       reply: (payload: { messages: ContinuityMessage[]; model?: string }) => Promise<{ text: string; usage: { inputTokens: number; outputTokens: number; model: string }; contextMessages?: number; contextCharacters?: number }>;
     };
   }
