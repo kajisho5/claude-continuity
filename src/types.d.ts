@@ -5,6 +5,7 @@ declare global {
   interface Window {
     continuity: {
       chooseExport: () => Promise<{ fileName: string; conversations: ContinuityConversation[]; count: number } | null>;
+      exportChat: (payload: { fileName: string; data: string }) => Promise<{ canceled: boolean; filePath?: string }>;
       saveApiKey: (key: string) => Promise<boolean>;
       keyStatus: () => Promise<{ configured: boolean; secureStorage: boolean }>;
       loadChats: () => Promise<ContinuityConversation[]>;
