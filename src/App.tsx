@@ -14,11 +14,12 @@ export default function App() {
  const [status,setStatus]=useState("準備完了");
  const [loaded,setLoaded]=useState(false);
  const [lastUsage,setLastUsage]=useState<{inputTokens:number;outputTokens:number}|null>(null);
+ const [usageTotal,setUsageTotal]=useState({inputTokens:0,outputTokens:0,calls:0});
  const chat=chats.find(c=>c.id===active)??chats[0]??welcome;
 
  useEffect(()=>{
-   Promise.all([window.continuity.keyStatus(),window.continuity.loadChats()])
-    .then(([s,saved])=>{setConfigured(s.configured); if(saved.length){setChats(saved);setActive(saved[0].id);} setLoaded(true);})
+   Promise.all([window.continuity.keyStatus(),window.continuity.loadChats(),window.continuity.loadUsage()])
+    .then(([s,saved,usage])=>{setConfigured(s.configured); if(saved.length){setChats(saved);setActive(saved[0].id);} setUsageTotal(usage.reduce((acc,row)=>({inputTokens:acc.inputTokens+row.inputTokens,outputTokens:acc.outputTokens+row.outputTokens,calls:acc.calls+1}),{inputTokens:0,outputTokens:0,calls:0})); setLoaded(true);})
     .catch(e=>{setStatus("初期化エラー: "+err(e));setLoaded(true);});
  },[]);
  useEffect(()=>{
@@ -53,6 +54,7 @@ export default function App() {
      const response=await window.continuity.reply({messages:messages.slice(-60),model:"claude-sonnet-4-5"});
      updateChat(current.id,[...messages,{role:"assistant",content:response.text}],title);
      setLastUsage({inputTokens:response.usage.inputTokens,outputTokens:response.usage.outputTokens});
+     setUsageTotal(prev=>({...prev,inputTokens:prev.inputTokens+response.usage.inputTokens,outputTokens:prev.outputTokens+response.usage.outputTokens,calls:prev.calls+1}));
      setStatus(`応答完了 · ${response.usage.inputTokens.toLocaleString()} input / ${response.usage.outputTokens.toLocaleString()} output tokens`);
    }catch(e){updateChat(current.id,[...messages,{role:"assistant",content:"APIエラー: "+err(e)+"\n\nConsoleのクレジット残高、APIキー、利用可能モデルを確認してください。"}],title);setStatus("APIリクエストに失敗しました");}
    finally{setBusy(false);}
@@ -63,6 +65,7 @@ export default function App() {
    <button className="new" onClick={newChat}><Plus size={16}/> 新しい会話</button>
    <button className="nav" onClick={()=>void importExport()}><FileUp size={16}/> Claudeエクスポートを読み込む</button>
    <div className="label">会話履歴 · {chats.length}</div>
+   <div className="usage-card"><div>この端末で記録したAPI使用量</div><strong>{(usageTotal.inputTokens+usageTotal.outputTokens).toLocaleString()} <small>tokens</small></strong><span>{usageTotal.calls} 回 · input {usageTotal.inputTokens.toLocaleString()} / output {usageTotal.outputTokens.toLocaleString()}</span><em>クレジット残高ではなく、アプリ内の記録です</em></div>
    <div className="chatlist">{chats.map(c=><button key={c.id} className={"chatlink "+(c.id===active?"active":"")} onClick={()=>setActive(c.id)}><MessageSquare size={15}/><span>{c.title}</span></button>)}</div>
    <div className="bottom"><button className="nav" onClick={()=>setSettings(true)}><Settings2 size={16}/> API設定</button><div className="secure"><ShieldCheck size={15}/> ローカル優先設計</div></div>
   </aside>
