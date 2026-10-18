@@ -10,3 +10,10 @@
 .dot.green{background:#6ac39a}
 .status{display:flex;justify-content:space-between;gap:12px}
 @media(max-width:1000px){aside{width:220px}.messages{padding-left:22px;padding-right:22px}footer{padding-left:18px;padding-right:18px}}
+
+.usage-card{margin:14px 3px 0;padding:11px 10px;background:#202126;border:1px solid #303137;border-radius:9px;display:flex;flex-direction:column;gap:6px}
+.usage-card>div{font-size:9px;color:#a0a2aa}
+.usage-card strong{font-size:19px;font-weight:600;letter-spacing:-.4px}
+.usage-card strong small{font-size:10px;font-weight:400;color:#a0a2aa}
+.usage-card span{font-size:9px;line-height:1.6;color:#a0a2aa}
+.usage-card em{font-size:8px;line-height:1.5;color:#777b84;font-style:normal}
