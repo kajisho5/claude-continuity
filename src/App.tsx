@@ -9,6 +9,8 @@ export default function App() {
  const [draft,setDraft]=useState("");
  const [search,setSearch]=useState("");
  const [model,setModel]=useState("claude-sonnet-4-5");
+ const [availableModels,setAvailableModels]=useState<{id:string;displayName:string;createdAt?:string}[]>([]);
+ const [modelsLoading,setModelsLoading]=useState(false);
  const [key,setKey]=useState("");
  const [configured,setConfigured]=useState(false);
  const [settings,setSettings]=useState(false);
@@ -24,6 +26,40 @@ export default function App() {
     .then(([s,saved,usage])=>{setConfigured(s.configured); if(saved.length){setChats(saved);setActive(saved[0].id);} setUsageTotal(usage.reduce((acc,row)=>({inputTokens:acc.inputTokens+row.inputTokens,outputTokens:acc.outputTokens+row.outputTokens,calls:acc.calls+1}),{inputTokens:0,outputTokens:0,calls:0})); setLoaded(true);})
     .catch(e=>{setStatus("初期化エラー: "+err(e));setLoaded(true);});
  },[]);
+ useEffect(()=>{
+   if(!configured)return;
+   let cancelled=false;
+   setModelsLoading(true);
+   window.continuity.listModels()
+    .then(models=>{
+      if(cancelled)return;
+      const sorted=models.filter(m=>m.id).sort((a,b)=>{
+        const score=(id:string)=>id.includes("opus")?0:id.includes("sonnet")?1:id.includes("haiku")?2:3;
+        return score(a.id)-score(b.id)||a.displayName.localeCompare(b.displayName);
+      });
+      setAvailableModels(sorted);
+      setModel(current=>sorted.some(m=>m.id===current)?current:(sorted.find(m=>m.id.includes("opus"))?.id??sorted[0]?.id??current));
+      setStatus(sorted.length?`${sorted.length}件の利用可能モデルを取得しました`:"利用可能なモデルが見つかりませんでした");
+    })
+    .catch(e=>{if(!cancelled)setStatus("モデル一覧取得エラー: "+err(e));})
+    .finally(()=>{if(!cancelled)setModelsLoading(false);});
+   return ()=>{cancelled=true;};
+ },[configured]);
+ async function refreshModels(){
+   if(!configured){setSettings(true);setStatus("先にAnthropic APIキーを設定してください");return;}
+   setModelsLoading(true);
+   try{
+     const models=await window.continuity.listModels();
+     const sorted=models.filter(m=>m.id).sort((a,b)=>{
+       const score=(id:string)=>id.includes("opus")?0:id.includes("sonnet")?1:id.includes("haiku")?2:3;
+       return score(a.id)-score(b.id)||a.displayName.localeCompare(b.displayName);
+     });
+     setAvailableModels(sorted);
+     if(!sorted.some(m=>m.id===model)&&sorted.length)setModel(sorted.find(m=>m.id.includes("opus"))?.id??sorted[0].id);
+     setStatus(`${sorted.length}件の利用可能モデルを更新しました`);
+   }catch(e){setStatus("モデル一覧取得エラー: "+err(e));}
+   finally{setModelsLoading(false);}
+ }
  useEffect(()=>{
    if(!loaded)return;
    const timer=window.setTimeout(()=>{window.continuity.saveChats(chats).catch(e=>setStatus("ローカル保存エラー: "+err(e)));},350);
@@ -80,7 +116,7 @@ export default function App() {
     {chat.messages.map((m,i)=><article key={i} className={"message "+m.role}><div className="avatar">{m.role==="assistant"?<Sparkles size={16}/>:"You"}</div><div className="msgbody"><b>{m.role==="assistant"?"Claude":"あなた"}</b><p>{m.content}</p></div></article>)}
     {busy&&<p className="busy">Claudeが応答中…</p>}
    </section>
-   <footer><div className="composer"><div className="composer-toolbar"><label htmlFor="model-select">モデル</label><select id="model-select" value={model} onChange={e=>setModel(e.target.value)} disabled={busy}><option value="claude-sonnet-4-5">Claude Sonnet 4.5</option><option value="claude-opus-4-1">Claude Opus 4.1</option><option value="claude-haiku-5-5">Claude Haiku 5.5（低コスト）</option></select></div><textarea value={draft} onChange={e=>setDraft(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();void send();}}} placeholder="Claudeにメッセージ…（Enterで送信、Shift+Enterで改行）"/><div className="composebottom"><span><KeyRound size={13}/>{configured?"APIキー保存済み":"APIキーを設定してください"}</span><button onClick={()=>void send()} disabled={busy||!draft.trim()}><Send size={15}/> 送信</button></div></div><div className="status"><span>{status}</span><span>{lastUsage?`直近の応答: ${lastUsage.inputTokens+lastUsage.outputTokens} tokens`:"会話はこの端末に自動保存されます"}</span></div></footer>
+   <footer><div className="composer"><div className="composer-toolbar"><label htmlFor="model-select">モデル{availableModels.length?` · ${availableModels.length}件`: ""}</label><select id="model-select" value={model} onChange={e=>setModel(e.target.value)} disabled={busy||modelsLoading}>{availableModels.length?availableModels.map(m=><option key={m.id} value={m.id}>{m.displayName} · {m.id}</option>):<option value={model}>{modelsLoading?"利用可能モデルを取得中…":model}</option>}</select><button className="nav" onClick={()=>void refreshModels()} disabled={modelsLoading||busy} title="APIキーで利用できるモデルを再取得">{modelsLoading?"取得中…":"モデル更新"}</button></div><textarea value={draft} onChange={e=>setDraft(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();void send();}}} placeholder="Claudeにメッセージ…（Enterで送信、Shift+Enterで改行）"/><div className="composebottom"><span><KeyRound size={13}/>{configured?"APIキー保存済み":"APIキーを設定してください"}</span><button onClick={()=>void send()} disabled={busy||!draft.trim()}><Send size={15}/> 送信</button></div></div><div className="status"><span>{status}</span><span>{lastUsage?`直近の応答: ${lastUsage.inputTokens+lastUsage.outputTokens} tokens`:"会話はこの端末に自動保存されます"}</span></div></footer>
   </main>
   {settings&&<div className="overlay" onClick={()=>setSettings(false)}><div className="modal" onClick={e=>e.stopPropagation()}><button className="close" onClick={()=>setSettings(false)}>×</button><h2>Anthropic API設定</h2><p>Anthropic Consoleで発行したAPIキーを入力してください。</p><label>API Key</label><input type="password" value={key} onChange={e=>setKey(e.target.value)} placeholder={configured?"保存済み。変更する場合のみ入力":"sk-ant-…"} autoComplete="off"/><div className="note"><ShieldCheck size={15}/> APIキーはOSの安全な保存領域に暗号化して保存します。</div><div className="actions"><button className="secondary" onClick={()=>setSettings(false)}>キャンセル</button><button className="save" disabled={!key.trim()} onClick={()=>void saveKey()}>保存</button></div><div className="credit-guide"><b>Maxプランの月間APIクレジットを使う</b><p>Max 20xには月額200 USD相当のAPIクレジットが含まれます。先にClaude Console組織をプランにリンクし、BillingのPromotional creditsにクレジットが表示されることを確認してください。これはClaudeアプリ内の利用上限とは別枠です。</p><a href="https://platform.claude.com/docs/en/about-claude/api-credits-for-subscribers" target="_blank" rel="noreferrer">公式設定手順</a><a href="https://platform.claude.com/settings/billing" target="_blank" rel="noreferrer">ConsoleのBillingを開く</a></div><small>このアプリはAPIキーでAnthropic APIを呼び出します。リンク済み組織のクレジットが利用されます。購入済み残高への自動リロードはこのアプリから設定・変更しません。送信した会話文脈はAnthropic APIへ送られます。</small></div></div>}
  </div>;
