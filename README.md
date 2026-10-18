@@ -1,24 +1,24 @@
 # Claude Continuity
 
-Local-first desktop prototype for importing Claude conversation exports and continuing them through the Anthropic API.
+Local-first desktop prototype for importing Claude conversation exports and continuing conversations through the Anthropic API.
 
-## Status
-
-Early prototype. The UI and API request path are in place; the full export parser and persistent conversation database are not implemented yet.
-
-### Included
+## Current features
 - Electron + React + TypeScript desktop shell
-- Anthropic Messages API request from Electron main process
-- API key saved with Electron `safeStorage`
-- Conversation workspace UI and export-file picker placeholder
-- Git ignore rules for secrets, databases, and exported conversations
+- Anthropic Messages API requests from the Electron main process
+- API key encrypted with Electron `safeStorage`
+- Import picker for Claude export JSON and ZIP archives
+- Best-effort parser for common `conversations.json` structures and message fields
+- Local chat persistence in the Electron user-data directory
+- Token usage shown for the most recent response
+- GitHub Actions build check
 
-### Not yet implemented
-- Parse Claude export JSON/ZIP into individual conversations
-- Persist chat history locally
-- Long-context summarization and token budgeting
-- Read actual promotional credit balance/expiry from Console
-- Signed Windows/macOS installers and automated tests
+## Known limitations
+- Export formats vary. The parser is intentionally best-effort and should be validated against a real export before relying on it.
+- Rich attachments, images, artifacts, tool-use blocks, and all Claude-specific metadata are not reconstructed yet.
+- Imported conversations are converted to plain-text user/assistant messages; continuing a conversation sends the selected message history to the Anthropic API.
+- Very long conversations are currently truncated to the most recent 60 messages for API requests; summarization/token budgeting is not implemented.
+- API credit balance and expiration are not queried automatically.
+- No signed Windows/macOS installers yet.
 
 ## Requirements
 - Node.js 20+
@@ -38,7 +38,8 @@ npm start
 
 ## Security and billing
 - Never commit API keys or conversation export files.
-- The API key is entered in the app and stored through Electron `safeStorage`; do not put real keys in source files.
-- The app does not purchase credits or enable auto-reload.
+- The API key is entered in the app and stored through Electron `safeStorage`.
+- Chat history is stored locally in the Electron user-data directory as `chats.json`; protect your OS account and device.
 - Prompts and selected conversation context are transmitted to Anthropic when sent to the API.
+- The app does not purchase credits or enable auto-reload.
 - Verify credit eligibility, expiration, organization, and billing terms in Anthropic Console.
