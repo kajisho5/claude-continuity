@@ -8,5 +8,6 @@ contextBridge.exposeInMainWorld("continuity", {
   loadChats: () => ipcRenderer.invoke("chats:load"),
   loadUsage: () => ipcRenderer.invoke("usage:load"),
   saveChats: (chats: any[]) => ipcRenderer.invoke("chats:save", chats),
+  listModels: () => ipcRenderer.invoke("claude:models"),
   reply: (payload: { messages: Msg[]; model?: string }) => ipcRenderer.invoke("claude:reply", payload)
 });
