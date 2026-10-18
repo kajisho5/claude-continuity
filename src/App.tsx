@@ -7,6 +7,7 @@ export default function App() {
  const [chats,setChats]=useState<Chat[]>([welcome]);
  const [active,setActive]=useState("welcome");
  const [draft,setDraft]=useState("");
+ const [search,setSearch]=useState("");
  const [key,setKey]=useState("");
  const [configured,setConfigured]=useState(false);
  const [settings,setSettings]=useState(false);
@@ -65,8 +66,9 @@ export default function App() {
    <button className="new" onClick={newChat}><Plus size={16}/> 新しい会話</button>
    <button className="nav" onClick={()=>void importExport()}><FileUp size={16}/> Claudeエクスポートを読み込む</button>
    <div className="label">会話履歴 · {chats.length}</div>
+   <input className="chat-search" value={search} onChange={e=>setSearch(e.target.value)} placeholder="会話を検索…" aria-label="会話を検索"/>
    <div className="usage-card"><div>この端末で記録したAPI使用量</div><strong>{(usageTotal.inputTokens+usageTotal.outputTokens).toLocaleString()} <small>tokens</small></strong><span>{usageTotal.calls} 回 · input {usageTotal.inputTokens.toLocaleString()} / output {usageTotal.outputTokens.toLocaleString()}</span><em>クレジット残高ではなく、アプリ内の記録です</em></div>
-   <div className="chatlist">{chats.map(c=><button key={c.id} className={"chatlink "+(c.id===active?"active":"")} onClick={()=>setActive(c.id)}><MessageSquare size={15}/><span>{c.title}</span></button>)}</div>
+   <div className="chatlist">{chats.filter(c=>c.title.toLowerCase().includes(search.toLowerCase())||c.messages.some(m=>m.content.toLowerCase().includes(search.toLowerCase()))).map(c=><button key={c.id} className={"chatlink "+(c.id===active?"active":"")} onClick={()=>setActive(c.id)}><MessageSquare size={15}/><span>{c.title}</span></button>)}</div>
    <div className="bottom"><button className="nav" onClick={()=>setSettings(true)}><Settings2 size={16}/> API設定</button><div className="secure"><ShieldCheck size={15}/> ローカル優先設計</div></div>
   </aside>
   <main><header><span>Workspace / <b>{chat.title}</b></span><button className="nav header-status" onClick={()=>setSettings(true)}><span className={"dot "+(configured?"green":"")}/>{configured?"API設定済み":"API未設定"} <Settings2 size={16}/></button></header>
