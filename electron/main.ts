@@ -1,12 +1,14 @@
 import { app, BrowserWindow, dialog, ipcMain, safeStorage } from "electron";
 import path from "node:path";
 import fs from "node:fs/promises";
+import { randomUUID } from "node:crypto";
 import Anthropic from "@anthropic-ai/sdk";
 import AdmZip from "adm-zip";
 
 const isDev = !app.isPackaged;
 let mainWindow: BrowserWindow | null = null;
 const dataDir = () => path.join(app.getPath("userData"), "claude-continuity");
+const sessionId = randomUUID();
 const keyFile = () => path.join(dataDir(), "api-key.bin");
 
 async function ensureDataDir() { await fs.mkdir(dataDir(), { recursive: true }); }
@@ -162,7 +164,7 @@ ipcMain.handle("usage:load", async () => {
 async function recordUsage(entry: { model: string; inputTokens: number; outputTokens: number }) {
   let rows: any[] = [];
   try { const raw = JSON.parse(await fs.readFile(usageFile(), "utf8")); if (Array.isArray(raw)) rows = raw; } catch {}
-  rows.push({ ...entry, createdAt: new Date().toISOString() });
+  rows.push({ ...entry, sessionId, createdAt: new Date().toISOString() });
   // Retain a bounded local ledger instead of allowing indefinite growth.
   await fs.writeFile(usageFile(), JSON.stringify(rows.slice(-10000)), "utf8");
 }
