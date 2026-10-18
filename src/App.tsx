@@ -1,16 +1,80 @@
 import { useEffect, useState } from "react";
 import { KeyRound, MessageSquare, Plus, Send, Settings2, ShieldCheck, Sparkles, FileUp } from "lucide-react";
-type Msg = {role:"user"|"assistant";content:string};
-type Chat = {id:string;title:string;messages:Msg[]};
-export default function App(){
- const [chats,setChats]=useState<Chat[]>([{id:"welcome",title:"はじめに",messages:[{role:"assistant",content:"Claude Continuityの初期プロトタイプです。APIキーを設定するとClaude APIと会話できます。Claudeのエクスポート取込は次の実装ステップで対応します。"}]}]);
- const [active,setActive]=useState("welcome"),[draft,setDraft]=useState(""),[key,setKey]=useState(""),[configured,setConfigured]=useState(false),[settings,setSettings]=useState(false),[busy,setBusy]=useState(false),[status,setStatus]=useState("準備完了");
- const chat=chats.find(c=>c.id===active)??chats[0];
- useEffect(()=>{window.continuity.keyStatus().then(s=>setConfigured(s.configured)).catch(()=>{});},[]);
- function update(messages:Msg[]){setChats(cs=>cs.map(c=>c.id===active?{...c,messages}:c));}
- async function send(){const text=draft.trim();if(!text||busy)return;if(!configured){setSettings(true);setStatus("先にAPIキーを設定してください");return;}const messages=[...chat.messages,{role:"user" as const,content:text}];update(messages);setDraft("");setBusy(true);setStatus("Claudeに問い合わせ中…");try{const r=await window.continuity.reply({messages:messages.slice(-40)});update([...messages,{role:"assistant",content:r.text}]);setStatus(`応答完了 · ${r.usage.inputTokens} input / ${r.usage.outputTokens} output tokens`);}catch(e){update([...messages,{role:"assistant",content:"APIエラー: "+(e instanceof Error?e.message:String(e))}]);setStatus("APIエラー");}finally{setBusy(false);}}
- async function save(){try{await window.continuity.saveApiKey(key.trim());setConfigured(true);setKey("");setSettings(false);setStatus("APIキーを安全な領域に保存しました");}catch(e){setStatus(e instanceof Error?e.message:String(e));}}
- async function importExport(){const f=await window.continuity.chooseExport();if(f){setStatus("選択: "+f.fileName+" — インポート解析は未実装");alert("ファイル選択は成功しました。エクスポート解析機能は次の実装ステップで追加します。");}}
+type Msg = { role: "user" | "assistant"; content: string };
+type Chat = { id: string; title: string; messages: Msg[]; source?: string };
+const welcome: Chat = { id: "welcome", title: "はじめに", messages: [{ role: "assistant", content: "Claude Continuityへようこそ。APIキーを設定するとClaude APIと会話できます。左側からClaudeのエクスポートを読み込むと、対応する会話をこの画面で開けます。\n\n注意：インポートした会話は、続きを送信した時点で選択した文脈がAnthropic APIへ送信されます。" }] };
+export default function App() {
+ const [chats,setChats]=useState<Chat[]>([welcome]);
+ const [active,setActive]=useState("welcome");
+ const [draft,setDraft]=useState("");
+ const [key,setKey]=useState("");
+ const [configured,setConfigured]=useState(false);
+ const [settings,setSettings]=useState(false);
+ const [busy,setBusy]=useState(false);
+ const [status,setStatus]=useState("準備完了");
+ const [loaded,setLoaded]=useState(false);
+ const [lastUsage,setLastUsage]=useState<{inputTokens:number;outputTokens:number}|null>(null);
+ const chat=chats.find(c=>c.id===active)??chats[0]??welcome;
+
+ useEffect(()=>{
+   Promise.all([window.continuity.keyStatus(),window.continuity.loadChats()])
+    .then(([s,saved])=>{setConfigured(s.configured); if(saved.length){setChats(saved);setActive(saved[0].id);} setLoaded(true);})
+    .catch(e=>{setStatus("初期化エラー: "+err(e));setLoaded(true);});
+ },[]);
+ useEffect(()=>{
+   if(!loaded)return;
+   const timer=window.setTimeout(()=>{window.continuity.saveChats(chats).catch(e=>setStatus("ローカル保存エラー: "+err(e)));},350);
+   return ()=>window.clearTimeout(timer);
+ },[chats,loaded]);
+
+ function updateChat(id:string,messages:Msg[],title?:string){
+   setChats(cs=>cs.map(c=>c.id===id?{...c,messages,title:title??c.title}:c));
+ }
+ async function importExport(){
+   try{
+     const result=await window.continuity.chooseExport();
+     if(!result)return;
+     if(!result.count){setStatus("会話を認識できませんでした。エクスポート形式を確認してください。");alert("このファイルから会話を抽出できませんでした。JSON/ZIPの構造に合わせた対応が必要な可能性があります。");return;}
+     setChats(cs=>{const existing=new Set(cs.map(c=>c.id));const incoming=result.conversations.filter(c=>!existing.has(c.id));const mapped=incoming.map(c=>({...c,title:c.title||"インポートした会話"}));if(mapped.length){setActive(mapped[0].id);setStatus(`${mapped.length}件の会話をインポートしました（${result.fileName}）`);return [...mapped,...cs];}setStatus("読み込んだ会話はすべて既に存在します。");return cs;});
+   }catch(e){setStatus("インポートエラー: "+err(e));}
+ }
+ async function saveKey(){
+   try{await window.continuity.saveApiKey(key.trim());setConfigured(true);setKey("");setSettings(false);setStatus("APIキーをOSの安全な保存領域に保存しました");}
+   catch(e){setStatus(err(e));}
+ }
+ async function send(){
+   const text=draft.trim();if(!text||busy)return;
+   if(!configured){setSettings(true);setStatus("先にAnthropic APIキーを設定してください");return;}
+   const current=chat;
+   const messages=[...current.messages,{role:"user" as const,content:text}];
+   const title=current.title==="新しい会話"||current.title==="はじめに"?text.slice(0,48):current.title;
+   updateChat(current.id,messages,title);setDraft("");setBusy(true);setStatus("Claudeに問い合わせ中…");
+   try{
+     const response=await window.continuity.reply({messages:messages.slice(-60),model:"claude-sonnet-4-5"});
+     updateChat(current.id,[...messages,{role:"assistant",content:response.text}],title);
+     setLastUsage({inputTokens:response.usage.inputTokens,outputTokens:response.usage.outputTokens});
+     setStatus(`応答完了 · ${response.usage.inputTokens.toLocaleString()} input / ${response.usage.outputTokens.toLocaleString()} output tokens`);
+   }catch(e){updateChat(current.id,[...messages,{role:"assistant",content:"APIエラー: "+err(e)+"\n\nConsoleのクレジット残高、APIキー、利用可能モデルを確認してください。"}],title);setStatus("APIリクエストに失敗しました");}
+   finally{setBusy(false);}
+ }
  function newChat(){const id="chat-"+Date.now();setChats(cs=>[{id,title:"新しい会話",messages:[]},...cs]);setActive(id);}
- return <div className="shell"><aside><div className="brand"><span className="mark"><Sparkles size={19}/></span><div><b>Claude Continuity</b><small>LOCAL WORKSPACE</small></div></div><button className="new" onClick={newChat}><Plus size={16}/> 新しい会話</button><div className="label">会話履歴</div>{chats.map(c=><button key={c.id} className={"chatlink "+(c.id===active?"active":"")} onClick={()=>setActive(c.id)}><MessageSquare size={15}/><span>{c.title}</span></button>)}<div className="bottom"><button className="nav" onClick={()=>setSettings(true)}><Settings2 size={16}/> API設定</button><div className="secure"><ShieldCheck size={15}/> ローカル優先設計</div></div></aside><main><header><span>Workspace / <b>{chat.title}</b></span><button className="nav" onClick={()=>setSettings(true)}>{configured?"API設定済み":"API未設定"} <Settings2 size={16}/></button></header><section className="messages">{chat.messages.length===0&&<div className="empty"><Sparkles size={30}/><h1>会話を続ける</h1><p>Claude APIで新しい会話を始めるか、過去のエクスポートを選択します。</p><button className="secondary" onClick={importExport}><FileUp size={16}/> エクスポートを選択</button></div>}{chat.messages.map((m,i)=><article key={i} className="message"><div className="avatar">{m.role==="assistant"?<Sparkles size={16}/>:"You"}</div><div><b>{m.role==="assistant"?"Claude":"あなた"}</b><p>{m.content}</p></div></article>)}{busy&&<p className="busy">Claudeが応答中…</p>}</section><footer><div className="composer"><textarea value={draft} onChange={e=>setDraft(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();void send();}}} placeholder="Claudeにメッセージ…（Enterで送信）"/><div className="composebottom"><span><KeyRound size={13}/>{configured?"APIキー保存済み":"APIキーを設定してください"}</span><button onClick={()=>void send()} disabled={busy||!draft.trim()}><Send size={15}/> 送信</button></div></div><div className="status">{status}</div></footer></main>{settings&&<div className="overlay" onClick={()=>setSettings(false)}><div className="modal" onClick={e=>e.stopPropagation()}><button className="close" onClick={()=>setSettings(false)}>×</button><h2>Anthropic API設定</h2><p>ConsoleのAPIキーを入力してください。</p><label>API Key</label><input type="password" value={key} onChange={e=>setKey(e.target.value)} placeholder={configured?"保存済み。変更する場合のみ入力":"sk-ant-…"}/><div className="note"><ShieldCheck size={15}/> OSの安全な保存領域を使ってキーを保存します。</div><div className="actions"><button className="secondary" onClick={()=>setSettings(false)}>キャンセル</button><button className="save" disabled={!key.trim()} onClick={()=>void save()}>保存</button></div><small>API利用料・クレジット残高はAnthropic Consoleで確認してください。自動購入は行いません。</small></div></div>}</div>;
+ return <div className="shell">
+  <aside><div className="brand"><span className="mark"><Sparkles size={19}/></span><div><b>Claude Continuity</b><small>LOCAL WORKSPACE</small></div></div>
+   <button className="new" onClick={newChat}><Plus size={16}/> 新しい会話</button>
+   <button className="nav" onClick={()=>void importExport()}><FileUp size={16}/> Claudeエクスポートを読み込む</button>
+   <div className="label">会話履歴 · {chats.length}</div>
+   <div className="chatlist">{chats.map(c=><button key={c.id} className={"chatlink "+(c.id===active?"active":"")} onClick={()=>setActive(c.id)}><MessageSquare size={15}/><span>{c.title}</span></button>)}</div>
+   <div className="bottom"><button className="nav" onClick={()=>setSettings(true)}><Settings2 size={16}/> API設定</button><div className="secure"><ShieldCheck size={15}/> ローカル優先設計</div></div>
+  </aside>
+  <main><header><span>Workspace / <b>{chat.title}</b></span><button className="nav header-status" onClick={()=>setSettings(true)}><span className={"dot "+(configured?"green":"")}/>{configured?"API設定済み":"API未設定"} <Settings2 size={16}/></button></header>
+   <section className="messages">
+    {chat.messages.length===0&&<div className="empty"><Sparkles size={30}/><h1>会話を続ける</h1><p>インポートした履歴を選ぶか、ここから新しい会話を始めます。</p><button className="secondary" onClick={()=>void importExport()}><FileUp size={16}/> Claudeのエクスポートを読み込む</button></div>}
+    {chat.messages.map((m,i)=><article key={i} className={"message "+m.role}><div className="avatar">{m.role==="assistant"?<Sparkles size={16}/>:"You"}</div><div className="msgbody"><b>{m.role==="assistant"?"Claude":"あなた"}</b><p>{m.content}</p></div></article>)}
+    {busy&&<p className="busy">Claudeが応答中…</p>}
+   </section>
+   <footer><div className="composer"><textarea value={draft} onChange={e=>setDraft(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();void send();}}} placeholder="Claudeにメッセージ…（Enterで送信、Shift+Enterで改行）"/><div className="composebottom"><span><KeyRound size={13}/>{configured?"APIキー保存済み":"APIキーを設定してください"}</span><button onClick={()=>void send()} disabled={busy||!draft.trim()}><Send size={15}/> 送信</button></div></div><div className="status"><span>{status}</span><span>{lastUsage?`直近の応答: ${lastUsage.inputTokens+lastUsage.outputTokens} tokens`:"会話はこの端末に自動保存されます"}</span></div></footer>
+  </main>
+  {settings&&<div className="overlay" onClick={()=>setSettings(false)}><div className="modal" onClick={e=>e.stopPropagation()}><button className="close" onClick={()=>setSettings(false)}>×</button><h2>Anthropic API設定</h2><p>Anthropic Consoleで発行したAPIキーを入力してください。</p><label>API Key</label><input type="password" value={key} onChange={e=>setKey(e.target.value)} placeholder={configured?"保存済み。変更する場合のみ入力":"sk-ant-…"} autoComplete="off"/><div className="note"><ShieldCheck size={15}/> APIキーはOSの安全な保存領域に暗号化して保存します。</div><div className="actions"><button className="secondary" onClick={()=>setSettings(false)}>キャンセル</button><button className="save" disabled={!key.trim()} onClick={()=>void saveKey()}>保存</button></div><small>API利用料・クレジット残高はAnthropic Consoleで確認してください。このアプリはクレジットの追加購入や自動リロードを行いません。送信した会話文脈はAnthropic APIへ送られます。</small></div></div>}
+ </div>;
 }
+function err(e:unknown){return e instanceof Error?e.message:String(e);}
