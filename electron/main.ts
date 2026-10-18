@@ -117,6 +117,27 @@ ipcMain.handle("dialog:import-export", async () => {
   return { fileName, conversations: imported, count: imported.length };
 });
 
+
+const chatsFile = () => path.join(dataDir(), "chats.json");
+ipcMain.handle("chats:load", async () => {
+  try { const data = JSON.parse(await fs.readFile(chatsFile(), "utf8")); return Array.isArray(data) ? data : []; }
+  catch { return []; }
+});
+ipcMain.handle("chats:save", async (_event, chats: unknown[]) => {
+  if (!Array.isArray(chats)) throw new Error("会話データの形式が正しくありません。");
+  const safeChats = chats.map((chat: any) => ({
+    id: String(chat.id ?? ""),
+    title: String(chat.title ?? "会話").slice(0, 300),
+    source: typeof chat.source === "string" ? chat.source.slice(0, 1000) : undefined,
+    messages: Array.isArray(chat.messages) ? chat.messages.slice(-5000).map((m: any) => ({
+      role: m.role === "assistant" ? "assistant" : "user",
+      content: String(m.content ?? "").slice(0, 2_000_000)
+    })) : []
+  }));
+  await fs.writeFile(chatsFile(), JSON.stringify(safeChats), "utf8");
+  return true;
+});
+
 ipcMain.handle("key:save", async (_event, apiKey: string) => {
   if (!safeStorage.isEncryptionAvailable()) throw new Error("この環境では安全なキー保存を利用できません。");
   if (!apiKey || !apiKey.startsWith("sk-ant-")) throw new Error("Anthropic APIキーの形式を確認してください。");
