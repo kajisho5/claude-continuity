@@ -8,8 +8,9 @@ declare global {
       saveApiKey: (key: string) => Promise<boolean>;
       keyStatus: () => Promise<{ configured: boolean; secureStorage: boolean }>;
       loadChats: () => Promise<ContinuityConversation[]>;
+      loadUsage: () => Promise<{ model: string; inputTokens: number; outputTokens: number; createdAt: string }[]>;
       saveChats: (chats: ContinuityConversation[]) => Promise<boolean>;
-      reply: (payload: { messages: ContinuityMessage[]; model?: string }) => Promise<{ text: string; usage: { inputTokens: number; outputTokens: number; model: string } }>;
+      reply: (payload: { messages: ContinuityMessage[]; model?: string }) => Promise<{ text: string; usage: { inputTokens: number; outputTokens: number; model: string }; contextMessages?: number; contextCharacters?: number }>;
     };
   }
 }
