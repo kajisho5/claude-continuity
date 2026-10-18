@@ -138,6 +138,40 @@ ipcMain.handle("chats:save", async (_event, chats: unknown[]) => {
   return true;
 });
 
+
+const usageFile = () => path.join(dataDir(), "usage.json");
+ipcMain.handle("usage:load", async () => {
+  try {
+    const data = JSON.parse(await fs.readFile(usageFile(), "utf8"));
+    return Array.isArray(data) ? data : [];
+  } catch { return []; }
+});
+async function recordUsage(entry: { model: string; inputTokens: number; outputTokens: number }) {
+  let rows: any[] = [];
+  try { const raw = JSON.parse(await fs.readFile(usageFile(), "utf8")); if (Array.isArray(raw)) rows = raw; } catch {}
+  rows.push({ ...entry, createdAt: new Date().toISOString() });
+  // Retain a bounded local ledger instead of allowing indefinite growth.
+  await fs.writeFile(usageFile(), JSON.stringify(rows.slice(-10000)), "utf8");
+}
+function fitContext(messages: NormalizedMessage[], maxChars = 120000): NormalizedMessage[] {
+  const selected: NormalizedMessage[] = [];
+  let remaining = maxChars;
+  for (let i = messages.length - 1; i >= 0 && remaining > 0; i--) {
+    const message = messages[i];
+    if (!message.content) continue;
+    if (message.content.length <= remaining) {
+      selected.push({ role: message.role, content: message.content });
+      remaining -= message.content.length;
+    } else if (selected.length === 0) {
+      selected.push({ role: message.role, content: message.content.slice(0, remaining) });
+      remaining = 0;
+    } else {
+      break;
+    }
+  }
+  return selected.reverse();
+}
+
 ipcMain.handle("key:save", async (_event, apiKey: string) => {
   if (!safeStorage.isEncryptionAvailable()) throw new Error("この環境では安全なキー保存を利用できません。");
   if (!apiKey || !apiKey.startsWith("sk-ant-")) throw new Error("Anthropic APIキーの形式を確認してください。");
@@ -155,13 +189,25 @@ async function getApiKey() {
   return safeStorage.decryptString(await fs.readFile(keyFile()));
 }
 ipcMain.handle("claude:reply", async (_event, payload: { messages: NormalizedMessage[]; model?: string }) => {
+  if (!payload || !Array.isArray(payload.messages) || payload.messages.length === 0) {
+    throw new Error("送信する会話がありません。");
+  }
+  const safeMessages = payload.messages
+    .filter(m => m && (m.role === "user" || m.role === "assistant") && typeof m.content === "string")
+    .map(m => ({ role: m.role, content: m.content.slice(0, 2_000_000) }));
+  if (!safeMessages.some(m => m.role === "user")) throw new Error("ユーザーのメッセージがありません。");
+  const bounded = fitContext(safeMessages);
   const client = new Anthropic({ apiKey: await getApiKey() });
   const response = await client.messages.create({
     model: payload.model || "claude-sonnet-4-5", max_tokens: 4096,
-    messages: payload.messages.map(m => ({ role: m.role, content: m.content }))
+    messages: bounded.map(m => ({ role: m.role, content: m.content }))
   });
+  const usage = { inputTokens: response.usage.input_tokens, outputTokens: response.usage.output_tokens, model: response.model };
+  await recordUsage(usage);
   return {
     text: response.content.filter(p => p.type === "text").map(p => p.text).join("\n"),
-    usage: { inputTokens: response.usage.input_tokens, outputTokens: response.usage.output_tokens, model: response.model }
+    usage,
+    contextMessages: bounded.length,
+    contextCharacters: bounded.reduce((total, m) => total + m.content.length, 0)
   };
 });
