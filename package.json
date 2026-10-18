@@ -13,7 +13,8 @@
     "@anthropic-ai/sdk": "^0.68.0",
     "lucide-react": "^0.468.0",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "react-dom": "^19.0.0",
+    "adm-zip": "^0.5.16"
   },
   "devDependencies": {
     "@types/react": "^19.0.0",
@@ -24,6 +25,7 @@
     "esbuild": "^0.24.2",
     "typescript": "~5.7.2",
     "vite": "^6.0.7",
-    "wait-on": "^8.0.1"
+    "wait-on": "^8.0.1",
+    "@types/adm-zip": "^0.5.5"
   }
 }
