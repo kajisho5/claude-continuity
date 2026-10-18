@@ -4,6 +4,13 @@ A local-first Electron desktop app for importing Claude conversation exports and
 
 ## Implemented in the repository
 
+## GUI preview
+
+![Claude Continuity GUI preview](docs/gui-preview.svg)
+
+> This is a conceptual preview based on the current UI source, not a screenshot of a successfully built or running application. The app has not yet been build-verified.
+
+
 - Electron + React + TypeScript desktop application
 - Import Claude conversation exports in JSON or ZIP format (best-effort parser for common export layouts)
 - Continue imported conversations through the Anthropic API
