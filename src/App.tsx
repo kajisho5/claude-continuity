@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { KeyRound, MessageSquare, Plus, Send, Settings2, ShieldCheck, Sparkles, FileUp } from "lucide-react";
+import { KeyRound, MessageSquare, Plus, Send, Settings2, ShieldCheck, Sparkles, FileUp, Download, Trash2 } from "lucide-react";
 type Msg = { role: "user" | "assistant"; content: string };
 type Chat = { id: string; title: string; messages: Msg[]; source?: string };
 const welcome: Chat = { id: "welcome", title: "はじめに", messages: [{ role: "assistant", content: "Claude Continuityへようこそ。APIキーを設定するとClaude APIと会話できます。左側からClaudeのエクスポートを読み込むと、対応する会話をこの画面で開けます。\n\n注意：インポートした会話は、続きを送信した時点で選択した文脈がAnthropic APIへ送信されます。" }] };
@@ -60,7 +60,7 @@ export default function App() {
    }catch(e){updateChat(current.id,[...messages,{role:"assistant",content:"APIエラー: "+err(e)+"\n\nConsoleのクレジット残高、APIキー、利用可能モデルを確認してください。"}],title);setStatus("APIリクエストに失敗しました");}
    finally{setBusy(false);}
  }
- function newChat(){const id="chat-"+Date.now();setChats(cs=>[{id,title:"新しい会話",messages:[]},...cs]);setActive(id);}
+ async function exportChat(){try{const result=await window.continuity.exportChat({fileName:chat.title.replace(/[^\\p{L}\\p{N} _-]/gu,"").slice(0,80)||"conversation",data:JSON.stringify(chat,null,2)});if(!result.canceled)setStatus("会話をJSONにエクスポートしました");}catch(e){setStatus("エクスポートエラー: "+err(e));}}\n function deleteChat(){if(chats.length<=1){setStatus("最後の会話は削除できません。");return;}if(!window.confirm("この会話を端末内の履歴から削除しますか？"))return;const remaining=chats.filter(c=>c.id!==active);setChats(remaining);setActive(remaining[0].id);setStatus("会話を削除しました");}\n function newChat(){const id="chat-"+Date.now();setChats(cs=>[{id,title:"新しい会話",messages:[]},...cs]);setActive(id);}
  return <div className="shell">
   <aside><div className="brand"><span className="mark"><Sparkles size={19}/></span><div><b>Claude Continuity</b><small>LOCAL WORKSPACE</small></div></div>
    <button className="new" onClick={newChat}><Plus size={16}/> 新しい会話</button>
@@ -71,7 +71,7 @@ export default function App() {
    <div className="chatlist">{chats.filter(c=>c.title.toLowerCase().includes(search.toLowerCase())||c.messages.some(m=>m.content.toLowerCase().includes(search.toLowerCase()))).map(c=><button key={c.id} className={"chatlink "+(c.id===active?"active":"")} onClick={()=>setActive(c.id)}><MessageSquare size={15}/><span>{c.title}</span></button>)}</div>
    <div className="bottom"><button className="nav" onClick={()=>setSettings(true)}><Settings2 size={16}/> API設定</button><div className="secure"><ShieldCheck size={15}/> ローカル優先設計</div></div>
   </aside>
-  <main><header><span>Workspace / <b>{chat.title}</b></span><button className="nav header-status" onClick={()=>setSettings(true)}><span className={"dot "+(configured?"green":"")}/>{configured?"API設定済み":"API未設定"} <Settings2 size={16}/></button></header>
+  <main><header><span>Workspace / <b>{chat.title}</b></span><div className="header-actions"><button className="nav" onClick={()=>void exportChat()} title="会話をJSONで保存"><Download size={15}/> JSON保存</button><button className="nav" onClick={deleteChat} title="この会話を削除"><Trash2 size={15}/></button><button className="nav header-status" onClick={()=>setSettings(true)}><span className={"dot "+(configured?"green":"")}/>{configured?"API設定済み":"API未設定"} <Settings2 size={16}/></button></div></header>
    <section className="messages">
     {chat.messages.length===0&&<div className="empty"><Sparkles size={30}/><h1>会話を続ける</h1><p>インポートした履歴を選ぶか、ここから新しい会話を始めます。</p><button className="secondary" onClick={()=>void importExport()}><FileUp size={16}/> Claudeのエクスポートを読み込む</button></div>}
     {chat.messages.map((m,i)=><article key={i} className={"message "+m.role}><div className="avatar">{m.role==="assistant"?<Sparkles size={16}/>:"You"}</div><div className="msgbody"><b>{m.role==="assistant"?"Claude":"あなた"}</b><p>{m.content}</p></div></article>)}
