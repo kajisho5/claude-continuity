@@ -168,7 +168,10 @@ npm start        # ビルド済みのアプリを起動
    - macOS：arm64 と x64 の `.dmg` と `.zip`、`latest-mac.yml`
 4. インストール済みのアプリは、起動の約15秒後と、その後6時間ごとに `latest.yml` を確認し、新しい版を案内します。
 
-**macOS の署名と公証（任意）**：リポジトリの secret に次を設定すると、Developer ID で署名して公証し、Mac 版も自動で更新できるようになります（[electron-builder の公証の説明](https://www.electron.build/docs/notarization)）。証明書には Apple Developer Program（有料）への登録が必要です。
+**macOS の署名と公証**：次のどちらかの secret がそろうと、Developer ID で署名・公証され、Mac 版も自動で更新できるようになります（[electron-builder の公証の説明](https://www.electron.build/docs/notarization)）。
+
+- **runway の共有証明書（このリポジトリの設定）**：`kajisho5/runway` の `repos.txt` にこのリポジトリを載せてあるので、runway の sync-secrets が `ASC_KEY_ID`・`ASC_ISSUER_ID`・`ASC_KEY_P8_BASE64`・`APPLE_TEAM_ID`・`MATCH_GIT_TOKEN` を配ります。リリース時に hanger の Developer ID 証明書を読み、runway の `scripts/asc.py` で鍵を復号して署名し、同じ App Store Connect API キーで公証します。リリースのたびに runway を操作する必要はありません。
+- **自前の証明書**：下の表の secret を設定します。証明書には Apple Developer Program（有料）への登録が必要です。
 
 | secret | 内容 |
 |---|---|

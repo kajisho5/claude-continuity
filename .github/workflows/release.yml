@@ -6,11 +6,14 @@ name: Release
 # latest.yml / latest-mac.yml and the blockmaps let installed copies find and download updates (electron-updater).
 #
 # macOS signing (optional; without it the app is signed ad hoc, opens after the user allows it in
-# System Settings > Privacy & Security, and updates by opening the download page):
-# - CSC_LINK: base64 of a "Developer ID Application" certificate (.p12), CSC_KEY_PASSWORD: its password
-# - Notarization, either APPLE_API_KEY (base64 of the .p8) + APPLE_API_KEY_ID + APPLE_API_ISSUER,
-#   or APPLE_ID + APPLE_APP_SPECIFIC_PASSWORD, plus APPLE_TEAM_ID
-#   (https://www.electron.build/docs/notarization)
+# System Settings > Privacy & Security, and updates by opening the download page). Either:
+# - kajisho5/runway's shared Developer ID (used when its secrets are present): this repository is listed in
+#   runway's repos.txt, so runway's sync-secrets copies ASC_KEY_ID, ASC_ISSUER_ID, ASC_KEY_P8_BASE64,
+#   APPLE_TEAM_ID and MATCH_GIT_TOKEN here. The certificate comes from hanger (signing/developer_id_application.cer
+#   + devid.key.enc, decrypted with runway's scripts/asc.py) and notarization uses the same App Store Connect API key.
+# - or your own: CSC_LINK (base64 of a "Developer ID Application" .p12) + CSC_KEY_PASSWORD, and for notarization
+#   APPLE_API_KEY (base64 of the .p8) + APPLE_API_KEY_ID + APPLE_API_ISSUER, or APPLE_ID +
+#   APPLE_APP_SPECIFIC_PASSWORD, plus APPLE_TEAM_ID (https://www.electron.build/docs/notarization)
 #
 # Where updates are published:
 # - Repository variable RELEASES_REPO (e.g. kajisho5/claude-continuity-releases) set: the installers go to that
@@ -91,8 +94,8 @@ jobs:
     needs: prepare
     runs-on: macos-latest
     env:
-      HAS_CERT: ${{ secrets.CSC_LINK != '' }}
-      HAS_NOTARY: ${{ secrets.APPLE_TEAM_ID != '' && (secrets.APPLE_API_KEY != '' || secrets.APPLE_ID != '') }}
+      # HAS_CERT / HAS_NOTARY are only written by the signing steps: a job-level value would shadow GITHUB_ENV.
+      HAS_RUNWAY: ${{ secrets.MATCH_GIT_TOKEN != '' && secrets.ASC_KEY_P8_BASE64 != '' && secrets.ASC_KEY_ID != '' && secrets.ASC_ISSUER_ID != '' && secrets.APPLE_TEAM_ID != '' }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -102,30 +105,82 @@ jobs:
           node-version: 20
       - run: npm install
       - run: npm test
-      - name: Write the notarization API key
-        if: ${{ env.HAS_NOTARY == 'true' }}
+      # Both signing steps hand electron-builder its usual variables through GITHUB_ENV (masked in the log).
+      - name: Developer ID from runway (hanger)
+        if: ${{ env.HAS_RUNWAY == 'true' }}
         env:
-          APPLE_API_KEY_BASE64: ${{ secrets.APPLE_API_KEY }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_KEY_P8_BASE64: ${{ secrets.ASC_KEY_P8_BASE64 }}
+          SIGNING_KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
+          HANGER_TOKEN: ${{ secrets.MATCH_GIT_TOKEN }}
+          HANGER_REPO: ${{ vars.HANGER_REPO || format('{0}/hanger', github.repository_owner) }}
+          RUNWAY_REPO: ${{ vars.RUNWAY_REPO || format('{0}/runway', github.repository_owner) }}
         run: |
-          if [ -n "$APPLE_API_KEY_BASE64" ]; then
-            echo "$APPLE_API_KEY_BASE64" | base64 --decode > "$RUNNER_TEMP/notary.p8"
-            echo "APPLE_API_KEY=$RUNNER_TEMP/notary.p8" >> "$GITHUB_ENV"
+          set -euo pipefail
+          dir="$RUNNER_TEMP/sign"; mkdir -p "$dir"
+          python3 -m venv "$dir/venv"; "$dir/venv/bin/pip" install --quiet pyjwt cryptography
+          auth="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$HANGER_TOKEN" | base64 | tr -d '\n')"
+          echo "::add-mask::$auth"
+          # runway's asc.py decrypts the shared signing key with the same passphrase rules as runway's own workflows.
+          git clone --quiet --depth 1 "https://github.com/$RUNWAY_REPO.git" "$dir/runway" \
+            || git -c http.extraheader="$auth" clone --quiet --depth 1 "https://github.com/$RUNWAY_REPO.git" "$dir/runway"
+          git -c http.extraheader="$auth" clone --quiet --depth 1 "https://github.com/$HANGER_REPO.git" "$dir/hanger" \
+            || { echo "::error::$HANGER_REPO を読めない（MATCH_GIT_TOKEN を確認）"; exit 1; }
+          src="$dir/hanger/signing"
+          if [ ! -f "$src/developer_id_application.cer" ] || [ ! -f "$src/devid.key.enc" ]; then
+            echo "::error::Developer ID 証明書が hanger に無い。runway の Actions → apple-signing を create-developer-id で実行する"; exit 1
+          fi
+          asc() { "$dir/venv/bin/python" "$dir/runway/scripts/asc.py" "$@"; }
+          asc decrypt-key "$src/devid.key.enc" "$dir/devid.key"
+          p12pass="$(uuidgen)"
+          echo "::add-mask::$p12pass"
+          openssl x509 -inform DER -in "$src/developer_id_application.cer" -out "$dir/devid.pem"
+          openssl pkcs12 -export -inkey "$dir/devid.key" -in "$dir/devid.pem" -name devid -out "$dir/devid.p12" -passout "pass:$p12pass"
+          link="$(base64 -i "$dir/devid.p12" | tr -d '\n')"
+          echo "::add-mask::$link"
+          key="$(asc write-key)"
+          {
+            echo "CSC_LINK=$link"
+            echo "CSC_KEY_PASSWORD=$p12pass"
+            echo "APPLE_API_KEY=$key"
+            echo "APPLE_API_KEY_ID=$ASC_KEY_ID"
+            echo "APPLE_API_ISSUER=$ASC_ISSUER_ID"
+            echo "HAS_CERT=true"
+            echo "HAS_NOTARY=true"
+          } >> "$GITHUB_ENV"
+          rm -rf "$dir/devid.key" "$dir/devid.p12" "$dir/hanger"
+      - name: Own signing secrets
+        if: ${{ env.HAS_RUNWAY != 'true' }}
+        env:
+          OWN_CSC_LINK: ${{ secrets.CSC_LINK }}
+          OWN_CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          OWN_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          OWN_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          OWN_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          OWN_APPLE_ID: ${{ secrets.APPLE_ID }}
+          OWN_APP_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          OWN_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          set -euo pipefail
+          [ -n "$OWN_CSC_LINK" ] || exit 0
+          { echo "CSC_LINK=$OWN_CSC_LINK"; echo "CSC_KEY_PASSWORD=$OWN_CSC_KEY_PASSWORD"; echo "HAS_CERT=true"; } >> "$GITHUB_ENV"
+          [ -n "$OWN_TEAM_ID" ] || exit 0
+          if [ -n "$OWN_API_KEY" ]; then
+            echo "$OWN_API_KEY" | base64 --decode > "$RUNNER_TEMP/notary.p8"
+            { echo "APPLE_API_KEY=$RUNNER_TEMP/notary.p8"; echo "APPLE_API_KEY_ID=$OWN_API_KEY_ID"; echo "APPLE_API_ISSUER=$OWN_API_ISSUER"; echo "HAS_NOTARY=true"; } >> "$GITHUB_ENV"
+          elif [ -n "$OWN_APPLE_ID" ]; then
+            { echo "APPLE_ID=$OWN_APPLE_ID"; echo "APPLE_APP_SPECIFIC_PASSWORD=$OWN_APP_PASSWORD"; echo "HAS_NOTARY=true"; } >> "$GITHUB_ENV"
           fi
       - name: Build dmg and zip (arm64 and x64)
         env:
-          CSC_LINK: ${{ secrets.CSC_LINK }}
-          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
-          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
-          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
           owner="${TARGET_REPO%%/*}"; repo="${TARGET_REPO#*/}"
           extra=()
-          if [ "$HAS_CERT" = "true" ]; then
+          if [ "${HAS_CERT:-}" = "true" ]; then
             extra+=("-c.extraMetadata.macSigned=true")
-            if [ "$HAS_NOTARY" = "true" ]; then extra+=("-c.mac.notarize=true"); fi
+            if [ "${HAS_NOTARY:-}" = "true" ]; then extra+=("-c.mac.notarize=true"); fi
           else
             # No certificate: skip electron-builder's identity lookup; build/adhoc-sign.cjs signs ad hoc.
             unset CSC_LINK CSC_KEY_PASSWORD
