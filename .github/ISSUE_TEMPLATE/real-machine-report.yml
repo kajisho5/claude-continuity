@@ -1,0 +1,110 @@
+name: Real-machine report
+description: Tried Claude Continuity on your own computer? Report what worked and what didn't, in a shape that compares across Windows, macOS and Linux.
+title: "[Report] <OS> · v<version>"
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for trying it on a real machine. Fill in what you tried and skip the rest.
+        Please don't paste API keys, tokens or private file contents. Settings → About shows the app version.
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - Windows 11
+        - Windows 10
+        - macOS (Apple silicon)
+        - macOS (Intel)
+        - Linux
+    validations:
+      required: true
+  - type: input
+    id: os-version
+    attributes:
+      label: OS version
+      placeholder: e.g. Windows 11 24H2, macOS 15.3, Ubuntu 24.04
+    validations:
+      required: true
+  - type: input
+    id: app-version
+    attributes:
+      label: App version
+      placeholder: e.g. 0.1.8
+    validations:
+      required: true
+  - type: dropdown
+    id: install
+    attributes:
+      label: Install and first launch
+      description: Download, open the installer/dmg/AppImage, first-run setup and key test.
+      options:
+        - Worked
+        - Worked with a warning (SmartScreen / Gatekeeper)
+        - Failed
+        - Not tried
+    validations:
+      required: true
+  - type: dropdown
+    id: chat
+    attributes:
+      label: A normal chat with a real API key
+      description: Streaming reply, thought process, cost shown under the reply.
+      options: [Worked, Failed, Not tried]
+    validations:
+      required: true
+  - type: dropdown
+    id: interrupted
+    attributes:
+      label: Interrupted replies
+      description: Press Stop (or Esc) mid-reply. The text shown so far should stay, marked as stopped. Also try turning the network off mid-reply.
+      options: [Worked, Failed, Not tried]
+    validations:
+      required: true
+  - type: dropdown
+    id: tool-permission
+    attributes:
+      label: Tool permission prompts (local MCP)
+      description: Add a local MCP server (e.g. an npx one, or import from Claude Desktop). Each tool call should ask Allow once / Always allow / Deny, and Deny should be respected.
+      options: [Worked, Failed, Not tried]
+    validations:
+      required: true
+  - type: dropdown
+    id: restart
+    attributes:
+      label: Recovery after restart
+      description: Quit and reopen (also try force-quitting during a reply). Chats, projects, settings and the credit card should all be as you left them.
+      options: [Worked, Failed, Not tried]
+    validations:
+      required: true
+  - type: dropdown
+    id: update
+    attributes:
+      label: In-app update
+      description: An older version offers the new one, downloads it and restarts into it.
+      options: [Worked, Failed, Not tried]
+    validations:
+      required: true
+  - type: checkboxes
+    id: other
+    attributes:
+      label: Other things you tried
+      options:
+        - label: Research mode
+        - label: Attachments (images, PDFs, spreadsheets)
+        - label: Artifacts (HTML / React)
+        - label: Projects and knowledge files
+        - label: Custom Skills
+        - label: Hand off to Claude Desktop
+        - label: Bundled MCP server with Claude Code
+        - label: Backup and restore
+  - type: textarea
+    id: details
+    attributes:
+      label: What went wrong, and how to reproduce it
+      description: Steps, what you expected, what happened. Screenshots help. For a failure, the time it happened helps too.
+  - type: textarea
+    id: notes
+    attributes:
+      label: Anything else
+      description: What felt different from the Claude apps, what you'd want next.

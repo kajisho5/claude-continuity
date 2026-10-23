@@ -134,7 +134,7 @@ Settings → "Data & backup" exports all data as a single ZIP.
 
 ## Known limitations
 
-- **Not verified on real machines yet**: a real API key, the Windows installer, handoff to the real Claude Desktop, and real `npx`-based local MCP servers. Testing so far ran on Linux against a mock API. In-app updates were run end to end (check → download → restart → the app file replaced by the new version) with Linux AppImage builds and a local feed; the Windows and macOS installers themselves have not been tried on real machines.
+- **Not verified on real machines yet**: a real API key, the Windows installer, handoff to the real Claude Desktop, and real `npx`-based local MCP servers. Testing so far ran on Linux against a mock API. In-app updates were run end to end (check → download → restart → the app file replaced by the new version) with Linux AppImage builds and a local feed; the Windows and macOS installers themselves have not been tried on real machines. If you try it, please send a [real-machine report](https://github.com/kajisho5/claude-continuity/issues/new?template=real-machine-report.yml).
 - **Importing exports**: the format is inferred and may not always be read correctly. Attachments, artifacts and tool calls in an export are not reconstructed.
 - **Long chats**: the oldest history beyond the input limit is left out (the app tells you); there is no automatic summarization.
 - **Voice input**: there is no built-in feature, but the OS's dictation works as is (`Win + H` on Windows, the Dictation shortcut on macOS).
