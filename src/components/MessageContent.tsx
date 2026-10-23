@@ -2,7 +2,7 @@ import { createContext, memo, useContext, useState, type ReactNode } from "react
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
-import { Check, ChevronDown, Copy, Eye } from "lucide-react";
+import { Check, ChevronDown, Code2, Copy, Eye, Image as ImageIcon } from "lucide-react";
 
 export type ArtifactRequest = { title: string; language: "html" | "svg"; code: string };
 /** Lets code blocks open the artifact panel without threading a prop through react-markdown. */
@@ -39,6 +39,37 @@ function previewLanguage(language: string, code: string): "html" | "svg" | null 
   return null;
 }
 
+function artifactTitle(language: "html" | "svg", code: string): string {
+  const title = /<title[^>]*>([^<]{1,80})<\/title>/i.exec(code)?.[1]?.trim();
+  return title || (language === "svg" ? "画像" : "Web ページ");
+}
+
+/** Previewable code shows as an artifact card that opens the side panel, as in the Claude apps. */
+function ArtifactCard({ language, code, children }: { language: "html" | "svg"; code: string; children: ReactNode }) {
+  const openArtifact = useContext(ArtifactContext)!;
+  const [showCode, setShowCode] = useState(false);
+  const title = artifactTitle(language, code);
+  const lines = code.split("\n").length;
+  return <div className="artifact-card-wrap">
+    <div className="artifact-card" role="button" tabIndex={0} onClick={() => openArtifact({ title, language, code })}
+      onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openArtifact({ title, language, code }); } }}>
+      <span className="artifact-thumb">{language === "svg" ? <ImageIcon size={20} /> : <Code2 size={20} />}</span>
+      <span className="artifact-meta"><b>{title}</b><small>{language === "svg" ? "SVG" : "HTML"} · {lines} 行 · クリックして開く</small></span>
+      <Eye size={16} className="artifact-open" />
+    </div>
+    <button className="artifact-code-toggle" onClick={() => setShowCode(v => !v)} aria-expanded={showCode}>
+      <ChevronDown size={13} className={showCode ? "open" : ""} />{showCode ? "コードを隠す" : "コードを表示"}</button>
+    {showCode && <CodeFrame language={language} code={code}>{children}</CodeFrame>}
+  </div>;
+}
+
+function CodeFrame({ language, code, children }: { language: string; code: string; children: ReactNode }) {
+  return <div className="code-block">
+    <div className="code-head"><span>{language}</span><span className="code-actions"><CopyButton text={code} /></span></div>
+    <pre>{children}</pre>
+  </div>;
+}
+
 function CodeBlock({ children }: { children?: ReactNode }) {
   const openArtifact = useContext(ArtifactContext);
   const child = Array.isArray(children) ? children[0] : children;
@@ -46,12 +77,8 @@ function CodeBlock({ children }: { children?: ReactNode }) {
   const language = /language-([\w-]+)/.exec(className)?.[1] ?? "text";
   const code = plainText(children).replace(/\n$/, "");
   const preview = previewLanguage(language, code);
-  return <div className="code-block">
-    <div className="code-head"><span>{language}</span><span className="code-actions">
-      {preview && openArtifact && <button className="copy-btn" onClick={() => openArtifact({ title: preview === "svg" ? "image.svg" : "page.html", language: preview, code })}><Eye size={13} />プレビュー</button>}
-      <CopyButton text={code} /></span></div>
-    <pre>{children}</pre>
-  </div>;
+  if (preview && openArtifact) return <ArtifactCard language={preview} code={code}>{children}</ArtifactCard>;
+  return <CodeFrame language={language} code={code}>{children}</CodeFrame>;
 }
 
 /** Turns the [n] markers appended for web citations into links, leaving fenced code untouched. */

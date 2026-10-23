@@ -1,6 +1,7 @@
 import { forwardRef, useImperativeHandle, useLayoutEffect, useRef } from "react";
-import { ArrowUp, Plus, RefreshCw, Square } from "lucide-react";
+import { ArrowUp, Plus, Square } from "lucide-react";
 import ToolsMenu, { type Tools } from "./ToolsMenu";
+import ModelMenu from "./ModelMenu";
 import { AttachmentChip } from "./MessageItem";
 
 type Attachment = { id: string; name: string; mediaType: string; size: number; kind: "image" | "pdf" | "text" | "file" };
@@ -15,18 +16,8 @@ type Props = {
   style: string; styles: Option[]; onStyle: (v: string) => void;
   model: string; models: Option[]; onModel: (v: string) => void; modelsLoading: boolean; onRefreshModels: () => void;
   effort: string; efforts: Option[]; onEffort: (v: string) => void;
-  placeholder: string;
+  placeholder: string; placement?: "up" | "down";
 };
-
-/** Native <select> styled as a borderless pill, so keyboard and screen readers keep working. */
-function Pill({ label, value, options, onChange, disabled, title }: { label: string; value: string; options: Option[]; onChange: (v: string) => void; disabled?: boolean; title?: string }) {
-  return <label className="pill tip" data-tip={title ?? label}>
-    <span className="sr-only">{label}</span>
-    <select value={value} onChange={e => onChange(e.target.value)} disabled={disabled} aria-label={label}>
-      {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-    </select>
-  </label>;
-}
 
 const Composer = forwardRef<ComposerHandle, Props>(function Composer(p, ref) {
   const area = useRef<HTMLTextAreaElement>(null);
@@ -46,12 +37,11 @@ const Composer = forwardRef<ComposerHandle, Props>(function Composer(p, ref) {
       onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); if (!p.busy && canSend) p.onSend(); } }} />
     <div className="composer-bar">
       <button className="round-btn tip" data-tip="ファイルを添付" aria-label="ファイルを添付" onClick={p.onPickFiles} disabled={p.busy}><Plus size={17} /></button>
-      <ToolsMenu tools={p.tools} onChange={p.onTools} disabled={p.busy} projectMemory={p.projectMemory} />
+      <ToolsMenu tools={p.tools} onChange={p.onTools} disabled={p.busy} projectMemory={p.projectMemory}
+        style={p.style} styles={p.styles} onStyle={p.onStyle} placement={p.placement} />
       <span className="spacer" />
-      <Pill label="スタイル" value={p.style} options={p.styles} onChange={p.onStyle} disabled={p.busy} />
-      <Pill label="モデル" value={p.model} options={p.models} onChange={p.onModel} disabled={p.busy || p.modelsLoading} />
-      {p.efforts.length > 1 && <Pill label="思考の深さ" title="思考の深さ：深いほど回答の質が上がり、クレジットを多く使います" value={p.effort} options={p.efforts} onChange={p.onEffort} disabled={p.busy} />}
-      <button className="ghost-btn tip" data-tip="モデル一覧を更新" aria-label="モデル一覧を更新" onClick={p.onRefreshModels} disabled={p.busy || p.modelsLoading}><RefreshCw size={13} className={p.modelsLoading ? "spin" : ""} /></button>
+      <ModelMenu model={p.model} models={p.models} onModel={p.onModel} modelsLoading={p.modelsLoading} onRefresh={p.onRefreshModels}
+        effort={p.effort} efforts={p.efforts} onEffort={p.onEffort} disabled={p.busy} placement={p.placement} />
       {p.busy
         ? <button className="send-btn stop tip" data-tip="停止（Esc）" aria-label="停止" onClick={p.onStop}><Square size={12} fill="currentColor" /></button>
         : <button className="send-btn tip" data-tip="送信（Enter）" aria-label="送信" onClick={p.onSend} disabled={!canSend}><ArrowUp size={17} strokeWidth={2.4} /></button>}

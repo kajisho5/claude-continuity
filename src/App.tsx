@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowDown, MessageSquare, Plus, Settings2, ShieldCheck, FileUp, Download, Trash2, ExternalLink, FolderOpen, Pencil, PanelLeftClose, PanelLeftOpen, Search } from "lucide-react";
+import { ArrowDown, Plus, ShieldCheck, FileUp, ExternalLink, FolderOpen, Pencil, PanelLeftClose, PanelLeftOpen, Search } from "lucide-react";
 import CreditCard from "./components/CreditCard";
 import LogoMark, { LogoGlyph } from "./components/LogoMark";
 import CreditSettingsForm from "./components/CreditSettingsForm";
@@ -12,14 +12,17 @@ import ProjectModal, { type Project } from "./components/ProjectModal";
 import PreferencesSection from "./components/PreferencesSection";
 import McpSection from "./components/McpSection";
 import ArtifactPanel from "./components/ArtifactPanel";
-import { summarizeCredit, type CreditSettings, type UsageRow } from "./lib/credit";
+import ChatMenu from "./components/ChatMenu";
+import AccountMenu from "./components/AccountMenu";
+import { ConfirmDialog, RenameDialog } from "./components/Dialog";
+import { PLAN_LABELS, summarizeCredit, type CreditSettings, type UsageRow } from "./lib/credit";
 import { costOf, formatUsd, priceHint } from "./lib/pricing";
 
 type Attachment = NonNullable<Msg["attachments"]>[number];
-type Chat = { id: string; title: string; messages: Msg[]; source?: string; projectId?: string; style?: string; tools?: Tools; container?: { id: string; expiresAt?: string } };
+type Chat = { id: string; title: string; messages: Msg[]; source?: string; projectId?: string; starred?: boolean; style?: string; tools?: Tools; container?: { id: string; expiresAt?: string } };
 type Model = { id: string; displayName: string; createdAt?: string; maxTokens?: number; effortLevels: string[]; adaptiveThinking: boolean; imageInput: boolean; pdfInput: boolean };
 type Pending = { chatId: string; requestId: string; text: string; thinking: string; activity: string; startedAt: number; firstTextAt?: number };
-type Prefs = { autoTitle: boolean; customStyle: string };
+type Prefs = { autoTitle: boolean; customStyle: string; displayName: string };
 type Reply = Omit<Msg, "role" | "attachments" | "alternates" | "altIndex">;
 const welcome: Chat = { id: "welcome", title: "はじめに", messages: [{ role: "assistant", content: "Claude Continuityへようこそ。APIキーを設定するとClaude APIと会話できます。左側からClaudeのエクスポートを読み込むと、対応する会話をこの画面で開けます。\n\n注意：インポートした会話は、続きを送信した時点で選択した文脈がAnthropic APIへ送信されます。" }] };
 const EFFORT_LABELS: Record<string, string> = { low: "低", medium: "中", high: "高", xhigh: "より高", max: "最大" };
@@ -81,11 +84,13 @@ export default function App() {
  const [projects,setProjects]=useState<Project[]>([]);
  const [projectFilter,setProjectFilter]=useState<string|null>(null);
  const [projectModal,setProjectModal]=useState<{project:Project;isNew:boolean}|null>(null);
- const [prefs,setPrefs]=useState<Prefs>({autoTitle:true,customStyle:""});
+ const [prefs,setPrefs]=useState<Prefs>({autoTitle:true,customStyle:"",displayName:""});
  const [artifact,setArtifact]=useState<ArtifactRequest|null>(null);
  const [dragging,setDragging]=useState(false);
  const [sidebarOpen,setSidebarOpen]=useState(true);
  const [atBottom,setAtBottom]=useState(true);
+ const [renaming,setRenaming]=useState<string|null>(null);
+ const [confirmDelete,setConfirmDelete]=useState<string|null>(null);
  const pendingRef=useRef<Pending|null>(null);
  const composerRef=useRef<ComposerHandle>(null);
  const searchRef=useRef<HTMLInputElement>(null);
@@ -149,6 +154,7 @@ export default function App() {
        if(pendingRef.current) void window.continuity.abortReply(pendingRef.current.requestId);
        else if(artifact) setArtifact(null);
        else if(settings) setSettings(false);
+       else if(projectModal) setProjectModal(null);
      }
    };
    window.addEventListener("keydown",onKey);
@@ -278,8 +284,14 @@ export default function App() {
    catch(e){setStatus("ファイル保存エラー: "+err(e));}
  }
  function stop(){ if(pending) void window.continuity.abortReply(pending.requestId); }
- async function exportChat(){try{const result=await window.continuity.exportChat({fileName:chat.title.replace(/[^\p{L}\p{N} _-]/gu,"").slice(0,80)||"conversation",data:JSON.stringify(chat,null,2)});if(!result.canceled)setStatus("会話をJSONにエクスポートしました");}catch(e){setStatus("エクスポートエラー: "+err(e));}}
- function deleteChat(){if(busy){setStatus("応答中は削除できません。");return;}if(chats.length<=1){setStatus("最後の会話は削除できません。");return;}if(!window.confirm("この会話を端末内の履歴から削除しますか？"))return;const remaining=chats.filter(c=>c.id!==active);setChats(remaining);setActive(remaining[0].id);setStatus("会話を削除しました");}
+ async function exportChat(id=active){const target=chats.find(c=>c.id===id);if(!target)return;try{const result=await window.continuity.exportChat({fileName:target.title.replace(/[^\p{L}\p{N} _-]/gu,"").slice(0,80)||"conversation",data:JSON.stringify(target,null,2)});if(!result.canceled)setStatus("会話をJSONにエクスポートしました");}catch(e){setStatus("エクスポートエラー: "+err(e));}}
+ function requestDelete(id:string){if(busy){setStatus("応答中は削除できません。");return;}if(chats.length<=1){setStatus("最後の会話は削除できません。");return;}setConfirmDelete(id);}
+ function deleteChat(id:string){const remaining=chats.filter(c=>c.id!==id);if(!remaining.length)return;setChats(remaining);if(id===active){setActive(remaining[0].id);setArtifact(null);}setStatus("会話を削除しました");}
+ function chatMenu(c:Chat,variant:"row"|"title"){
+   return <ChatMenu title={c.title} starred={!!c.starred} variant={variant} projects={projects} projectId={c.projectId}
+     onStar={()=>patchChat(c.id,x=>({...x,starred:!x.starred}))} onRename={()=>setRenaming(c.id)} onExport={()=>void exportChat(c.id)}
+     onDelete={()=>requestDelete(c.id)} onMoveProject={id=>patchChat(c.id,x=>({...x,projectId:id}))}/>;
+ }
  function newChat(){
    // Reuse an untouched empty chat instead of stacking blank ones, as the Claude apps do.
    const blank=chats.find(c=>c.messages.length===0&&c.title==="新しい会話"&&(c.projectId??null)===(projectFilter??null));
@@ -295,6 +307,12 @@ export default function App() {
  const showPending=pending&&pending.chatId===chat.id;
  const query=search.toLowerCase();
  const visibleChats=chats.filter(c=>(!projectFilter||c.projectId===projectFilter)&&(c.title.toLowerCase().includes(query)||c.messages.some(m=>m.content.toLowerCase().includes(query))));
+ const starredChats=visibleChats.filter(c=>c.starred);
+ const recentChats=visibleChats.filter(c=>!c.starred);
+ const chatRow=(c:Chat)=><div key={c.id} className={"chatrow"+(c.id===active?" active":"")}>
+   <button className="chatlink" onClick={()=>{setActive(c.id);setArtifact(null);}} title={c.title}><span>{c.title}</span></button>
+   {chatMenu(c,"row")}
+ </div>;
  const lastAssistant=chat.messages.length-1;
  const fresh=chat.messages.length===0&&!showPending;
  const composer=<Composer ref={composerRef} draft={draft} onDraft={setDraft} attachments={pendingAttachments}
@@ -304,46 +322,48 @@ export default function App() {
    style={chat.style??"standard"} styles={STYLES.filter(s=>s.id!=="custom"||prefs.customStyle.trim()).map(s=>({value:s.id,label:s.label}))} onStyle={v=>patchChat(chat.id,c=>({...c,style:v}))}
    model={model} models={availableModels.length?availableModels.map(m=>({value:m.id,label:m.displayName})):[{value:model,label:modelsLoading?"取得中…":model}]} onModel={setModel} modelsLoading={modelsLoading} onRefreshModels={()=>void refreshModels(true)}
    effort={effort} efforts={currentModel?.effortLevels.length?[{value:"",label:"思考: 既定"},...currentModel.effortLevels.map(l=>({value:l,label:`思考: ${EFFORT_LABELS[l]??l}`}))]:[]} onEffort={setEffort}
-   placeholder={fresh?"今日はどんなお手伝いをしましょうか？":"返信…"}/>;
+   placeholder={fresh?"今日はどんなお手伝いをしましょうか？":"返信…"} placement={fresh?"down":"up"}/>;
  return <ArtifactContext.Provider value={setArtifact}><div className={"shell"+(sidebarOpen?"":" sidebar-closed")}>
   <aside aria-hidden={!sidebarOpen}>
    <div className="brand"><span className="mark"><LogoMark size={30} title="Claude Continuity"/></span><b>Claude Continuity</b>
     <button className="ghost-btn tip tip-below" data-tip="サイドバーを閉じる" aria-label="サイドバーを閉じる" onClick={()=>setSidebarOpen(false)}><PanelLeftClose size={17}/></button></div>
    <button className="new-chat" onClick={newChat}><span className="plus-dot"><Plus size={15} strokeWidth={2.6}/></span>新しい会話<kbd>{KEYS.newChat}</kbd></button>
    <div className="search-box"><Search size={14}/><input ref={searchRef} className="chat-search" value={search} onChange={e=>setSearch(e.target.value)} placeholder="会話を検索" aria-label="会話を検索"/><kbd>{KEYS.search}</kbd></div>
+   <div className="side-scroll">
+    <div className="label row">プロジェクト<button className="ghost-btn small tip" data-tip="プロジェクトを作成" onClick={newProject} aria-label="プロジェクトを作成"><Plus size={14}/></button></div>
+    <div className="projectlist">
+     {projects.length===0&&<p className="hint tight">指示とナレッジをまとめて、会話ごとに自動で付けられます。</p>}
+     {projects.map(p=><div key={p.id} className={"projectlink "+(projectFilter===p.id?"active":"")}>
+       <button className="chatlink" onClick={()=>setProjectFilter(f=>f===p.id?null:p.id)}><FolderOpen size={15}/><span>{p.name}</span><small>{chats.filter(c=>c.projectId===p.id).length}</small></button>
+       <button className="ghost-btn small" onClick={()=>setProjectModal({project:p,isNew:false})} aria-label={`${p.name} を編集`}><Pencil size={13}/></button>
+     </div>)}
+    </div>
+    {starredChats.length>0&&<><div className="label">スター付き</div>
+     <div className="chatlist">{starredChats.map(c=>chatRow(c))}</div></>}
+    <div className="label">{projectFilter?`${projects.find(p=>p.id===projectFilter)?.name??""} の会話`:"最近の会話"}</div>
+    <div className="chatlist">{recentChats.map(c=>chatRow(c))}{recentChats.length===0&&<p className="hint tight">{search?"一致する会話はありません。":"まだ会話はありません。"}</p>}</div>
+   </div>
    <CreditCard summary={summary} totals={usageTotal} onConfigure={()=>setOnboarding(true)}/>
-   <div className="label row">プロジェクト<button className="ghost-btn tip" data-tip="プロジェクトを作成" onClick={newProject} aria-label="プロジェクトを作成"><Plus size={14}/></button></div>
-   <div className="projectlist">
-    {projects.length===0&&<p className="hint tight">指示とナレッジをまとめて、会話ごとに自動で付けられます。</p>}
-    {projects.map(p=><div key={p.id} className={"projectlink "+(projectFilter===p.id?"active":"")}>
-      <button className="chatlink" onClick={()=>setProjectFilter(f=>f===p.id?null:p.id)}><FolderOpen size={15}/><span>{p.name}</span><small>{chats.filter(c=>c.projectId===p.id).length}</small></button>
-      <button className="ghost-btn" onClick={()=>setProjectModal({project:p,isNew:false})} aria-label={`${p.name} を編集`}><Pencil size={13}/></button>
-    </div>)}
-   </div>
-   <div className="label">{projectFilter?`${projects.find(p=>p.id===projectFilter)?.name??""} の会話`:"最近の会話"}</div>
-   <div className="chatlist">{visibleChats.map(c=><button key={c.id} className={"chatlink "+(c.id===active?"active":"")} onClick={()=>{setActive(c.id);setArtifact(null);}}><MessageSquare size={15}/><span>{c.title}</span></button>)}</div>
-   <div className="bottom">
-    <button className="nav" onClick={()=>void importExport()}><FileUp size={16}/> Claudeエクスポートを読み込む</button>
-    <button className="nav" onClick={()=>setSettings(true)}><Settings2 size={16}/> 設定<span className={"dot "+(configured?"green":"")} title={configured?"API設定済み":"API未設定"}/></button>
-   </div>
+   <AccountMenu name={prefs.displayName} plan={credit?.plan?`${PLAN_LABELS[credit.plan]} プラン`:"プラン未設定"} configured={configured}
+    onSettings={()=>setSettings(true)} onImport={()=>void importExport()} onOnboarding={()=>setOnboarding(true)}/>
   </aside>
   <main className={dragging?"dragging":""} onDragOver={e=>{e.preventDefault();setDragging(true);}} onDragLeave={e=>{if(e.currentTarget===e.target)setDragging(false);}} onDrop={e=>void onDrop(e)}>
    <header>
     {!sidebarOpen&&<button className="ghost-btn tip tip-below" data-tip="サイドバーを開く" aria-label="サイドバーを開く" onClick={()=>setSidebarOpen(true)}><PanelLeftOpen size={17}/></button>}
     <span className="crumbs">
-     <select className="project-select" value={chat.projectId??""} onChange={e=>patchChat(chat.id,c=>({...c,projectId:e.target.value||undefined}))} aria-label="この会話のプロジェクト">
-      <option value="">プロジェクトなし</option>{projects.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select>
-     {!fresh&&<b>{chat.title}</b>}</span>
+     {fresh
+      ? <select className="project-select" value={chat.projectId??""} onChange={e=>patchChat(chat.id,c=>({...c,projectId:e.target.value||undefined}))} aria-label="この会話のプロジェクト">
+         <option value="">プロジェクトなし</option>{projects.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select>
+      : <>{chatProject&&<><button className="crumb-project" onClick={()=>setProjectFilter(chatProject.id)}><FolderOpen size={14}/>{chatProject.name}</button><span className="crumb-sep">/</span></>}{chatMenu(chat,"title")}</>}
+    </span>
     <div className="header-actions">
-     {!fresh&&<button className="ghost-btn tip tip-below" data-tip="JSONで保存" aria-label="JSONで保存" onClick={()=>void exportChat()}><Download size={16}/></button>}
-     {!fresh&&<button className="ghost-btn tip tip-below" data-tip="会話を削除" aria-label="会話を削除" onClick={deleteChat}><Trash2 size={16}/></button>}
      {!configured&&<button className="btn-secondary small" onClick={()=>setSettings(true)}><span className="dot"/>APIキーを設定</button>}
     </div></header>
    <div className="workspace">
     <div className={"conversation"+(fresh?" fresh":"")}>
      {fresh
       ? <section className="welcome">
-         <h1><LogoGlyph size={34}/>{chatProject?chatProject.name:greeting()}</h1>
+         <h1><LogoGlyph size={34}/>{chatProject?chatProject.name:greeting()+(prefs.displayName?`、${prefs.displayName}さん`:"")}</h1>
          {chatProject&&<p>このプロジェクトの指示とナレッジが自動で付きます。</p>}
          {composer}
          <div className="suggestions">{SUGGESTIONS.map(sg=><button key={sg.label} onClick={()=>{setDraft(sg.prompt);composerRef.current?.focus();}}>{sg.label}</button>)}</div>
@@ -364,7 +384,7 @@ export default function App() {
        </section>
        {!atBottom&&<button className="to-bottom tip" data-tip="最新へ" aria-label="最新のメッセージへ" onClick={scrollToBottom}><ArrowDown size={16}/></button>}
        <footer>{composer}
-        <div className="status"><span>{status}</span><span>{hint??""}</span></div>
+        <div className="status"><span className="status-text">{status==="準備完了"?"Claude は間違えることがあります。回答は必ずご確認ください。":status}</span>{hint&&<span className="status-hint">{hint}</span>}</div>
        </footer>
       </>}
     </div>
@@ -382,6 +402,9 @@ export default function App() {
    <McpSection/>
    <div className="credit-guide"><b>Maxプランの月間APIクレジットを使う</b><p>Max 5x は月 $100、Max 20x は月 $200 相当。請求サイクル末で失効し、繰り越されません。Claude Code では使えません（API・Agent SDK・Playground が対象）。</p><a href="https://platform.claude.com/docs/en/about-claude/api-credits-for-subscribers" target="_blank" rel="noreferrer">公式設定手順</a><a href="https://platform.claude.com/settings/billing" target="_blank" rel="noreferrer">ConsoleのBillingを開く</a><button className="link" onClick={()=>{setSettings(false);setOnboarding(true);}}>初期設定をやり直す</button></div>
    <small className="fineprint">このアプリはAPIキーでAnthropic APIを呼び出します。リンク済み組織のクレジットが利用されます。購入済み残高への自動リロードはこのアプリから設定・変更しません。送信した会話文脈と添付ファイルはAnthropic APIへ送られます。</small></div></div>}
+  {renaming&&<RenameDialog initial={chats.find(c=>c.id===renaming)?.title??""} onSave={title=>patchChat(renaming,c=>({...c,title}))} onClose={()=>setRenaming(null)}/>}
+  {confirmDelete&&<ConfirmDialog title="会話を削除しますか？" body={`「${chats.find(c=>c.id===confirmDelete)?.title??""}」を端末内の履歴から削除します。元に戻せません。`} confirm="削除"
+    onConfirm={()=>deleteChat(confirmDelete)} onClose={()=>setConfirmDelete(null)}/>}
   {projectModal&&<ProjectModal project={projectModal.project} isNew={projectModal.isNew} onSave={upsertProject} onDelete={()=>deleteProject(projectModal.project.id)} onClose={()=>setProjectModal(null)}/>}
   {onboarding&&loaded&&<OnboardingWizard keyConfigured={configured} onFinish={finishOnboarding} onSkip={skipOnboarding}/>}
  </div></ArtifactContext.Provider>;

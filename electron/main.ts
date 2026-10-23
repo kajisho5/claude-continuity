@@ -177,6 +177,7 @@ ipcMain.handle("chats:save", async (_event, chats: unknown[]) => {
     title: String(chat.title ?? "会話").slice(0, 300),
     source: typeof chat.source === "string" ? chat.source.slice(0, 1000) : undefined,
     ...(typeof chat.projectId === "string" ? { projectId: chat.projectId.slice(0, 100) } : {}),
+    ...(chat.starred === true ? { starred: true } : {}),
     ...(typeof chat.style === "string" ? { style: chat.style.slice(0, 40) } : {}),
     ...(chat.tools && typeof chat.tools === "object" ? { tools: Object.fromEntries(["webSearch", "webFetch", "files", "analysis", "memory"].map(k => [k, chat.tools[k] === true])) } : {}),
     ...(chat.container && typeof chat.container.id === "string" ? { container: { id: chat.container.id.slice(0, 200), expiresAt: str(chat.container.expiresAt, 60) } } : {}),
@@ -312,16 +313,16 @@ ipcMain.handle("credit:save", async (_event, value: any) => {
 
 // ---- Preferences and projects ----
 const prefsFile = () => path.join(dataDir(), "prefs.json");
-type Prefs = { autoTitle: boolean; customStyle: string };
+type Prefs = { autoTitle: boolean; customStyle: string; displayName: string };
 async function loadPrefs(): Promise<Prefs> {
   try {
     const raw = JSON.parse(await fs.readFile(prefsFile(), "utf8"));
-    return { autoTitle: raw.autoTitle !== false, customStyle: typeof raw.customStyle === "string" ? raw.customStyle.slice(0, 4000) : "" };
-  } catch { return { autoTitle: true, customStyle: "" }; }
+    return { autoTitle: raw.autoTitle !== false, customStyle: typeof raw.customStyle === "string" ? raw.customStyle.slice(0, 4000) : "", displayName: typeof raw.displayName === "string" ? raw.displayName.trim().slice(0, 40) : "" };
+  } catch { return { autoTitle: true, customStyle: "", displayName: "" }; }
 }
 ipcMain.handle("prefs:load", () => loadPrefs());
 ipcMain.handle("prefs:save", async (_event, value: any) => {
-  const prefs: Prefs = { autoTitle: value?.autoTitle !== false, customStyle: String(value?.customStyle ?? "").slice(0, 4000) };
+  const prefs: Prefs = { autoTitle: value?.autoTitle !== false, customStyle: String(value?.customStyle ?? "").slice(0, 4000), displayName: String(value?.displayName ?? "").trim().slice(0, 40) };
   await fs.writeFile(prefsFile(), JSON.stringify(prefs), "utf8");
   return prefs;
 });

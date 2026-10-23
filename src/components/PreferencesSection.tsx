@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Trash2 } from "lucide-react";
 import { formatBytes } from "./MessageItem";
 
-type Prefs = { autoTitle: boolean; customStyle: string };
+type Prefs = { autoTitle: boolean; customStyle: string; displayName: string };
 type MemoryFile = { path: string; size: number; content: string };
 
 export default function PreferencesSection({ prefs, onSave }: { prefs: Prefs; onSave: (prefs: Prefs) => Promise<void> }) {
@@ -17,6 +17,8 @@ export default function PreferencesSection({ prefs, onSave }: { prefs: Prefs; on
   }
   return <section className="credit-form">
     <h3>応答の設定</h3>
+    <label className="field"><span>表示名</span>
+      <input className="text-input" value={draft.displayName} maxLength={40} onChange={e => setDraft({ ...draft, displayName: e.target.value })} placeholder="あいさつとサイドバーに表示します（端末内のみ）" /></label>
     <label className="toggle-row"><span><b>会話タイトルを自動で付ける</b><small>最初の回答のあと、Haiku で短いタイトルを付けます（ごく少額のクレジットを使います）</small></span>
       <input type="checkbox" className="switch" checked={draft.autoTitle} onChange={e => setDraft({ ...draft, autoTitle: e.target.checked })} /></label>
     <label className="field"><span>カスタムスタイル</span>
