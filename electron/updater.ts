@@ -1,5 +1,6 @@
 import { app, ipcMain, Notification, type BrowserWindow } from "electron";
 import { autoUpdater, type AppUpdater } from "electron-updater";
+import { mainT } from "./i18n";
 
 export type UpdateStatus =
   | { state: "idle" | "checking" | "none" }
@@ -44,12 +45,12 @@ export function setupUpdater(getWindow: () => BrowserWindow | null, opts: { enab
   let updater: AppUpdater | null = null;
   const check = async (automatic = false) => {
     if (automatic && !(await opts.enabled())) return status;
-    if (!app.isPackaged) { emit({ state: "error", message: "開発版では更新を確認しません。" }); return status; }
-    if (!updater) { emit({ state: "error", message: "この環境では自動更新を利用できません。" }); return status; }
+    if (!app.isPackaged) { emit({ state: "error", message: mainT().updater.devBuild }); return status; }
+    if (!updater) { emit({ state: "error", message: mainT().updater.unavailable }); return status; }
     try {
       // null means the updater is inactive for this build (e.g. an unpacked folder rather than an installer).
       const result = await updater.checkForUpdates();
-      if (!result) emit({ state: "error", message: "この配布形式では自動更新を利用できません。インストーラー版をお使いください。" });
+      if (!result) emit({ state: "error", message: mainT().updater.unsupportedFormat });
     } catch (error) { emit({ state: "error", message: message(error) }); }
     return status;
   };
@@ -68,12 +69,12 @@ export function setupUpdater(getWindow: () => BrowserWindow | null, opts: { enab
     updater.on("update-available", info => {
       version = info.version; notes = notesText(info.releaseNotes);
       emit({ state: "available", version, ...(notes ? { notes } : {}) });
-      notify(`available-${version}`, "Claude Continuity のアップデートがあります", `バージョン ${version} をダウンロードできます。クリックしてアプリを開いてください。`);
+      notify(`available-${version}`, mainT().updater.availableTitle, mainT().updater.availableBody(version));
     });
     updater.on("download-progress", p => emit({ state: "downloading", version, percent: Math.round(p.percent) }));
     updater.on("update-downloaded", info => {
       emit({ state: "ready", version: info.version, ...(notes ? { notes } : {}) });
-      notify(`ready-${info.version}`, "アップデートの準備ができました", `再起動するとバージョン ${info.version} になります。`);
+      notify(`ready-${info.version}`, mainT().updater.readyTitle, mainT().updater.readyBody(info.version));
     });
     updater.on("error", error => emit({ state: "error", message: message(error) }));
   } catch (error) {

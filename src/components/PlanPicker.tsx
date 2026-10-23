@@ -1,17 +1,19 @@
 import { Check } from "lucide-react";
 import type { PlanId } from "../lib/credit";
+import { useT, type Messages } from "../i18n";
 
 type Option = { id: PlanId; title: string; amount: string; unit: string; lines: [string, string]; muted?: boolean };
-const OPTIONS: Option[] = [
-  { id: "max5x", title: "Max 5x", amount: "$100", unit: "/ 月の APIクレジット", lines: ["請求サイクル末で失効・繰り越しなし", "Claude Code には使えません"] },
-  { id: "max20x", title: "Max 20x", amount: "$200", unit: "/ 月の APIクレジット", lines: ["請求サイクル末で失効・繰り越しなし", "Claude Code には使えません"] },
-  { id: "team", title: "Team", amount: "最大 $500", unit: "/ 月（全席合算）", lines: ["Standard 席 $20・Premium 席 $100", "次の画面で合計額を入力します"] },
-  { id: "none", title: "Pro / Free / その他", amount: "対象外", unit: "", lines: ["APIクレジットは付与されません", "利用額の記録だけ行います"], muted: true }
+const options = ({ credit: { plans: p } }: Messages): Option[] => [
+  { id: "max5x", title: "Max 5x", amount: "$100", unit: p.perMonth, lines: [p.expiresNoRollover, p.notForClaudeCode] },
+  { id: "max20x", title: "Max 20x", amount: "$200", unit: p.perMonth, lines: [p.expiresNoRollover, p.notForClaudeCode] },
+  { id: "team", title: "Team", amount: p.teamAmount, unit: p.teamUnit, lines: [p.teamSeats, p.teamNext] },
+  { id: "none", title: p.otherTitle, amount: p.otherAmount, unit: "", lines: [p.otherNoCredits, p.otherTrackOnly], muted: true }
 ];
 
 export default function PlanPicker({ value, onChange }: { value: PlanId | null; onChange: (plan: PlanId) => void }) {
-  return <div className="plan-grid grid grid-cols-[1fr_1fr] gap-[16px] [@media(max-width:1000px)]:grid-cols-[1fr]" role="radiogroup" aria-label="Claudeのプラン">
-    {OPTIONS.map(option => {
+  const t = useT();
+  return <div className="plan-grid grid grid-cols-[1fr_1fr] gap-[16px] [@media(max-width:1000px)]:grid-cols-[1fr]" role="radiogroup" aria-label={t.credit.plans.label}>
+    {options(t).map(option => {
       const selected = value === option.id;
       return <button key={option.id} type="button" role="radio" aria-checked={selected}
         className={"plan-option relative flex flex-col items-start gap-[2px] rounded-[12px] text-left text-ink-2"

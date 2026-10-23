@@ -1,6 +1,7 @@
 import path from "node:path";
 import fs from "node:fs/promises";
 import AdmZip from "adm-zip";
+import { mainT } from "./i18n";
 
 /** Everything in the data folder that a backup carries. The API key is device-bound (safeStorage) and is never included. */
 export const BACKUP_FILES = ["chats.json", "usage.json", "usage-mcp.jsonl", "credit.json", "prefs.json", "projects.json"];
@@ -46,20 +47,20 @@ export function readBackup(zip: AdmZip): { rel: string; data: Buffer }[] {
   const manifestEntry = zip.getEntry(MANIFEST);
   let manifest: any = null;
   try { manifest = manifestEntry ? JSON.parse(manifestEntry.getData().toString("utf8")) : null; } catch {}
-  if (manifest?.app !== "claude-continuity") throw new Error("Claude Continuity のバックアップファイルではありません。");
-  if (manifest.format !== 1) throw new Error("このバックアップ形式には対応していません。アプリを更新してください。");
+  if (manifest?.app !== "claude-continuity") throw new Error(mainT().backup.notBackup);
+  if (manifest.format !== 1) throw new Error(mainT().backup.unsupportedFormat);
   const out: { rel: string; data: Buffer }[] = [];
   let total = 0;
   for (const entry of zip.getEntries()) {
     if (entry.isDirectory || entry.entryName === MANIFEST) continue;
     const rel = allowedEntry(entry.entryName);
-    if (!rel) throw new Error(`バックアップに想定外のファイルが含まれています: ${entry.entryName}`);
-    if (entry.header.size > MAX_ENTRY_BYTES) throw new Error(`ファイルが大きすぎます: ${rel}`);
+    if (!rel) throw new Error(mainT().backup.unexpectedFile(entry.entryName));
+    if (entry.header.size > MAX_ENTRY_BYTES) throw new Error(mainT().backup.fileTooLarge(rel));
     total += entry.header.size;
-    if (total > MAX_TOTAL_BYTES) throw new Error("バックアップ全体が大きすぎます（上限 2GB）。");
+    if (total > MAX_TOTAL_BYTES) throw new Error(mainT().backup.totalTooLarge);
     const data = entry.getData();
     if (rel.endsWith(".json") && !rel.includes("/")) {
-      try { JSON.parse(data.toString("utf8")); } catch { throw new Error(`${rel} が壊れています。`); }
+      try { JSON.parse(data.toString("utf8")); } catch { throw new Error(mainT().backup.corrupt(rel)); }
     }
     out.push({ rel, data });
   }
@@ -73,7 +74,7 @@ export async function restoreEntries(dataDir: string, entries: { rel: string; da
   const root = path.resolve(dataDir);
   for (const { rel, data } of entries) {
     const target = path.resolve(root, ...rel.split("/"));
-    if (!target.startsWith(root + path.sep)) throw new Error(`不正なパス: ${rel}`);
+    if (!target.startsWith(root + path.sep)) throw new Error(mainT().backup.badPath(rel));
     await fs.mkdir(path.dirname(target), { recursive: true });
     await fs.writeFile(target, data);
   }

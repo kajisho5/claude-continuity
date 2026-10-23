@@ -1,16 +1,21 @@
+import { mainT } from "./i18n";
+
 /** Client-side tool that lets Claude look up the user's earlier chats, mirroring the Claude apps' chat search. */
-export const PAST_CHATS_TOOL = {
-  name: "search_past_chats",
-  description: "ユーザーの過去の会話（このアプリに保存された履歴）をキーワードで検索し、該当する会話のタイトル・日付・抜粋を返します。ユーザーが以前の話題・決定事項・成果物に触れたとき、または過去の文脈が役立つときに使ってください。",
-  input_schema: {
-    type: "object" as const,
-    properties: {
-      query: { type: "string", description: "探したい内容のキーワード（複数ある場合は空白区切り）" },
-      max_results: { type: "integer", description: "返す会話の最大件数（1〜10、既定 5）" }
-    },
-    required: ["query"]
-  }
-};
+export function pastChatsTool() {
+  const t = mainT().pastChats;
+  return {
+    name: "search_past_chats",
+    description: t.toolDescription,
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        query: { type: "string", description: t.queryDescription },
+        max_results: { type: "integer", description: t.maxResultsDescription }
+      },
+      required: ["query"]
+    }
+  };
+}
 
 type StoredChat = { id: string; title: string; projectId?: string; updatedAt?: string; messages: { role: string; content: string }[] };
 export type PastChatHit = { id: string; title: string; updatedAt?: string; score: number; excerpt: string };
@@ -60,6 +65,7 @@ export function searchPastChats(chats: StoredChat[], query: string, opts: { excl
 }
 
 export function formatHits(hits: PastChatHit[]): string {
-  if (!hits.length) return "該当する過去の会話は見つかりませんでした。";
-  return hits.map((h, i) => `${i + 1}. 「${h.title}」${h.updatedAt ? `（${h.updatedAt.slice(0, 10)}）` : ""}\n${h.excerpt}`).join("\n\n");
+  const t = mainT().pastChats;
+  if (!hits.length) return t.noHits;
+  return hits.map((h, i) => `${t.hitHeading(i + 1, h.title, h.updatedAt?.slice(0, 10))}\n${h.excerpt}`).join("\n\n");
 }

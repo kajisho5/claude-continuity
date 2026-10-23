@@ -4,6 +4,8 @@
  * command line at 32,767 characters, and the URL is percent-encoded (about 9 characters per Japanese
  * character), so the encoded length is budgeted separately.
  */
+import { t as dict } from "../i18n";
+
 export const HANDOFF_MAX_CHARS = 13_000;
 export const HANDOFF_MAX_ENCODED_WIN = 30_000;
 export const HANDOFF_PREFIX = "claude://claude.ai/new?q=";
@@ -31,18 +33,19 @@ export function clipToFit(text: string, platform: string): { text: string; clipp
   return { text: chars.slice(0, lo).join("") + "…", clipped: true };
 }
 
-const INTRO = "これは別のアプリ（Claude API）で続けていた会話の引き継ぎです。以下の文脈を踏まえて、続きを手伝ってください。";
+const speaker = (t: Turn) => dict().lib.handoff.speaker(t.role === "user" ? dict().lib.handoff.me : "Claude");
 
 /** Recent turns, newest kept first, within the platform budget. Older turns are dropped with a note. */
 export function transcriptHandoff(title: string, turns: Turn[], platform: string): { text: string; included: number; total: number } {
   const usable = turns.filter(t => t.content.trim());
-  const head = `${INTRO}\n\n# ${title}\n`;
-  const render = (t: Turn) => `\n【${t.role === "user" ? "私" : "Claude"}】\n${t.content.trim().length > 3000 ? t.content.trim().slice(0, 3000) + "…（以下略）" : t.content.trim()}\n`;
+  const s = dict().lib.handoff;
+  const head = `${s.intro}\n\n# ${title}\n`;
+  const render = (t: Turn) => `\n${speaker(t)}\n${t.content.trim().length > 3000 ? t.content.trim().slice(0, 3000) + s.truncated : t.content.trim()}\n`;
   let body = "";
   let included = 0;
   for (let i = usable.length - 1; i >= 0; i--) {
     const next = render(usable[i]) + body;
-    const omitted = i > 0 ? "\n（これより前のやり取りは省略）\n" : "";
+    const omitted = i > 0 ? `\n${s.omitted}\n` : "";
     if (!fitsHandoff(head + omitted + next, platform)) break;
     body = next; included++;
   }
@@ -50,11 +53,11 @@ export function transcriptHandoff(title: string, turns: Turn[], platform: string
     // Even the latest turn is too long on its own: keep its beginning.
     return { text: clipToFit(head + render(usable[usable.length - 1]), platform).text, included: 1, total: usable.length };
   }
-  const omitted = included < usable.length ? "\n（これより前のやり取りは省略）\n" : "";
+  const omitted = included < usable.length ? `\n${s.omitted}\n` : "";
   return { text: head + omitted + body, included, total: usable.length };
 }
 
 /** Plain transcript for the summarizer and the clipboard (no budget). */
 export function fullTranscript(title: string, turns: Turn[]): string {
-  return `# ${title}\n` + turns.filter(t => t.content.trim()).map(t => `\n【${t.role === "user" ? "私" : "Claude"}】\n${t.content.trim()}\n`).join("");
+  return `# ${title}\n` + turns.filter(t => t.content.trim()).map(t => `\n${speaker(t)}\n${t.content.trim()}\n`).join("");
 }

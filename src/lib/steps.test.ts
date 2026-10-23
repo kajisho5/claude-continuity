@@ -14,3 +14,14 @@ describe("stopNotice", () => {
     expect(stopNotice("something_new")?.text).toContain("something_new");
   });
 });
+
+describe("stopNotice in English", async () => {
+  const { setLocale } = await import("../i18n");
+  it("uses English text", () => {
+    setLocale("en");
+    try {
+      expect(stopNotice("max_tokens")?.text).toBe("The reply was cut off because it reached the output limit.");
+      expect(stopNotice("something_new")?.text).toBe("The reply ended early (something_new).");
+    } finally { setLocale("ja"); }
+  });
+});

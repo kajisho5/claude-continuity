@@ -15,4 +15,15 @@ describe("chatToHtml", () => {
     expect(html).toContain("<h2>結果</h2>");
     expect(html).toContain('href="https://x.example"');
   });
+  it("writes the page chrome in English", async () => {
+    const { setLocale } = await import("../i18n");
+    setLocale("en");
+    try {
+      const html = chatToHtml({ title: "T", messages: [{ role: "user", content: "hi", attachments: [{ id: "1", name: "a.txt", mediaType: "text/plain", size: 1, kind: "text" }, { id: "2", name: "b.txt", mediaType: "text/plain", size: 1, kind: "text" }] }] });
+      expect(html).toContain('<html lang="en">');
+      expect(html).toContain("Conversation exported from Claude Continuity");
+      expect(html).toContain("a.txt, b.txt");
+      expect(html).toContain("Claude&#x27;s answers can contain mistakes.");
+    } finally { setLocale("ja"); }
+  });
 });

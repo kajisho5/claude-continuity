@@ -2,6 +2,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import hljsCss from "highlight.js/styles/github.css?raw";
 import { Markdown, linkCitations } from "../components/MessageContent";
 import type { Msg } from "../components/MessageItem";
+import { intlLocale, t } from "../i18n";
 
 type ExportChat = { title: string; messages: Msg[]; updatedAt?: string };
 
@@ -31,19 +32,20 @@ footer{margin-top:40px;color:#A29D91;font-size:11px;text-align:center}
 `;
 
 function Transcript({ chat }: { chat: ExportChat }) {
+  const s = t().lib.exportHtml;
   return <main>
-    <header><h1>{chat.title}</h1><p>Claude Continuity から書き出した会話{chat.updatedAt ? ` · ${new Date(chat.updatedAt).toLocaleString("ja-JP")}` : ""}</p></header>
+    <header><h1>{chat.title}</h1><p>{s.exportedFrom}{chat.updatedAt ? ` · ${new Date(chat.updatedAt).toLocaleString(intlLocale())}` : ""}</p></header>
     {chat.messages.filter(m => m.content || m.attachments?.length).map((m, i) => m.role === "user"
       ? <section key={i} className="turn">
-        {!!m.attachments?.length && <p className="files">添付: {m.attachments.map(a => a.name).join("、")}</p>}
+        {!!m.attachments?.length && <p className="files">{s.attachments}{m.attachments.map(a => a.name).join(s.listSeparator)}</p>}
         <div className="user"><div className="bubble">{m.content}</div></div>
       </section>
       : <section key={i} className="turn assistant">
         <Markdown text={linkCitations(m.content, m.citations)} />
-        {!!m.files?.length && <p className="files">作成したファイル: {m.files.map(f => f.name).join("、")}</p>}
-        {!!m.citations?.length && <div className="sources">出典: {m.citations.map((c, n) => <span key={c.url}>{n ? " / " : ""}[{n + 1}] <a href={c.url}>{c.title}</a></span>)}</div>}
+        {!!m.files?.length && <p className="files">{s.createdFiles}{m.files.map(f => f.name).join(s.listSeparator)}</p>}
+        {!!m.citations?.length && <div className="sources">{s.sources}{m.citations.map((c, n) => <span key={c.url}>{n ? " / " : ""}[{n + 1}] <a href={c.url}>{c.title}</a></span>)}</div>}
       </section>)}
-    <footer>Claude の回答には誤りが含まれることがあります。</footer>
+    <footer>{s.disclaimer}</footer>
   </main>;
 }
 
@@ -51,6 +53,6 @@ function Transcript({ chat }: { chat: ExportChat }) {
 export function chatToHtml(chat: ExportChat): string {
   const body = renderToStaticMarkup(<Transcript chat={chat} />);
   const title = chat.title.replace(/[<>&"]/g, c => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", '"': "&quot;" })[c]!);
-  return `<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title}</title>`
+  return `<!doctype html><html lang="${t().lib.exportHtml.htmlLang}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title}</title>`
     + `<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.47/dist/katex.min.css"><style>${CSS}${hljsCss}</style></head><body>${body}</body></html>`;
 }

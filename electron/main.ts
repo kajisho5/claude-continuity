@@ -11,6 +11,7 @@ import { listMemoryFiles, runMemoryCommand } from "./memory";
 import { createBackup, readBackup, restoreEntries } from "./backup";
 import { formatHits, searchPastChats } from "./pastChats";
 import { setupUpdater } from "./updater";
+import { getMainLocale, mainT, resolveMainLocale, setMainLocale } from "./i18n";
 import { connectorRequest, MCP_CONNECTOR_BETA, serverName, validateConnector, type Connector, type ConnectorView } from "./connectors";
 import { HANDOFF_PREFIX, fitsHandoff } from "../src/lib/handoff";
 import { activityLabel, buildMessages, historyBudget, buildSystem, buildTools, extractFileIds, extractSteps, extractText, type ChatTurn, type Project, type StyleId, type ToolFlags } from "./request";
@@ -43,7 +44,9 @@ function createWindow() {
 app.whenReady().then(async () => {
   await ensureDataDir();
   // The renderer follows prefers-color-scheme, which nativeTheme.themeSource controls.
-  nativeTheme.themeSource = (await loadPrefs()).theme;
+  const prefs = await loadPrefs();
+  nativeTheme.themeSource = prefs.theme;
+  applyLanguage(prefs.language);
   createWindow();
   setupUpdater(() => mainWindow, { enabled: async () => (await loadPrefs()).checkUpdates });
   app.on("activate", () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
@@ -109,7 +112,7 @@ function parseExportText(text: string, source: string): NormalizedConversation[]
     const id = String(item.uuid ?? item.id ?? item.conversation_id ?? `import-${unique.size}`);
     unique.set(id, {
       id: `imported-${id}`,
-      title: String(item.name ?? item.title ?? item.summary ?? "インポートした会話").trim() || "インポートした会話",
+      title: String(item.name ?? item.title ?? item.summary ?? mainT().main.importedChat).trim() || mainT().main.importedChat,
       messages,
       ...isoDate(item.updated_at ?? item.created_at),
       source
@@ -118,7 +121,7 @@ function parseExportText(text: string, source: string): NormalizedConversation[]
   // Some exports contain a single conversation object rather than a list.
   if (!unique.size) {
     const messages = extractMessages(data);
-    if (messages.length) unique.set("single", { id: "imported-single", title: String(data.name ?? data.title ?? "インポートした会話"), messages, source });
+    if (messages.length) unique.set("single", { id: "imported-single", title: String(data.name ?? data.title ?? mainT().main.importedChat), messages, source });
   }
   return [...unique.values()];
 }
@@ -128,7 +131,7 @@ ipcMain.handle("dialog:export-chat", async (_event, payload: { fileName: string;
   const ext = payload?.format === "html" ? "html" : "json";
   const safeName = String(payload?.fileName ?? "claude-conversation").replace(/[\\\\/:*?"<>|]/g, "_").slice(0, 100) || "claude-conversation";
   const result = await dialog.showSaveDialog({
-    title: ext === "html" ? "会話を HTML で書き出す" : "会話をJSONでエクスポート",
+    title: ext === "html" ? mainT().main.exportHtmlTitle : mainT().main.exportJsonTitle,
     defaultPath: safeName.endsWith("." + ext) ? safeName : safeName + "." + ext,
     filters: [ext === "html" ? { name: "HTML", extensions: ["html"] } : { name: "JSON", extensions: ["json"] }]
   });
@@ -139,8 +142,8 @@ ipcMain.handle("dialog:export-chat", async (_event, payload: { fileName: string;
 
 ipcMain.handle("dialog:import-export", async () => {
   const result = await dialog.showOpenDialog({
-    title: "Claudeのエクスポートデータを選択", properties: ["openFile"],
-    filters: [{ name: "Claude export (JSON / ZIP)", extensions: ["json", "zip"] }, { name: "すべてのファイル", extensions: ["*"] }]
+    title: mainT().main.importTitle, properties: ["openFile"],
+    filters: [{ name: "Claude export (JSON / ZIP)", extensions: ["json", "zip"] }, { name: mainT().main.allFiles, extensions: ["*"] }]
   });
   if (result.canceled || !result.filePaths[0]) return null;
   const filePath = result.filePaths[0];
@@ -155,7 +158,7 @@ ipcMain.handle("dialog:import-export", async () => {
     }
   } else {
     const stat = await fs.stat(filePath);
-    if (stat.size > 50 * 1024 * 1024) throw new Error("JSONファイルが大きすぎます（上限50MB）。");
+    if (stat.size > 50 * 1024 * 1024) throw new Error(mainT().main.jsonTooLarge);
     imported = parseExportText(await fs.readFile(filePath, "utf8"), fileName);
   }
   return { fileName, conversations: imported, count: imported.length };
@@ -210,10 +213,10 @@ function sanitizeMessage(m: any, depth: number): any {
   };
 }
 ipcMain.handle("chats:save", async (_event, chats: unknown[]) => {
-  if (!Array.isArray(chats)) throw new Error("会話データの形式が正しくありません。");
+  if (!Array.isArray(chats)) throw new Error(mainT().main.badChats);
   const safeChats = chats.map((chat: any) => ({
     id: String(chat.id ?? ""),
-    title: String(chat.title ?? "会話").slice(0, 300),
+    title: String(chat.title ?? mainT().main.chat).slice(0, 300),
     source: typeof chat.source === "string" ? chat.source.slice(0, 1000) : undefined,
     ...(typeof chat.projectId === "string" ? { projectId: chat.projectId.slice(0, 100) } : {}),
     ...(chat.starred === true ? { starred: true } : {}),
@@ -246,7 +249,7 @@ ipcMain.handle("usage:load", async () => {
 const stamp = () => new Date().toISOString().slice(0, 19).replace(/[-:]/g, "").replace("T", "-");
 ipcMain.handle("data:backup", async () => {
   const result = await dialog.showSaveDialog({
-    title: "すべてのデータをバックアップ", defaultPath: `claude-continuity-backup-${stamp()}.zip`,
+    title: mainT().main.backupTitle, defaultPath: `claude-continuity-backup-${stamp()}.zip`,
     filters: [{ name: "ZIP", extensions: ["zip"] }]
   });
   if (result.canceled || !result.filePath) return { canceled: true };
@@ -266,12 +269,12 @@ ipcMain.handle("data:openFolder", async () => {
   return true;
 });
 ipcMain.handle("data:restore", async () => {
-  const result = await dialog.showOpenDialog({ title: "バックアップから復元", properties: ["openFile"], filters: [{ name: "ZIP", extensions: ["zip"] }] });
+  const result = await dialog.showOpenDialog({ title: mainT().main.restoreTitle, properties: ["openFile"], filters: [{ name: "ZIP", extensions: ["zip"] }] });
   if (result.canceled || !result.filePaths[0]) return { canceled: true };
   const stat = await fs.stat(result.filePaths[0]);
-  if (stat.size > 2 * 1024 * 1024 * 1024) throw new Error("バックアップファイルが大きすぎます（上限 2GB）。");
+  if (stat.size > 2 * 1024 * 1024 * 1024) throw new Error(mainT().main.backupFileTooLarge);
   let zip: AdmZip;
-  try { zip = new AdmZip(result.filePaths[0]); } catch { throw new Error("ZIP ファイルを開けませんでした。"); }
+  try { zip = new AdmZip(result.filePaths[0]); } catch { throw new Error(mainT().main.zipOpenFailed); }
   const entries = readBackup(zip);
   // Keep the current state next to the data folder so a mistaken restore can be undone by restoring this file.
   const safetyDir = path.join(app.getPath("userData"), "backups");
@@ -279,7 +282,9 @@ ipcMain.handle("data:restore", async () => {
   const safetyPath = path.join(safetyDir, `before-restore-${stamp()}.zip`);
   await fs.writeFile(safetyPath, (await createBackup(dataDir(), app.getVersion())).zip.toBuffer());
   await restoreEntries(dataDir(), entries);
-  nativeTheme.themeSource = (await loadPrefs()).theme;
+  const restoredPrefs = await loadPrefs();
+  nativeTheme.themeSource = restoredPrefs.theme;
+  applyLanguage(restoredPrefs.language);
   return { canceled: false, count: entries.length, safetyPath };
 });
 ipcMain.handle("mcp:info", () => {
@@ -289,7 +294,7 @@ ipcMain.handle("mcp:info", () => {
   return { serverPath: path.join(base, "dist-mcp", "server.js"), runtimePath: process.execPath, dataDir: dataDir(), platform: process.platform };
 });
 ipcMain.handle("mcp:pickFolder", async () => {
-  const result = await dialog.showOpenDialog({ title: "MCP サーバーに読ませてよいフォルダ", properties: ["openDirectory", "multiSelections"] });
+  const result = await dialog.showOpenDialog({ title: mainT().main.mcpFolderTitle, properties: ["openDirectory", "multiSelections"] });
   return result.canceled ? [] : result.filePaths;
 });
 type UsageEntry = { model: string; inputTokens: number; outputTokens: number; cacheCreationInputTokens: number; cacheReadInputTokens: number; webSearchRequests: number };
@@ -301,8 +306,8 @@ async function recordUsage(entry: UsageEntry) {
   await fs.writeFile(usageFile(), JSON.stringify(rows.slice(-10000)), "utf8");
 }
 ipcMain.handle("key:save", async (_event, apiKey: string) => {
-  if (!safeStorage.isEncryptionAvailable()) throw new Error("この環境では安全なキー保存を利用できません。");
-  if (!apiKey || !apiKey.startsWith("sk-ant-")) throw new Error("Anthropic APIキーの形式を確認してください。");
+  if (!safeStorage.isEncryptionAvailable()) throw new Error(mainT().main.keyStorageUnavailable);
+  if (!apiKey || !apiKey.startsWith("sk-ant-")) throw new Error(mainT().main.badKey);
   await fs.writeFile(keyFile(), safeStorage.encryptString(apiKey)); return true;
 });
 ipcMain.handle("key:status", async () => {
@@ -313,7 +318,7 @@ ipcMain.handle("key:status", async () => {
   } catch { return { configured: false, secureStorage: safeStorage.isEncryptionAvailable() }; }
 });
 async function getApiKey() {
-  if (!safeStorage.isEncryptionAvailable()) throw new Error("安全なキー保存が利用できません。");
+  if (!safeStorage.isEncryptionAvailable()) throw new Error(mainT().main.secureStorageUnavailable);
   return safeStorage.decryptString(await fs.readFile(keyFile()));
 }
 type ModelSummary = {
@@ -356,7 +361,7 @@ ipcMain.handle("claude:models", async () => {
   return models;
 });
 ipcMain.handle("key:test", async (_event, apiKey: string) => {
-  if (!apiKey || !apiKey.startsWith("sk-ant-")) throw new Error("Anthropic APIキーの形式を確認してください（sk-ant- で始まります）。");
+  if (!apiKey || !apiKey.startsWith("sk-ant-")) throw new Error(mainT().main.badKeyPrefix);
   const models = await listModels(apiKey);
   return { ok: true, modelCount: models.length };
 });
@@ -367,18 +372,18 @@ ipcMain.handle("credit:load", async () => {
   try { return JSON.parse(await fs.readFile(creditFile(), "utf8")); } catch { return null; }
 });
 ipcMain.handle("credit:save", async (_event, value: any) => {
-  if (!value || typeof value !== "object") throw new Error("クレジット設定の形式が正しくありません。");
+  if (!value || typeof value !== "object") throw new Error(mainT().main.badCredit);
   const plan = value.plan == null ? null : String(value.plan);
-  if (plan !== null && !PLANS.includes(plan)) throw new Error("プランの値が正しくありません。");
+  if (plan !== null && !PLANS.includes(plan)) throw new Error(mainT().main.badPlan);
   const amount = Number(value.monthlyAmountUsd ?? 0);
-  if (!Number.isFinite(amount) || amount < 0 || amount > 10000) throw new Error("月間付与額は 0〜10,000 USD で入力してください。");
+  if (!Number.isFinite(amount) || amount < 0 || amount > 10000) throw new Error(mainT().main.badAmount);
   const resetDay = Math.round(Number(value.resetDay ?? 1));
-  if (!(resetDay >= 1 && resetDay <= 31)) throw new Error("付与日は 1〜31 で入力してください。");
+  if (!(resetDay >= 1 && resetDay <= 31)) throw new Error(mainT().main.badResetDay);
   let calibration: { balanceUsd: number; observedAt: string } | undefined;
   if (value.calibration) {
     const balanceUsd = Number(value.calibration.balanceUsd);
     const observedAt = new Date(String(value.calibration.observedAt));
-    if (!Number.isFinite(balanceUsd) || balanceUsd < 0 || Number.isNaN(observedAt.getTime())) throw new Error("補正値が正しくありません。");
+    if (!Number.isFinite(balanceUsd) || balanceUsd < 0 || Number.isNaN(observedAt.getTime())) throw new Error(mainT().main.badCalibration);
     calibration = { balanceUsd, observedAt: observedAt.toISOString() };
   }
   const saved = { plan, monthlyAmountUsd: amount, resetDay, onboardingDone: value.onboardingDone === true, ...(calibration ? { calibration } : {}) };
@@ -400,12 +405,12 @@ function sanitizeStyles(raw: any): CustomStyle[] {
   if (Array.isArray(raw?.customStyles)) {
     return raw.customStyles.slice(0, 20).map((st: any, i: number) => ({
       id: String(st?.id ?? `s${i}`).replace(/[^\w-]/g, "").slice(0, 40) || `s${i}`,
-      name: String(st?.name ?? "").trim().slice(0, 40) || `スタイル ${i + 1}`,
+      name: String(st?.name ?? "").trim().slice(0, 40) || mainT().main.styleName(i + 1),
       prompt: String(st?.prompt ?? "").slice(0, 4000)
     })).filter((st: CustomStyle) => st.prompt.trim());
   }
   // Earlier versions kept a single custom style; carry it over as "カスタム" (its chats used style "custom").
-  return typeof raw?.customStyle === "string" && raw.customStyle.trim() ? [{ id: "custom", name: "カスタム", prompt: raw.customStyle.slice(0, 4000) }] : [];
+  return typeof raw?.customStyle === "string" && raw.customStyle.trim() ? [{ id: "custom", name: mainT().main.customStyleName, prompt: raw.customStyle.slice(0, 4000) }] : [];
 }
 function sanitizePrefs(raw: any): Prefs {
   return {
@@ -428,11 +433,16 @@ async function loadPrefs(): Promise<Prefs> {
   try { return sanitizePrefs(JSON.parse(await fs.readFile(prefsFile(), "utf8"))); }
   catch { return sanitizePrefs({}); }
 }
+/** Main-process strings follow the language preference; "system" uses the OS locale. */
+function applyLanguage(language: Language) {
+  setMainLocale(resolveMainLocale(language, app.getLocale()));
+}
 ipcMain.handle("prefs:load", () => loadPrefs());
 ipcMain.handle("prefs:save", async (_event, value: unknown) => {
   const prefs = sanitizePrefs(value);
   await fs.writeFile(prefsFile(), JSON.stringify(prefs), "utf8");
   nativeTheme.themeSource = prefs.theme;
+  applyLanguage(prefs.language);
   return prefs;
 });
 const projectsFile = () => path.join(dataDir(), "projects.json");
@@ -444,10 +454,10 @@ async function loadProjects(): Promise<Project[]> {
 }
 ipcMain.handle("projects:load", () => loadProjects());
 ipcMain.handle("projects:save", async (_event, list: unknown) => {
-  if (!Array.isArray(list)) throw new Error("プロジェクトの形式が正しくありません。");
+  if (!Array.isArray(list)) throw new Error(mainT().main.badProjects);
   const projects: Project[] = list.slice(0, 200).map((p: any) => ({
     id: String(p?.id ?? randomUUID()).slice(0, 100),
-    name: String(p?.name ?? "プロジェクト").slice(0, 100) || "プロジェクト",
+    name: String(p?.name ?? mainT().main.project).slice(0, 100) || mainT().main.project,
     instructions: String(p?.instructions ?? "").slice(0, 20_000),
     knowledge: sanitizeAttachments(p?.knowledge) ?? [],
     memory: p?.memory === true
@@ -459,7 +469,7 @@ ipcMain.handle("projects:save", async (_event, list: unknown) => {
 // ---- Attachments ----
 const attachments = () => new AttachmentStore(path.join(dataDir(), "attachments"));
 ipcMain.handle("attachments:pick", async () => {
-  const result = await dialog.showOpenDialog({ title: "ファイルを添付", properties: ["openFile", "multiSelections"] });
+  const result = await dialog.showOpenDialog({ title: mainT().main.attachTitle, properties: ["openFile", "multiSelections"] });
   if (result.canceled) return { added: [], errors: [] };
   return addAttachmentPaths(result.filePaths);
 });
@@ -495,7 +505,7 @@ ipcMain.handle("attachments:text", async (_event, id: string) => {
 ipcMain.handle("attachments:openPdf", async (_event, id: string, name: string) => {
   // Only real PDFs are handed to the OS viewer, under a forced .pdf name, so an attachment can never be executed.
   const buffer = await attachments().read(String(id));
-  if (buffer.subarray(0, 5).toString("latin1") !== "%PDF-") throw new Error("PDF ファイルではありません。");
+  if (buffer.subarray(0, 5).toString("latin1") !== "%PDF-") throw new Error(mainT().main.notPdf);
   const safe = (path.basename(String(name ?? "document")).replace(/[^\p{L}\p{N} ._-]/gu, "_").replace(/\.pdf$/i, "").slice(0, 80) || "document") + ".pdf";
   const dir = path.join(app.getPath("temp"), "claude-continuity-view", String(id).replace(/[^\w-]/g, "").slice(0, 64));
   await fs.mkdir(dir, { recursive: true });
@@ -550,7 +560,7 @@ ipcMain.handle("connectors:save", async (_event, input: { id?: string; name: str
   // undefined keeps the saved token, "" or null clears it, any other string replaces it.
   if (input?.token === "" || input?.token === null) tokenEnc = undefined;
   else if (typeof input?.token === "string") {
-    if (!safeStorage.isEncryptionAvailable()) throw new Error("この環境ではトークンを安全に保存できません。");
+    if (!safeStorage.isEncryptionAvailable()) throw new Error(mainT().connectors.tokenStorageUnavailable);
     tokenEnc = safeStorage.encryptString(input.token.trim().slice(0, 8000)).toString("base64");
   }
   const next: StoredConnector = { id, name, url, enabled: input?.enabled !== false, ...(tokenEnc ? { tokenEnc } : {}) };
@@ -566,7 +576,7 @@ ipcMain.handle("connectors:delete", async (_event, id: string) => {
 ipcMain.handle("connectors:test", async (_event, id: string) => {
   // Lists the server's tools from this PC to confirm the URL and token; the API itself connects from Anthropic's side.
   const connector = (await loadConnectors()).find(c => c.id === String(id));
-  if (!connector) throw new Error("コネクタが見つかりません。");
+  if (!connector) throw new Error(mainT().connectors.notFound);
   const { Client } = await import("@modelcontextprotocol/sdk/client/index.js");
   const { StreamableHTTPClientTransport } = await import("@modelcontextprotocol/sdk/client/streamableHttp.js");
   const { SSEClientTransport } = await import("@modelcontextprotocol/sdk/client/sse.js");
@@ -582,15 +592,15 @@ ipcMain.handle("connectors:test", async (_event, id: string) => {
   try { return { tools: await attempt(new StreamableHTTPClientTransport(new URL(connector.url), { requestInit: { headers } })) }; }
   catch (first) {
     try { return { tools: await attempt(new SSEClientTransport(new URL(connector.url), { requestInit: { headers }, eventSourceInit: { fetch: (u: any, init: any) => fetch(u, { ...init, headers: { ...(init?.headers ?? {}), ...headers } }) } as any })) }; }
-    catch { throw new Error(`接続できませんでした: ${String((first as Error)?.message ?? first).slice(0, 200)}`); }
+    catch { throw new Error(mainT().connectors.connectFailed(String((first as Error)?.message ?? first).slice(0, 200))); }
   }
 });
 
 // ---- Generated files ----
 ipcMain.handle("files:save", async (_event, payload: { fileId: string; name: string }) => {
   const fileId = String(payload?.fileId ?? "");
-  if (!/^file_[A-Za-z0-9_-]+$/.test(fileId)) throw new Error("ファイル ID が正しくありません。");
-  const result = await dialog.showSaveDialog({ title: "生成されたファイルを保存", defaultPath: String(payload?.name ?? "output").replace(/[\\/:*?"<>|]/g, "_").slice(0, 150) });
+  if (!/^file_[A-Za-z0-9_-]+$/.test(fileId)) throw new Error(mainT().main.badFileId);
+  const result = await dialog.showSaveDialog({ title: mainT().main.saveFileTitle, defaultPath: String(payload?.name ?? "output").replace(/[\\/:*?"<>|]/g, "_").slice(0, 150) });
   if (result.canceled || !result.filePath) return { canceled: true };
   const client = new Anthropic({ apiKey: await getApiKey() });
   const response = await client.files.download(fileId);
@@ -624,8 +634,8 @@ async function pastChatsOutcome(input: { query?: unknown; max_results?: unknown 
 }
 ipcMain.handle("claude:reply", async (event, payload: ReplyPayload) => {
   const turns = sanitizeTurns(payload?.messages);
-  if (!turns.length) throw new Error("送信する会話がありません。");
-  if (!turns.some(m => m.role === "user")) throw new Error("ユーザーのメッセージがありません。");
+  if (!turns.length) throw new Error(mainT().main.noTurns);
+  if (!turns.some(m => m.role === "user")) throw new Error(mainT().main.noUserMessage);
   const requestId = String(payload.requestId ?? randomUUID());
   const model = payload.model || "claude-sonnet-4-5";
   const info = modelCache.get(model);
@@ -641,7 +651,7 @@ ipcMain.handle("claude:reply", async (event, payload: ReplyPayload) => {
   const activeConnectors = incognito ? [] : (await loadConnectors()).filter(c => c.enabled && (payload.tools?.connectors ?? []).includes(c.id));
   const mcp = activeConnectors.length ? connectorRequest(activeConnectors) : null;
   const connectorNames = new Map(activeConnectors.map(c => [serverName(c), c.name] as const));
-  const connectorLabel = (server?: string) => (server && connectorNames.get(server)) || server || "外部ツール";
+  const connectorLabel = (server?: string) => (server && connectorNames.get(server)) || server || mainT().main.externalTool;
   const client = new Anthropic({ apiKey: await getApiKey() });
   const store = attachments();
   const loader = {
@@ -710,7 +720,7 @@ ipcMain.handle("claude:reply", async (event, payload: ReplyPayload) => {
         finalModel = snapshot.model || model;
         if (e.type === "content_block_start") {
           const block = e.content_block as { type: string; name?: string; server_name?: string };
-          const label = block.type === "mcp_tool_use" ? `コネクタ（${connectorLabel(block.server_name)}）を使っています…` : activityLabel(block.name);
+          const label = block.type === "mcp_tool_use" ? mainT().main.usingConnector(connectorLabel(block.server_name)) : activityLabel(block.name);
           if (label && (block.type === "server_tool_use" || block.type === "tool_use" || block.type === "mcp_tool_use")) send("activity", label);
         }
       });
@@ -768,16 +778,10 @@ ipcMain.handle("claude:reply", async (event, payload: ReplyPayload) => {
   }
   // "pause_turn"/"tool_use" here mean the loop limit cut the turn short; the UI offers to continue.
   const steps = extractSteps(turnBlocks, clientResults, Object.fromEntries(connectorNames));
-  return { text, thinking, aborted, usage, citations, files, container, steps, ...(stopReason && stopReason !== "end_turn" && stopReason !== "stop_sequence" && !aborted ? { stopReason } : {}), notices: [...(built.omitted ? [`古いやり取り ${built.omitted} 件はモデルの上限のため送っていません`] : []), ...built.skipped.map(s => `添付をスキップ: ${s}`), ...unavailable.map(u => `${u}はこのモデルでは使えません`)] };
+  return { text, thinking, aborted, usage, citations, files, container, steps, ...(stopReason && stopReason !== "end_turn" && stopReason !== "stop_sequence" && !aborted ? { stopReason } : {}), notices: [...(built.omitted ? [mainT().main.noticeOmitted(built.omitted)] : []), ...built.skipped.map(s => mainT().main.noticeSkipped(s)), ...unavailable.map(u => mainT().main.noticeUnavailable(u))] };
 });
 
 // ---- Hand off to the Claude apps (claude://claude.ai/new?q=…, prefilled, never auto-sent) ----
-const HANDOFF_SYSTEM = `あなたは会話の引き継ぎメモを書く担当です。渡された会話記録を読み、別の Claude がこのメモだけで作業を続けられるように、日本語で次の見出しの順にまとめてください。
-## 目的
-## これまでに決まったこと・前提
-## 現在の状態（直近の成果物や結論。重要なコード・数値・固有名詞は省略しない）
-## 未解決の点・次にやること
-最後の行に「上記を踏まえて続きを手伝ってください。」と書いてください。全体で 2,500 文字以内。会話にない事実を足さないこと。`;
 ipcMain.handle("handoff:summarize", async (_event, payload: { model: string; title: string; transcript: string }) => {
   const model = String(payload?.model ?? "");
   const info = modelCache.get(model);
@@ -787,8 +791,8 @@ ipcMain.handle("handoff:summarize", async (_event, payload: { model: string; tit
   const response = await client.messages.create({
     model, max_tokens: 3000,
     ...(info?.adaptiveThinking ? { thinking: { type: "disabled" as const } } : {}),
-    system: HANDOFF_SYSTEM,
-    messages: [{ role: "user", content: `会話タイトル: ${String(payload?.title ?? "").slice(0, 200)}\n\n<conversation>\n${transcript}\n</conversation>` }]
+    system: mainT().main.handoffSystem,
+    messages: [{ role: "user", content: mainT().main.handoffUser(String(payload?.title ?? "").slice(0, 200), transcript) }]
   });
   const usage = {
     model: response.model, inputTokens: response.usage.input_tokens, outputTokens: response.usage.output_tokens,
@@ -796,27 +800,27 @@ ipcMain.handle("handoff:summarize", async (_event, payload: { model: string; tit
   };
   await recordUsage(usage);
   const text = response.content.filter(b => b.type === "text").map(b => b.text).join("").trim();
-  return { text: `これは別のアプリ（Claude API）で続けていた会話「${String(payload?.title ?? "").slice(0, 80)}」の引き継ぎメモです。\n\n${text}`, usage };
+  return { text: mainT().main.handoffIntro(String(payload?.title ?? "").slice(0, 80), text), usage };
 });
 ipcMain.handle("handoff:open", async (_event, payload: { text: string; target: "desktop" | "web" }) => {
   if (payload?.target === "web") { await shell.openExternal("https://claude.ai/new"); return true; }
   const text = String(payload?.text ?? "");
-  if (!text.trim()) throw new Error("引き継ぐ内容が空です。");
-  if (!fitsHandoff(text, process.platform)) throw new Error("内容が長すぎます。短くしてから開いてください。");
+  if (!text.trim()) throw new Error(mainT().main.handoffEmpty);
+  if (!fitsHandoff(text, process.platform)) throw new Error(mainT().main.handoffTooLong);
   await shell.openExternal(HANDOFF_PREFIX + encodeURIComponent(text));
   return true;
 });
 ipcMain.handle("style:fromSample", async (_event, payload: { sample: string; model: string }) => {
   // Like the Claude apps' "create a style from a writing sample": turn a sample into reusable instructions.
   const sample = String(payload?.sample ?? "").slice(0, 30_000);
-  if (sample.trim().length < 40) throw new Error("サンプルの文章が短すぎます（40文字以上）。");
+  if (sample.trim().length < 40) throw new Error(mainT().main.sampleTooShort);
   const model = String(payload?.model ?? "");
   const info = modelCache.get(model);
   const client = new Anthropic({ apiKey: await getApiKey() });
   const response = await client.messages.create({
     model, max_tokens: 1200,
     ...(info?.adaptiveThinking ? { thinking: { type: "disabled" as const } } : {}),
-    system: "渡された文章サンプルの書き方（語調、文の長さ、構成、記号や箇条書きの使い方、専門用語の扱い、読者との距離感）を分析し、別の AI がその書き方を再現するための指示文を日本語で書いてください。内容や固有の事実には触れず、書き方だけを、命令形の箇条書き 5〜10 項目で出力してください。前置きは不要です。",
+    system: mainT().main.styleFromSampleSystem,
     messages: [{ role: "user", content: `<sample>\n${sample}\n</sample>` }]
   });
   await recordUsage({
@@ -834,13 +838,14 @@ ipcMain.handle("claude:title", async (_event, payload: { user: string; assistant
   const response = await client.messages.create({
     model: pick.id, max_tokens: 60,
     ...(pick.adaptiveThinking ? { thinking: { type: "disabled" as const }, ...(pick.effortLevels.includes("low") ? { output_config: { effort: "low" as const } } : {}) } : {}),
-    system: "会話の内容を表す日本語のタイトルを20文字以内で1つだけ出力してください。記号や引用符、説明は不要です。",
-    messages: [{ role: "user", content: `ユーザー: ${String(payload?.user ?? "").slice(0, 2000)}\n\nアシスタント: ${String(payload?.assistant ?? "").slice(0, 2000)}` }]
+    system: mainT().main.titleSystem,
+    messages: [{ role: "user", content: mainT().main.titleUser(String(payload?.user ?? "").slice(0, 2000), String(payload?.assistant ?? "").slice(0, 2000)) }]
   });
   await recordUsage({
     model: response.model, inputTokens: response.usage.input_tokens, outputTokens: response.usage.output_tokens,
     cacheCreationInputTokens: response.usage.cache_creation_input_tokens ?? 0, cacheReadInputTokens: response.usage.cache_read_input_tokens ?? 0, webSearchRequests: 0
   });
-  const title = response.content.filter(b => b.type === "text").map(b => b.text).join("").trim().replace(/^["「『]|["」』]$/g, "").slice(0, 40);
+  // English titles need more characters than the 20-character Japanese ones.
+  const title = response.content.filter(b => b.type === "text").map(b => b.text).join("").trim().replace(/^["「『]|["」』]$/g, "").slice(0, getMainLocale() === "ja" ? 40 : 80);
   return { title: title || null, usage: { model: response.model, inputTokens: response.usage.input_tokens, outputTokens: response.usage.output_tokens } };
 });

@@ -3,6 +3,7 @@ import { ArrowUp, Plus, Square } from "lucide-react";
 import ToolsMenu, { type ConnectorOption, type Tools } from "./ToolsMenu";
 import ModelMenu from "./ModelMenu";
 import { AttachmentChip } from "./MessageItem";
+import { useT } from "../i18n";
 
 // Shared by the send and stop buttons (the hover and press effects apply to both).
 const SEND = "ml-[4px] inline-grid size-[32px] place-items-center rounded-[10px] border-0 p-0 shadow-[0_1px_2px_#0004] enabled:hover:bg-accent-hover enabled:active:[transform:scale(.93)]";
@@ -26,6 +27,7 @@ type Props = {
 };
 
 const Composer = forwardRef<ComposerHandle, Props>(function Composer(p, ref) {
+  const t = useT();
   const area = useRef<HTMLTextAreaElement>(null);
   useImperativeHandle(ref, () => ({ focus: () => area.current?.focus() }), []);
   // Grow with the text up to ~12 lines, like the Claude apps.
@@ -46,19 +48,19 @@ const Composer = forwardRef<ComposerHandle, Props>(function Composer(p, ref) {
     + (p.incognito ? "border-dashed border-line-input" : "border-line-strong")}>
     {p.attachments.length > 0 && <div className="attachment-row mt-[6px] mb-[8px] flex flex-wrap gap-[6px]">{p.attachments.map(a => <AttachmentChip key={a.id} attachment={a} onRemove={() => p.onRemoveAttachment(a.id)} />)}</div>}
     <textarea ref={area} rows={1} className={"block h-auto max-h-[300px] w-full resize-none overflow-y-auto border-0 bg-transparent px-[2px] pt-[2px] pb-0 font-sans text-[15px] leading-[1.6] font-normal text-ink outline-none placeholder:text-subtle "
-      + (welcome ? "min-h-[48px] flex-1" : "min-h-[26px]")} value={p.draft} placeholder={p.placeholder} aria-label="メッセージ"
+      + (welcome ? "min-h-[48px] flex-1" : "min-h-[26px]")} value={p.draft} placeholder={p.placeholder} aria-label={t.composer.message}
       onChange={e => p.onDraft(e.target.value)} onPaste={p.onPaste}
       onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); if (!p.busy && canSend) p.onSend(); } }} />
     <div className="composer-bar mt-[10px] flex items-center gap-[4px]">
-      <button className="round-btn tip" data-tip="ファイルを添付" aria-label="ファイルを添付" onClick={p.onPickFiles} disabled={p.busy}><Plus size={17} /></button>
+      <button className="round-btn tip" data-tip={t.composer.attachFiles} aria-label={t.composer.attachFiles} onClick={p.onPickFiles} disabled={p.busy}><Plus size={17} /></button>
       <ToolsMenu tools={p.tools} onChange={p.onTools} disabled={p.busy} projectMemory={p.projectMemory}
         style={p.style} styles={p.styles} onStyle={p.onStyle} placement={p.placement} connectors={p.connectors} onManageConnectors={p.onManageConnectors} />
       <span className="spacer flex-1" />
       <ModelMenu model={p.model} models={p.models} onModel={p.onModel} modelsLoading={p.modelsLoading} onRefresh={p.onRefreshModels}
         effort={p.effort} efforts={p.efforts} onEffort={p.onEffort} disabled={p.busy} placement={p.placement} />
       {p.busy
-        ? <button className={"send-btn stop tip " + SEND + " bg-ink-2 text-bg animate-[popIn_.18s_var(--ease)]"} data-tip="停止（Esc）" aria-label="停止" onClick={p.onStop}><Square size={12} fill="currentColor" /></button>
-        : <button className={"send-btn tip " + SEND + " bg-accent text-on-accent disabled:bg-send-off disabled:text-send-off-text disabled:shadow-none"} data-tip="送信（Enter）" aria-label="送信" onClick={p.onSend} disabled={!canSend}><ArrowUp size={17} strokeWidth={2.4} /></button>}
+        ? <button className={"send-btn stop tip " + SEND + " bg-ink-2 text-bg animate-[popIn_.18s_var(--ease)]"} data-tip={t.composer.stopTip} aria-label={t.composer.stop} onClick={p.onStop}><Square size={12} fill="currentColor" /></button>
+        : <button className={"send-btn tip " + SEND + " bg-accent text-on-accent disabled:bg-send-off disabled:text-send-off-text disabled:shadow-none"} data-tip={t.composer.sendTip} aria-label={t.composer.send} onClick={p.onSend} disabled={!canSend}><ArrowUp size={17} strokeWidth={2.4} /></button>}
     </div>
   </div>;
 });

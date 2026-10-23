@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import { ChevronLeft, ChevronRight, Download, X } from "lucide-react";
 import { CopyButton, Markdown } from "./MessageContent";
 import { KIND_EXT, KIND_LABEL, type ArtifactRequest } from "../lib/artifacts";
+import { useT } from "../i18n";
+import { getLocale } from "../i18n";
 
 // The preview runs in an opaque-origin sandbox: scripts may run, but there is no access to the app,
 // its storage, or the network.
@@ -28,6 +30,7 @@ async function renderMermaid(code: string): Promise<string> {
 }
 
 function MermaidPreview({ artifact }: { artifact: ArtifactRequest }) {
+  const t = useT();
   const [svg, setSvg] = useState<string | null>(null);
   const [error, setError] = useState("");
   useEffect(() => {
@@ -36,8 +39,8 @@ function MermaidPreview({ artifact }: { artifact: ArtifactRequest }) {
     renderMermaid(artifact.code).then(s => { if (alive) setSvg(s); }).catch(e => { if (alive) setError(e instanceof Error ? e.message : String(e)); });
     return () => { alive = false; };
   }, [artifact.code]);
-  if (error) return <div className={"artifact-error " + PLACEHOLDER}><b>図を描けませんでした</b><pre className="m-0 max-w-full font-mono text-[11.5px] leading-[1.6] whitespace-pre-wrap text-danger">{error}</pre></div>;
-  if (!svg) return <div className={"artifact-loading " + PLACEHOLDER}>図を描いています…</div>;
+  if (error) return <div className={"artifact-error " + PLACEHOLDER}><b>{t.artifacts.panel.diagramFailed}</b><pre className="m-0 max-w-full font-mono text-[11.5px] leading-[1.6] whitespace-pre-wrap text-danger">{error}</pre></div>;
+  if (!svg) return <div className={"artifact-loading " + PLACEHOLDER}>{t.artifacts.panel.drawingDiagram}</div>;
   return <iframe className={FRAME} title={artifact.title} sandbox="" srcDoc={previewDocument({ language: "svg", code: svg })} />;
 }
 
@@ -55,10 +58,11 @@ export async function reactDocument(code: string): Promise<string> {
   return `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${REACT_CSP}">`
     + `<style>html,body{margin:0;background:#fff;color:#111;font-family:system-ui,-apple-system,"Hiragino Sans","Yu Gothic UI",sans-serif}</style>`
     + `<script>${inlineScript(tailwind)}</script><script>${inlineScript(runtime)}</script></head>`
-    + `<body><div id="root"></div><script>window.__runArtifact(${source})</script></body></html>`;
+    + `<body><div id="root"></div><script>window.__runArtifact(${source},${JSON.stringify(getLocale())})</script></body></html>`;
 }
 
 function ReactPreview({ artifact }: { artifact: ArtifactRequest }) {
+  const t = useT();
   const [doc, setDoc] = useState<string | null>(null);
   useEffect(() => {
     let alive = true;
@@ -66,7 +70,7 @@ function ReactPreview({ artifact }: { artifact: ArtifactRequest }) {
     void reactDocument(artifact.code).then(d => { if (alive) setDoc(d); });
     return () => { alive = false; };
   }, [artifact.code]);
-  if (!doc) return <div className={"artifact-loading " + PLACEHOLDER}>コンポーネントを準備しています…</div>;
+  if (!doc) return <div className={"artifact-loading " + PLACEHOLDER}>{t.artifacts.panel.preparingComponent}</div>;
   return <iframe className={FRAME} title={artifact.title} sandbox="allow-scripts" srcDoc={doc} />;
 }
 
@@ -77,6 +81,8 @@ const PLACEHOLDER = "grid flex-1 place-items-center content-center gap-[8px] rou
 type Props = { artifact: ArtifactRequest; versions: ArtifactRequest[]; onSelect: (artifact: ArtifactRequest) => void; onClose: () => void };
 
 export default function ArtifactPanel({ artifact, versions, onSelect, onClose }: Props) {
+  const t = useT();
+  const a = t.artifacts.panel;
   const [tab, setTab] = useState<"preview" | "code">("preview");
   const index = Math.max(0, versions.findIndex(v => v.code === artifact.code));
   function download() {
@@ -89,20 +95,20 @@ export default function ArtifactPanel({ artifact, versions, onSelect, onClose }:
   }
   // An <aside>/<header>: these utilities also carry what the old app-wide `aside{}` / `header{}` rules gave it
   // (border-right, overflow hidden, width/padding transition; header font-size, color, bold weight).
-  return <aside className="artifact-panel flex min-h-0 w-[min(470px,42%)] shrink-0 animate-slide-in flex-col gap-[10px] overflow-hidden border-x border-line bg-panel px-[18px] py-[16px] transition-[width,padding] duration-[.22s] ease-claude" aria-label="アーティファクト">
+  return <aside className="artifact-panel flex min-h-0 w-[min(470px,42%)] shrink-0 animate-slide-in flex-col gap-[10px] overflow-hidden border-x border-line bg-panel px-[18px] py-[16px] transition-[width,padding] duration-[.22s] ease-claude" aria-label={a.label}>
     <header className="flex h-auto shrink-0 items-center justify-start gap-[8px] border-0 p-0 text-[12px] text-muted">
       <b className="font-serif text-[14px] font-medium text-ink">{artifact.title}</b><small className="flex-[0_0_auto] text-[11px] text-muted">{KIND_LABEL[artifact.language]}</small>
-      {versions.length > 1 && <span className="alt-switch artifact-versions mx-[2px] inline-flex items-center gap-0 text-[11.5px] text-muted tabular-nums" aria-label="バージョン">
-        <button className="icon-action" disabled={index === 0} onClick={() => onSelect(versions[index - 1])} aria-label="前のバージョン"><ChevronLeft size={15} /></button>
+      {versions.length > 1 && <span className="alt-switch artifact-versions mx-[2px] inline-flex items-center gap-0 text-[11.5px] text-muted tabular-nums" aria-label={a.versions}>
+        <button className="icon-action" disabled={index === 0} onClick={() => onSelect(versions[index - 1])} aria-label={a.previousVersion}><ChevronLeft size={15} /></button>
         v{index + 1} / {versions.length}
-        <button className="icon-action" disabled={index >= versions.length - 1} onClick={() => onSelect(versions[index + 1])} aria-label="次のバージョン"><ChevronRight size={15} /></button>
+        <button className="icon-action" disabled={index >= versions.length - 1} onClick={() => onSelect(versions[index + 1])} aria-label={a.nextVersion}><ChevronRight size={15} /></button>
       </span>}
       <span className="spacer flex-1" />
       <div className="segmented small" role="tablist">
-        <button role="tab" aria-selected={tab === "preview"} className={tab === "preview" ? "active" : ""} onClick={() => setTab("preview")}>プレビュー</button>
-        <button role="tab" aria-selected={tab === "code"} className={tab === "code" ? "active" : ""} onClick={() => setTab("code")}>コード</button>
+        <button role="tab" aria-selected={tab === "preview"} className={tab === "preview" ? "active" : ""} onClick={() => setTab("preview")}>{a.preview}</button>
+        <button role="tab" aria-selected={tab === "code"} className={tab === "code" ? "active" : ""} onClick={() => setTab("code")}>{a.code}</button>
       </div>
-      <button className="icon-btn" onClick={onClose} aria-label="閉じる"><X size={16} /></button>
+      <button className="icon-btn" onClick={onClose} aria-label={t.common.close}><X size={16} /></button>
     </header>
     {tab === "code"
       ? <pre className="artifact-code m-0 min-h-0 flex-1 overflow-auto rounded-[10px] border border-line bg-code p-[12px] font-mono text-[11.5px] leading-[1.6] whitespace-pre-wrap text-ink-3 light:text-[#DAD6CC]">{artifact.code}</pre>
@@ -113,9 +119,9 @@ export default function ArtifactPanel({ artifact, versions, onSelect, onClose }:
           : artifact.language === "react"
           ? <ReactPreview artifact={artifact} />
           : <iframe className={FRAME} title={artifact.title} sandbox="allow-scripts" srcDoc={previewDocument({ language: artifact.language, code: artifact.code })} />}
-    {artifact.language !== "markdown" && <p className="hint mb-0">sandbox 付き iframe で表示しています（ネットワーク・アプリ本体へのアクセスなし）{artifact.language === "react" && " · 使えるライブラリ: React・lucide-react・recharts・Tailwind"}</p>}
+    {artifact.language !== "markdown" && <p className="hint mb-0">{a.sandboxHint}{artifact.language === "react" && a.reactLibraries}</p>}
     <div className="artifact-actions flex items-center gap-[8px]">
-      <button className="btn-secondary" onClick={download}><Download size={14} /> .{KIND_EXT[artifact.language]} で保存</button>
+      <button className="btn-secondary" onClick={download}><Download size={14} /> {a.saveAs(KIND_EXT[artifact.language])}</button>
       <CopyButton text={artifact.code} />
     </div>
   </aside>;

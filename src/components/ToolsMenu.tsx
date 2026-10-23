@@ -1,17 +1,18 @@
 import { useState } from "react";
 import { BarChart3, Brain, Check, ChevronRight, FileSpreadsheet, Globe, PenLine, Plug, Plus, Search, SlidersHorizontal } from "lucide-react";
 import { usePopover } from "./Popover";
+import { useT, type Messages } from "../i18n";
 
 export type Tools = { webSearch?: boolean; webFetch?: boolean; files?: boolean; analysis?: boolean; memory?: boolean; connectors?: string[] };
 export type ConnectorOption = { id: string; name: string };
 type Key = Exclude<keyof Tools, "connectors">;
 type Option = { value: string; label: string };
-const ITEMS: { key: Key; title: string; desc: string; icon: typeof Search; chip: string }[] = [
-  { key: "webSearch", title: "Web 検索", desc: "出典付きで最新情報を調べる · 1,000回 $10", icon: Search, chip: "Web検索" },
-  { key: "webFetch", title: "URL の読み込み", desc: "会話に出てきた URL の本文を読む", icon: Globe, chip: "URL読込" },
-  { key: "files", title: "ファイル作成（Skills）", desc: "Excel・Word・PowerPoint・PDF を作る", icon: FileSpreadsheet, chip: "ファイル作成" },
-  { key: "analysis", title: "データ分析", desc: "添付した CSV や Excel を Python で集計する", icon: BarChart3, chip: "データ分析" },
-  { key: "memory", title: "メモリ", desc: "会話をまたいで覚えておく（設定で確認・削除）", icon: Brain, chip: "メモリ" }
+const items = ({ menus: { tools: m } }: Messages): { key: Key; title: string; desc: string; icon: typeof Search; chip: string }[] => [
+  { key: "webSearch", title: m.webSearchTitle, desc: m.webSearchDesc, icon: Search, chip: m.webSearchChip },
+  { key: "webFetch", title: m.webFetchTitle, desc: m.webFetchDesc, icon: Globe, chip: m.webFetchChip },
+  { key: "files", title: m.filesTitle, desc: m.filesDesc, icon: FileSpreadsheet, chip: m.filesChip },
+  { key: "analysis", title: m.analysisTitle, desc: m.analysisDesc, icon: BarChart3, chip: m.analysisChip },
+  { key: "memory", title: m.memoryTitle, desc: m.memoryDesc, icon: Brain, chip: m.memoryChip }
 ];
 
 // Legacy .tool-chip (+ light override and the composer @container rules); the composer root is the container.
@@ -32,6 +33,9 @@ type Props = {
 };
 
 export default function ToolsMenu({ tools, onChange, disabled, projectMemory, style, styles, onStyle, placement, connectors = [], onManageConnectors }: Props) {
+  const t = useT();
+  const m = t.menus.tools;
+  const ITEMS = items(t);
   const { open, setOpen, ref } = usePopover();
   const [stylesOpen, setStylesOpen] = useState(false);
   const active = ITEMS.filter(item => tools[item.key] || (item.key === "memory" && projectMemory));
@@ -39,19 +43,19 @@ export default function ToolsMenu({ tools, onChange, disabled, projectMemory, st
   const toggleConnector = (id: string, on: boolean) => onChange({ ...tools, connectors: on ? [...new Set([...(tools.connectors ?? []), id])] : (tools.connectors ?? []).filter(x => x !== id) });
   const styleLabel = style !== "standard" ? styles.find(s => s.value === style)?.label : undefined;
   return <div className="tools relative flex min-w-0 flex-nowrap items-center gap-[4px]" ref={ref}>
-    <button className={"round-btn tip" + (open ? " on" : "")} data-tip="ツール" aria-label="ツール" disabled={disabled} aria-expanded={open}
+    <button className={"round-btn tip" + (open ? " on" : "")} data-tip={m.tools} aria-label={m.tools} disabled={disabled} aria-expanded={open}
       onClick={() => { setOpen(v => !v); setStylesOpen(false); }}><SlidersHorizontal size={15} /></button>
-    {styleLabel && <button className={"tool-chip style-chip tip " + CHIP + " border-line-strong bg-raised text-ink-3"} disabled={disabled} data-tip={`スタイル: ${styleLabel}（クリックで標準に戻す）`} aria-label={`スタイル ${styleLabel}`}
+    {styleLabel && <button className={"tool-chip style-chip tip " + CHIP + " border-line-strong bg-raised text-ink-3"} disabled={disabled} data-tip={m.styleTip(styleLabel)} aria-label={m.styleAria(styleLabel)}
       onClick={() => onStyle("standard")}><PenLine size={12} /><span className={LABEL}>{styleLabel}</span></button>}
     {active.map(item => <button key={item.key} className={"tool-chip tip " + CHIP + " " + CHIP_ON} disabled={disabled || (item.key === "memory" && projectMemory)}
-      data-tip={item.key === "memory" && projectMemory ? `${item.chip}（プロジェクトの設定でオン）` : `${item.chip}（クリックでオフ）`} aria-label={item.chip}
+      data-tip={item.key === "memory" && projectMemory ? m.onByProjectTip(item.chip) : m.clickToTurnOff(item.chip)} aria-label={item.chip}
       onClick={() => onChange({ ...tools, [item.key]: false })}>
       <item.icon size={12} /><span className={LABEL}>{item.chip}</span></button>)}
-    {activeConnectors.map(c => <button key={c.id} className={"tool-chip tip " + CHIP + " " + CHIP_ON} disabled={disabled} data-tip={`${c.name}（クリックでオフ）`} aria-label={c.name}
+    {activeConnectors.map(c => <button key={c.id} className={"tool-chip tip " + CHIP + " " + CHIP_ON} disabled={disabled} data-tip={m.clickToTurnOff(c.name)} aria-label={c.name}
       onClick={() => toggleConnector(c.id, false)}><Plug size={12} /><span className={LABEL}>{c.name}</span></button>)}
     {open && <div className={"menu tools-menu left-0 w-[340px] " + (placement === "down" ? "down" : "up")} role="menu">
       <button className="menu-item tools-style" aria-expanded={stylesOpen} onClick={() => setStylesOpen(v => !v)}>
-        <PenLine size={16} /><span className="flex flex-1 flex-col gap-[2px]"><b className="text-[12px] font-semibold text-ink-2">スタイルを使用</b><small className="text-[9.5px] text-muted">{styleLabel ?? "標準"}</small></span>
+        <PenLine size={16} /><span className="flex flex-1 flex-col gap-[2px]"><b className="text-[12px] font-semibold text-ink-2">{m.useStyle}</b><small className="text-[9.5px] text-muted">{styleLabel ?? m.standard}</small></span>
         <ChevronRight size={15} className={"chev-r ml-auto transition-transform duration-[180ms] ease-claude" + (stylesOpen ? " open rotate-90" : "")} />
       </button>
       {stylesOpen && <div className={STYLE_LIST}>{styles.map(s => <button key={s.value} className={"menu-item " + STYLE_ITEM} role="menuitemradio" aria-checked={s.value === style}
@@ -61,18 +65,18 @@ export default function ToolsMenu({ tools, onChange, disabled, projectMemory, st
         const on = !!tools[item.key] || (item.key === "memory" && !!projectMemory);
         return <label key={item.key} className={ITEM}>
           <item.icon size={16} />
-          <span className={ITEM_TEXT}><b className={ITEM_TITLE}>{item.title}</b><small className={ITEM_DESC}>{item.key === "memory" && projectMemory ? "プロジェクトの設定でオン" : item.desc}</small></span>
+          <span className={ITEM_TEXT}><b className={ITEM_TITLE}>{item.title}</b><small className={ITEM_DESC}>{item.key === "memory" && projectMemory ? m.onByProject : item.desc}</small></span>
           <input type="checkbox" className="switch" checked={on} disabled={item.key === "memory" && projectMemory}
             onChange={e => onChange({ ...tools, [item.key]: e.target.checked })} />
         </label>;
       })}
       <div className="menu-sep" />
-      <div className="menu-label">コネクタ</div>
+      <div className="menu-label">{m.connectors}</div>
       {connectors.map(c => <label key={c.id} className={ITEM}>
-        <Plug size={16} /><span className={ITEM_TEXT}><b className={ITEM_TITLE}>{c.name}</b><small className={ITEM_DESC}>この会話で使う</small></span>
+        <Plug size={16} /><span className={ITEM_TEXT}><b className={ITEM_TITLE}>{c.name}</b><small className={ITEM_DESC}>{m.useInThisChat}</small></span>
         <input type="checkbox" className="switch" checked={!!tools.connectors?.includes(c.id)} onChange={e => toggleConnector(c.id, e.target.checked)} />
       </label>)}
-      {onManageConnectors && <button className="menu-item" onClick={() => { setOpen(false); onManageConnectors(); }}><Plus size={15} />{connectors.length ? "コネクタを管理" : "コネクタを追加（Notion・社内 MCP サーバーなど）"}</button>}
+      {onManageConnectors && <button className="menu-item" onClick={() => { setOpen(false); onManageConnectors(); }}><Plus size={15} />{connectors.length ? m.manageConnectors : m.addConnectors}</button>}
     </div>}
   </div>;
 }

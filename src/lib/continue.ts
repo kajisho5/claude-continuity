@@ -1,7 +1,9 @@
 import type { Msg } from "../components/MessageItem";
+import { t } from "../i18n";
 
 type Reply = Omit<Msg, "role" | "attachments" | "alternates" | "altIndex">;
-export const CONTINUE_PROMPT = "（直前の回答は出力の上限などで途中で止まりました。止まった箇所の直後から、前置きや繰り返しなしで続きだけを書いてください。）";
+/** Synthetic user turn asking Claude to pick up a cut-off reply, in the current UI language. */
+export const continuePrompt = (): string => t().lib.continuePrompt;
 /** Appends a continuation to a cut-off reply, renumbering its citation markers after the existing ones. */
 export function mergeContinuation(previous: Msg, cont: Reply): Msg {
   const offset = previous.citations?.length ?? 0;

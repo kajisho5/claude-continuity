@@ -1,3 +1,5 @@
+import { mainT } from "./i18n";
+
 /** Remote MCP servers that Claude can call through the Messages API MCP connector (beta). */
 export type Connector = { id: string; name: string; url: string; enabled: boolean; token?: string };
 export type ConnectorView = Omit<Connector, "token"> & { hasToken: boolean };
@@ -12,12 +14,12 @@ export function serverName(connector: Pick<Connector, "id" | "name">): string {
 export function validateConnector(input: { name?: unknown; url?: unknown }): { name: string; url: string } {
   const name = String(input.name ?? "").trim().slice(0, 60);
   const url = String(input.url ?? "").trim();
-  if (!name) throw new Error("名前を入力してください。");
+  if (!name) throw new Error(mainT().connectors.nameRequired);
   let parsed: URL;
-  try { parsed = new URL(url); } catch { throw new Error("URL の形式が正しくありません。"); }
+  try { parsed = new URL(url); } catch { throw new Error(mainT().connectors.badUrl); }
   // The API only reaches publicly exposed HTTPS servers; local stdio servers cannot be used this way.
-  if (parsed.protocol !== "https:") throw new Error("URL は https:// で始まる必要があります（API が接続できるのは公開された HTTPS の MCP サーバーだけです）。");
-  if (parsed.username || parsed.password) throw new Error("URL に認証情報を含めないでください。トークン欄を使ってください。");
+  if (parsed.protocol !== "https:") throw new Error(mainT().connectors.httpsOnly);
+  if (parsed.username || parsed.password) throw new Error(mainT().connectors.noCredentialsInUrl);
   return { name, url: parsed.toString() };
 }
 

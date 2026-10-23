@@ -37,3 +37,17 @@ describe("extractArtifacts", () => {
     expect(artifactKey(found[0])).toBe("html:A");
   });
 });
+
+describe("artifact labels in English", async () => {
+  const { setLocale } = await import("../i18n");
+  const { KIND_LABEL } = await import("./artifacts");
+  it("follows the current language", () => {
+    setLocale("en");
+    try {
+      expect(artifactTitle("mermaid", "sequenceDiagram\nA->>B: hi")).toBe("Diagram (sequenceDiagram)");
+      expect(artifactTitle("react", "export default () => null")).toBe("React component");
+      expect(KIND_LABEL.markdown).toBe("Document");
+    } finally { setLocale("ja"); }
+    expect(KIND_LABEL.markdown).toBe("文書");
+  });
+});

@@ -1,5 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import { mainT } from "./i18n";
 
 // Client-side handler for the memory_20250818 tool. Return strings follow
 // https://platform.claude.com/docs/en/agents-and-tools/tool-use/memory-tool#tool-commands
@@ -78,7 +79,7 @@ export async function runMemoryCommand(root: string, input: Input): Promise<Memo
       const start = range ? Math.max(1, range[0] || 1) : 1;
       const end = range && range[1] !== -1 ? Math.min(lines.length, range[1] || lines.length) : lines.length;
       let body = numbered(lines.slice(start - 1, end).join("\n"), start);
-      if (body.length > VIEW_LIMIT_CHARS) body = body.slice(0, VIEW_LIMIT_CHARS) + "\n…（長いため省略。view_range で続きを表示してください）";
+      if (body.length > VIEW_LIMIT_CHARS) body = body.slice(0, VIEW_LIMIT_CHARS) + mainT().memory.viewTruncated;
       return ok(`Here's the content of ${virtual} with line numbers:\n${body}`);
     }
     case "create": {

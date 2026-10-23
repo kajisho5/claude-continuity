@@ -3,6 +3,7 @@ import { ArrowLeft, ArrowRight, Check, ExternalLink, ShieldCheck } from "lucide-
 import PlanPicker from "./PlanPicker";
 import { PLAN_LABELS, PLAN_PRESETS, cycleRange, formatShortDate, type CreditSettings, type PlanId } from "../lib/credit";
 import { formatUsd } from "../lib/pricing";
+import { useT } from "../i18n";
 
 type Props = {
   keyConfigured: boolean;
@@ -10,7 +11,7 @@ type Props = {
   onSkip: () => Promise<void>;
 };
 type Step = 0 | 1 | 2;
-const STEP_LABELS = ["プラン", "付与日", "APIキー"];
+const STEP_KEYS = ["plan", "day", "key"] as const;
 const H2 = "m-[0_0_8px] font-serif text-[21px] font-bold text-ink";
 const LEAD = "lead m-0 text-[11px] text-muted";
 const KEY_CHECK = "key-check m-[8px_0_0] text-[11px]";
@@ -24,8 +25,9 @@ const WIZARD_PRIMARY = "min-w-[120px] px-[16px] py-[11px] text-[13px]";
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 export function Stepper({ step }: { step: Step }) {
+  const t = useT();
   return <ol className="stepper m-[22px_0_24px] flex list-none justify-center p-0">
-    {STEP_LABELS.map((label, i) => <li key={label} className={"relative flex w-[150px] flex-col items-center gap-[6px] text-[10px] not-last:after:absolute not-last:after:top-[11px] not-last:after:left-[calc(50%+14px)] not-last:after:h-[1.5px] not-last:after:w-[122px] not-last:after:content-['']"
+    {STEP_KEYS.map(id => t.onboarding.steps[id]).map((label, i) => <li key={label} className={"relative flex w-[150px] flex-col items-center gap-[6px] text-[10px] not-last:after:absolute not-last:after:top-[11px] not-last:after:left-[calc(50%+14px)] not-last:after:h-[1.5px] not-last:after:w-[122px] not-last:after:content-['']"
       + (i < step ? " done text-muted not-last:after:bg-ok" : i === step ? " current font-semibold text-ink-2 not-last:after:bg-line-strong" : " text-muted not-last:after:bg-line-strong")}>
       <span className={"stepper-dot grid size-[22px] place-items-center rounded-full border text-[11px] font-bold "
         + (i < step ? "border-ok bg-ok text-[#0f1a14]" : i === step ? "border-accent bg-accent text-on-accent" : "border-line-input bg-surface-2 text-muted")}>{i < step ? <Check size={12} strokeWidth={3} /> : i + 1}</span>
@@ -35,6 +37,8 @@ export function Stepper({ step }: { step: Step }) {
 }
 
 export default function OnboardingWizard({ keyConfigured, onFinish, onSkip }: Props) {
+  const t = useT();
+  const o = t.onboarding;
   const [step, setStep] = useState<Step>(0);
   const [plan, setPlan] = useState<PlanId | null>(null);
   const [teamAmount, setTeamAmount] = useState("");
@@ -79,7 +83,7 @@ export default function OnboardingWizard({ keyConfigured, onFinish, onSkip }: Pr
     setKeyCheck({ state: "testing" });
     try {
       const result = await window.continuity.testApiKey(apiKey.trim());
-      setKeyCheck({ state: "ok", message: `接続できました（利用可能なモデル ${result.modelCount} 件）` });
+      setKeyCheck({ state: "ok", message: o.keyConnected(result.modelCount) });
     } catch (e) {
       setKeyCheck({ state: "error", message: (e instanceof Error ? e.message : String(e)).replace(/^Error invoking remote method '[^']+': (Error: )?/, "") });
     }
@@ -87,82 +91,82 @@ export default function OnboardingWizard({ keyConfigured, onFinish, onSkip }: Pr
 
   return <div className="overlay onboarding bg-[#000b] light:bg-[#2a262040]">
     <div className="wizard max-h-[calc(100vh-40px)] w-[min(700px,100%)] animate-[popIn_.2s_var(--ease)_both] overflow-auto rounded-[16px] border border-line-strong bg-modal px-[32px] pt-[30px] pb-[22px] shadow-[0_20px_80px_#0009] light:shadow-[0_1px_2px_#0000000f,0_16px_48px_#0000001f]" role="dialog" aria-modal="true" aria-labelledby="wizard-title">
-      <p className="eyebrow m-[0_0_10px] text-[10px] font-medium tracking-[.6px] text-muted">はじめに設定 · {step + 1} / 3</p>
+      <p className="eyebrow m-[0_0_10px] text-[10px] font-medium tracking-[.6px] text-muted">{o.eyebrow(step + 1)}</p>
       {step === 0 && <>
-        <h2 id="wizard-title" className={H2}>あなたのClaudeプランを選んでください</h2>
-        <p className={LEAD}>プランに応じて、毎月付与されるAPIクレジットの残額と失効日を管理します。</p>
+        <h2 id="wizard-title" className={H2}>{o.plan.title}</h2>
+        <p className={LEAD}>{o.plan.lead}</p>
         <Stepper step={0} />
         <PlanPicker value={plan} onChange={setPlan} />
-        <p className="hint">ⓘ 自分のプランは claude.ai の Settings › Billing で確認できます。あとから「API設定」で変更できます。</p>
+        <p className="hint">{o.plan.hint}</p>
       </>}
       {step === 1 && <>
-        <h2 id="wizard-title" className={H2}>クレジットが付与される日は？</h2>
-        <p className={LEAD}>claude.ai の Settings › Billing に表示される「次回請求日」の“日”を選んでください。</p>
+        <h2 id="wizard-title" className={H2}>{o.day.title}</h2>
+        <p className={LEAD}>{o.day.lead}</p>
         <Stepper step={1} />
         <div className="field-row flex gap-[14px]">
           <label className="field">
-            <span>毎月の付与日</span>
-            <span className="day-input flex items-center gap-[8px] rounded-[8px] border border-line-input bg-inset px-[12px] py-[6px] text-[13px] text-muted">毎月
-              <select className="rounded-[6px] border border-line-input bg-surface-2 px-[8px] py-[5px] text-[14px] font-bold text-ink" value={resetDay} onChange={e => setResetDay(Number(e.target.value))} aria-label="付与日">
+            <span>{o.day.resetDay}</span>
+            <span className="day-input flex items-center gap-[8px] rounded-[8px] border border-line-input bg-inset px-[12px] py-[6px] text-[13px] text-muted">{t.credit.dayBefore}
+              <select className="rounded-[6px] border border-line-input bg-surface-2 px-[8px] py-[5px] text-[14px] font-bold text-ink" value={resetDay} onChange={e => setResetDay(Number(e.target.value))} aria-label={t.credit.dayLabel}>
                 {Array.from({ length: 31 }, (_, i) => <option key={i + 1} value={i + 1}>{i + 1}</option>)}
-              </select>日</span>
+              </select>{t.credit.dayAfter}</span>
           </label>
           {plan === "team"
-            ? <label className="field"><span>チームの月間合計額（USD・上限 $500）</span>
+            ? <label className="field"><span>{o.day.teamAmount}</span>
               <input className={"text-input" + (teamInvalid && teamAmount ? " invalid border-danger" : "")} inputMode="decimal" value={teamAmount}
-                onChange={e => setTeamAmount(e.target.value)} placeholder="例: 260" /></label>
-            : <div className="field"><span>選択中のプラン</span>
-              <div className="plan-summary flex items-center gap-[10px] rounded-[9px] border border-line bg-inset px-[14px] py-[10px]"><b className="font-serif text-[14px] text-ink">{plan ? PLAN_LABELS[plan] : ""}</b><small className="flex-1 text-[10px] text-muted">月 {formatUsd(amount, 0)} の APIクレジット</small>
-                <button className="link" onClick={() => setStep(0)}>変更</button></div></div>}
+                onChange={e => setTeamAmount(e.target.value)} placeholder={o.day.teamPlaceholder} /></label>
+            : <div className="field"><span>{o.day.selectedPlan}</span>
+              <div className="plan-summary flex items-center gap-[10px] rounded-[9px] border border-line bg-inset px-[14px] py-[10px]"><b className="font-serif text-[14px] text-ink">{plan ? PLAN_LABELS[plan] : ""}</b><small className="flex-1 text-[10px] text-muted">{o.day.perMonth(formatUsd(amount, 0))}</small>
+                <button className="link" onClick={() => setStep(0)}>{o.day.change}</button></div></div>}
         </div>
         <div className="preview-box mt-[18px] flex flex-col gap-[5px] rounded-[10px] border border-line bg-inset px-[16px] py-[13px]">
-          <span className="text-[10px] text-muted">今のサイクルのプレビュー</span>
-          <strong className="font-serif text-[15px] text-ink">{formatShortDate(preview.start)} 〜 {formatShortDate(preview.end)}<em className={PREVIEW_EM}> 失効まで </em><b className="text-warn">{preview.daysLeft}日</b>
-            <em className={PREVIEW_EM}> · 付与額 {plan === "team" && teamInvalid ? "—" : formatUsd(amount, 0)}</em></strong>
-          <small className="text-[9px] text-faint">付与時刻は非公開のため、日単位の目安です。</small>
+          <span className="text-[10px] text-muted">{o.day.preview}</span>
+          <strong className="font-serif text-[15px] text-ink">{t.credit.range(formatShortDate(preview.start), formatShortDate(preview.end))}<em className={PREVIEW_EM}>{o.day.expiresIn}</em><b className="text-warn">{o.day.days(preview.daysLeft)}</b>
+            <em className={PREVIEW_EM}>{o.day.grant(plan === "team" && teamInvalid ? "—" : formatUsd(amount, 0))}</em></strong>
+          <small className="text-[9px] text-faint">{o.day.approx}</small>
         </div>
         <button className="disclosure border-0 bg-transparent px-0 pt-[14px] pb-0 text-left text-[11px] text-muted" onClick={() => setShowCalibration(v => !v)} aria-expanded={showCalibration}>
-          {showCalibration ? "▾" : "▸"} Console の残高で補正する（任意・あとからでも可）</button>
+          {showCalibration ? "▾" : "▸"} {o.day.calibrate}</button>
         {showCalibration && <div className="calibration mt-[14px] rounded-[10px] border border-line bg-inset px-[14px] py-[13px] text-[11px]">
-          <p className="m-[5px_0_10px] text-[10px] leading-[1.6] text-muted">Console › Billing › Promotional credits の残額を入力すると、Playground など他の利用分も含めた推定になります。</p>
+          <p className="m-[5px_0_10px] text-[10px] leading-[1.6] text-muted">{t.credit.calibrationIntro}</p>
           <input className={"text-input" + (balanceInvalid ? " invalid border-danger" : "")} inputMode="decimal" value={balance}
-            onChange={e => setBalance(e.target.value)} placeholder="$ 残額（例: 132.50）" />
+            onChange={e => setBalance(e.target.value)} placeholder={o.day.balancePlaceholder} />
         </div>}
       </>}
       {step === 2 && <>
-        <h2 id="wizard-title" className={H2}>Anthropic APIキーを入力</h2>
-        <p className={LEAD}>クレジットが付与された Console 組織で作成したキーを使います。</p>
+        <h2 id="wizard-title" className={H2}>{o.key.title}</h2>
+        <p className={LEAD}>{o.key.lead}</p>
         <Stepper step={2} />
         <ol className="key-guide m-[0_0_6px] flex list-none flex-col gap-[10px] p-0 [counter-reset:step]">
-          <li className={STEP_LI}><b className={STEP_B}>クレジットを受け取る</b><span>claude.ai の Billing で「API credits」から Console 組織をリンクします。</span>
-            <a className={STEP_LINK} href="https://claude.ai/settings/billing" target="_blank" rel="noreferrer">Billing を開く <ExternalLink size={12} /></a></li>
-          <li className={STEP_LI}><b className={STEP_B}>APIキーを作る</b><span>「Create key」→ 名前・期限・<em className="font-semibold text-warn not-italic">ワークスペース</em>を選んで作成。キーは作成時に一度だけ表示されます。</span>
-            <a className={STEP_LINK} href="https://platform.claude.com/settings/keys" target="_blank" rel="noreferrer">API keys を開く <ExternalLink size={12} /></a></li>
-          <li className={STEP_LI}><b className={STEP_B}>貼り付けて接続テスト</b><span>保存前に、キーでモデル一覧を取得できるか確認します。</span></li>
+          <li className={STEP_LI}><b className={STEP_B}>{o.key.receiveTitle}</b><span>{o.key.receiveBody}</span>
+            <a className={STEP_LINK} href="https://claude.ai/settings/billing" target="_blank" rel="noreferrer">{o.key.openBilling} <ExternalLink size={12} /></a></li>
+          <li className={STEP_LI}><b className={STEP_B}>{o.key.createTitle}</b><span>{o.key.createBefore}<em className="font-semibold text-warn not-italic">{o.key.createWorkspace}</em>{o.key.createAfter}</span>
+            <a className={STEP_LINK} href="https://platform.claude.com/settings/keys" target="_blank" rel="noreferrer">{o.key.openKeys} <ExternalLink size={12} /></a></li>
+          <li className={STEP_LI}><b className={STEP_B}>{o.key.testTitle}</b><span>{o.key.testBody}</span></li>
         </ol>
         <label className="field"><span>API Key</span>
           <div className="key-row flex gap-[8px]">
             <input className="text-input" type="password" value={apiKey} autoComplete="off" placeholder="sk-ant-…"
               onChange={e => { setApiKey(e.target.value); setKeyCheck({ state: "idle" }); }} />
             <button className="btn-secondary whitespace-nowrap" disabled={!apiKey.trim() || keyCheck.state === "testing"} onClick={() => void testKey()}>
-              {keyCheck.state === "testing" ? "確認中…" : "接続テスト"}</button>
+              {keyCheck.state === "testing" ? o.key.testing : o.key.test}</button>
           </div>
         </label>
         {keyCheck.message && <p className={KEY_CHECK + " " + keyCheck.state + (keyCheck.state === "ok" ? " text-ok" : keyCheck.state === "error" ? " text-danger" : "")}>{keyCheck.message}</p>}
-        <p className="hint"><ShieldCheck size={13} /> OS の安全な保存領域に暗号化して保存します。</p>
-        <p className="hint"><a href="https://platform.claude.com/docs/en/about-claude/api-credits-for-subscribers" target="_blank" rel="noreferrer">公式の受け取り手順</a></p>
+        <p className="hint"><ShieldCheck size={13} /> {o.key.storage}</p>
+        <p className="hint"><a href="https://platform.claude.com/docs/en/about-claude/api-credits-for-subscribers" target="_blank" rel="noreferrer">{o.key.officialSteps}</a></p>
       </>}
       {error && <p className={KEY_CHECK + " error text-danger"}>{error}</p>}
       <footer className="wizard-actions m-[24px_-32px_0] flex items-center gap-[10px] border-t border-line px-[32px] pt-[16px] pb-0">
         {step === 0
-          ? <button className="btn-text" disabled={busy} onClick={() => { setBusy(true); void onSkip().finally(() => setBusy(false)); }}>あとで設定</button>
-          : <button className="btn-secondary" disabled={busy} onClick={back}><ArrowLeft size={14} /> 戻る</button>}
+          ? <button className="btn-text" disabled={busy} onClick={() => { setBusy(true); void onSkip().finally(() => setBusy(false)); }}>{o.later}</button>
+          : <button className="btn-secondary" disabled={busy} onClick={back}><ArrowLeft size={14} /> {o.back}</button>}
         <span className="spacer flex-1" />
-        {step === 2 && <button className="btn-text" disabled={busy} onClick={() => void finish(false)}>あとで入力</button>}
+        {step === 2 && <button className="btn-text" disabled={busy} onClick={() => void finish(false)}>{o.enterLater}</button>}
         {step < 2
           ? <button className={"btn-primary " + WIZARD_PRIMARY} disabled={!plan || busy || (step === 1 && (teamInvalid || balanceInvalid))} onClick={next}>
-            {(step === 1 || plan === "none") && keyConfigured ? "完了" : <>次へ <ArrowRight size={14} /></>}</button>
-          : <button className={"btn-primary " + WIZARD_PRIMARY} disabled={!apiKey.trim() || busy} onClick={() => void finish(true)}>保存して開始</button>}
+            {(step === 1 || plan === "none") && keyConfigured ? o.done : <>{o.next} <ArrowRight size={14} /></>}</button>
+          : <button className={"btn-primary " + WIZARD_PRIMARY} disabled={!apiKey.trim() || busy} onClick={() => void finish(true)}>{o.saveAndStart}</button>}
       </footer>
     </div>
   </div>;

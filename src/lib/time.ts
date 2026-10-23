@@ -1,3 +1,5 @@
+import { t } from "../i18n";
+
 /** "3分前" style relative time for chat lists; falls back to a date after a week. */
 export function relativeTime(iso: string | undefined, now = Date.now()): string {
   if (!iso) return "";
@@ -5,14 +7,15 @@ export function relativeTime(iso: string | undefined, now = Date.now()): string 
   if (!Number.isFinite(time)) return "";
   const diff = Math.max(0, now - time);
   const min = Math.floor(diff / 60_000);
-  if (min < 1) return "たった今";
-  if (min < 60) return `${min}分前`;
+  const s = t().lib.time;
+  if (min < 1) return s.justNow;
+  if (min < 60) return s.minutesAgo(min);
   const hours = Math.floor(min / 60);
-  if (hours < 24) return `${hours}時間前`;
+  if (hours < 24) return s.hoursAgo(hours);
   const days = Math.floor(hours / 24);
-  if (days < 7) return `${days}日前`;
+  if (days < 7) return s.daysAgo(days);
   const d = new Date(time);
-  return d.getFullYear() === new Date(now).getFullYear() ? `${d.getMonth() + 1}月${d.getDate()}日` : `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日`;
+  return d.getFullYear() === new Date(now).getFullYear() ? s.monthDay(d) : s.yearMonthDay(d);
 }
 
 /** One-line plain-text preview of a Markdown reply (code blocks, table pipes, emphasis and citation markers removed). */

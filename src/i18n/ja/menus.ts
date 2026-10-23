@@ -1,1 +1,61 @@
-export const menus = {};
+export const menus = {
+  chat: {
+    menuFor: (title: string) => `${title} のメニュー`,
+    star: "スターを付ける",
+    unstar: "スターを外す",
+    rename: "名前を変更",
+    moveToProject: "プロジェクトに移動",
+    noProject: "プロジェクトなし",
+    exportJson: "JSON で書き出す",
+    exportHtml: "HTML で書き出す（共有用）"
+  },
+  account: {
+    defaultName: "ユーザー",
+    keyConfigured: "API キー設定済み",
+    keyMissing: "API キー未設定",
+    settings: "設定",
+    shortcuts: "キーボードショートカット",
+    importExport: "エクスポートを読み込む",
+    redoOnboarding: "初期設定をやり直す"
+  },
+  model: {
+    select: "モデルを選択",
+    fetching: "取得中…",
+    models: "モデル",
+    describeOpus: "複雑な作業に最も強いモデル",
+    describeSonnet: "日常の作業に賢く効率的",
+    describeHaiku: "すばやい回答に最適な最速モデル",
+    effort: "思考の深さ",
+    effortHint: "深いほど質が上がり、クレジットを多く使います",
+    refresh: "モデル一覧を更新"
+  },
+  tools: {
+    tools: "ツール",
+    webSearchTitle: "Web 検索",
+    webSearchDesc: "出典付きで最新情報を調べる · 1,000回 $10",
+    webSearchChip: "Web検索",
+    webFetchTitle: "URL の読み込み",
+    webFetchDesc: "会話に出てきた URL の本文を読む",
+    webFetchChip: "URL読込",
+    filesTitle: "ファイル作成（Skills）",
+    filesDesc: "Excel・Word・PowerPoint・PDF を作る",
+    filesChip: "ファイル作成",
+    analysisTitle: "データ分析",
+    analysisDesc: "添付した CSV や Excel を Python で集計する",
+    analysisChip: "データ分析",
+    memoryTitle: "メモリ",
+    memoryDesc: "会話をまたいで覚えておく（設定で確認・削除）",
+    memoryChip: "メモリ",
+    styleTip: (style: string) => `スタイル: ${style}（クリックで標準に戻す）`,
+    styleAria: (style: string) => `スタイル ${style}`,
+    onByProjectTip: (chip: string) => `${chip}（プロジェクトの設定でオン）`,
+    clickToTurnOff: (name: string) => `${name}（クリックでオフ）`,
+    useStyle: "スタイルを使用",
+    standard: "標準",
+    onByProject: "プロジェクトの設定でオン",
+    connectors: "コネクタ",
+    useInThisChat: "この会話で使う",
+    manageConnectors: "コネクタを管理",
+    addConnectors: "コネクタを追加（Notion・社内 MCP サーバーなど）"
+  }
+};

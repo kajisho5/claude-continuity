@@ -3,6 +3,7 @@ import path from "node:path";
 import type Anthropic from "@anthropic-ai/sdk";
 import type { ContentBlockParam } from "@anthropic-ai/sdk/resources/messages";
 import { costOf, formatUsd, priceFor } from "../src/lib/pricing";
+import { mcpIntlLocale, mcpT } from "./i18n";
 
 export const MAX_FILE_BYTES = 2 * 1024 * 1024;
 export const MAX_PDF_BYTES = 8 * 1024 * 1024;
@@ -22,20 +23,21 @@ export type ReadFile = { path: string; bytes: number; kind: "text" | "pdf" };
 
 /** Resolves a requested path and confirms it stays inside one of the allowed roots (after following symlinks). */
 export async function resolveAllowed(requested: string, roots: string[]): Promise<string> {
-  if (!roots.length) throw new Error("読み込みを許可したフォルダがありません（CONTINUITY_MCP_ROOTS を設定してください）");
+  if (!roots.length) throw new Error(mcpT().delegate.noRoots);
   const absolute = path.resolve(requested);
   let real: string;
-  try { real = await fs.realpath(absolute); } catch { throw new Error(`見つかりません: ${requested}`); }
+  try { real = await fs.realpath(absolute); } catch { throw new Error(mcpT().delegate.notFound(requested)); }
   for (const root of roots) {
     let realRoot: string;
     try { realRoot = await fs.realpath(path.resolve(root)); } catch { continue; }
     const relative = path.relative(realRoot, real);
     if (relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative))) return real;
   }
-  throw new Error(`許可フォルダの外です: ${requested}`);
+  throw new Error(mcpT().delegate.outsideRoots(requested));
 }
 
 export async function readFiles(requested: string[], roots: string[]): Promise<{ blocks: ContentBlockParam[]; read: ReadFile[]; skipped: string[] }> {
+  const t = mcpT().delegate;
   const blocks: ContentBlockParam[] = [];
   const read: ReadFile[] = [];
   const skipped: string[] = [];
@@ -44,16 +46,16 @@ export async function readFiles(requested: string[], roots: string[]): Promise<{
     try {
       const real = await resolveAllowed(item, roots);
       const info = await fs.stat(real);
-      if (!info.isFile()) { skipped.push(`${item}（ファイルではありません）`); continue; }
+      if (!info.isFile()) { skipped.push(t.notFile(item)); continue; }
       const isPdf = path.extname(real).toLowerCase() === ".pdf";
       const limit = isPdf ? MAX_PDF_BYTES : MAX_FILE_BYTES;
-      if (info.size > limit) { skipped.push(`${item}（${Math.round(limit / 1024 / 1024)}MB を超えています）`); continue; }
-      if (total + info.size > MAX_TOTAL_BYTES) { skipped.push(`${item}（合計 8MB を超えるため）`); continue; }
+      if (info.size > limit) { skipped.push(t.overLimit(item, Math.round(limit / 1024 / 1024))); continue; }
+      if (total + info.size > MAX_TOTAL_BYTES) { skipped.push(t.overTotal(item)); continue; }
       const bytes = await fs.readFile(real);
       if (isPdf) {
         blocks.push({ type: "document", title: item, source: { type: "base64", media_type: "application/pdf", data: bytes.toString("base64") } });
       } else {
-        if (bytes.subarray(0, 8192).includes(0)) { skipped.push(`${item}（バイナリファイル）`); continue; }
+        if (bytes.subarray(0, 8192).includes(0)) { skipped.push(t.binary(item)); continue; }
         blocks.push({ type: "document", title: item, source: { type: "text", media_type: "text/plain", data: bytes.toString("utf8") } });
       }
       total += info.size;
@@ -76,11 +78,7 @@ export function truncateResult(text: string, maxChars: number): { text: string; 
   return { text: text.slice(0, maxChars), truncated: true };
 }
 
-const SYSTEM = (maxChars: number) => [
-  "あなたは別の AI アシスタントから作業を任された担当者です。依頼者はあなたの出力だけを読みます。",
-  `出力は ${maxChars} 文字以内に収め、結論と要点を先に書いてください。`,
-  "根拠にした資料があればファイル名を示し、推測と事実を区別してください。依頼の言語で回答してください。"
-].join("\n");
+const SYSTEM = (maxChars: number) => mcpT().delegate.system(maxChars);
 
 export type DelegateOutcome = {
   text: string;
@@ -94,7 +92,7 @@ export type DelegateOutcome = {
 
 export async function delegate(client: Anthropic, input: DelegateInput, config: DelegateConfig): Promise<DelegateOutcome> {
   const instructions = String(input.instructions ?? "").trim();
-  if (!instructions) throw new Error("instructions が空です");
+  if (!instructions) throw new Error(mcpT().delegate.emptyInstructions);
   const model = input.model?.trim() || config.defaultModel;
   const maxChars = Math.min(30_000, Math.max(500, Math.round(input.max_result_chars ?? 6000)));
   const files = await readFiles(input.files ?? [], config.roots);
@@ -104,7 +102,7 @@ export async function delegate(client: Anthropic, input: DelegateInput, config: 
   const counted = await client.messages.countTokens(request);
   const worst = worstCaseUsd(model, counted.input_tokens);
   if (worst != null && worst > config.maxUsdPerCall) {
-    throw new Error(`見積もり上限 ${formatUsd(worst)} が 1回あたりの上限 ${formatUsd(config.maxUsdPerCall)} を超えるため実行しませんでした（入力 ${counted.input_tokens.toLocaleString()} トークン）。ファイルを減らすか CONTINUITY_MCP_MAX_USD_PER_CALL を上げてください。`);
+    throw new Error(mcpT().delegate.overBudget(formatUsd(worst), formatUsd(config.maxUsdPerCall), counted.input_tokens.toLocaleString(mcpIntlLocale())));
   }
 
   const final = await client.messages.stream({ ...request, max_tokens: MAX_OUTPUT_TOKENS, cache_control: { type: "ephemeral" } }).finalMessage();

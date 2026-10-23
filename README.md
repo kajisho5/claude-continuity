@@ -4,6 +4,8 @@ A local-first Electron desktop app for importing Claude conversation exports and
 
 ## Implemented in the repository
 
+- Japanese and English UI (Settings → General → Language; "Match system" follows the OS language). English wording follows Claude's own English UI where the screen has a Claude equivalent.
+
 ## GUI preview
 
 ![Claude Continuity GUI preview](docs/gui-preview.svg)

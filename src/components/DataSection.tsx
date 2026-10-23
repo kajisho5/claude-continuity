@@ -1,12 +1,15 @@
 import { useEffect, useState } from "react";
 import { ArchiveRestore, Download, FolderOpen } from "lucide-react";
 import { ConfirmDialog } from "./Dialog";
+import { useT } from "../i18n";
 
 type Notice = (text: string, kind?: "ok" | "error") => void;
 const message = (e: unknown) => (e instanceof Error ? e.message : String(e)).replace(/^Error invoking remote method '[^']+': (Error: )?/, "");
 
 /** Backup / restore of the local data folder. Restoring reloads the window so every view re-reads the files. */
 export default function DataSection({ onNotice }: { onNotice: Notice }) {
+  const t = useT();
+  const d = t.settings.data;
   const [dataDir, setDataDir] = useState("");
   const [busy, setBusy] = useState(false);
   const [confirm, setConfirm] = useState(false);
@@ -15,8 +18,8 @@ export default function DataSection({ onNotice }: { onNotice: Notice }) {
     setBusy(true);
     try {
       const result = await window.continuity.backupData();
-      if (!result.canceled) onNotice(`${result.count} 個のファイルをバックアップしました`);
-    } catch (e) { onNotice("バックアップに失敗しました: " + message(e), "error"); }
+      if (!result.canceled) onNotice(d.backedUp(result.count));
+    } catch (e) { onNotice(d.backupFailed + message(e), "error"); }
     finally { setBusy(false); }
   }
   async function restore() {
@@ -24,25 +27,25 @@ export default function DataSection({ onNotice }: { onNotice: Notice }) {
     try {
       const result = await window.continuity.restoreData();
       if (result.canceled) return;
-      onNotice(`復元しました（${result.count} 個のファイル）。再読み込みします…`);
+      onNotice(d.restored(result.count));
       window.setTimeout(() => window.location.reload(), 900);
-    } catch (e) { onNotice("復元できませんでした: " + message(e), "error"); }
+    } catch (e) { onNotice(d.restoreFailed + message(e), "error"); }
     finally { setBusy(false); }
   }
   return <>
-    <h3 className="m-[0_0_6px] font-serif text-[16px] leading-[normal] font-semibold text-ink">バックアップ</h3>
-    <p className="muted">会話・プロジェクト・添付ファイル・メモリ・設定・使用量の記録を 1 つの ZIP にまとめます。別の PC への引っ越しにも使えます。</p>
-    <p className="muted">API キーは含めません（この PC 専用の暗号化で保存しているため）。復元先で設定し直してください。</p>
-    <div className="form-actions start"><button className="btn-primary" disabled={busy} onClick={() => void backup()}><Download size={14} />バックアップを作成</button></div>
-    <h3 className="spaced m-[0_0_6px] font-serif text-[16px] leading-[normal] font-semibold text-ink mt-[26px]">バックアップから復元</h3>
-    <p className="muted">いまのデータをバックアップの内容で置き換えます。置き換える前の状態は自動で保存されるので、間違えても戻せます。</p>
-    <div className="form-actions start"><button className="btn-secondary" disabled={busy} onClick={() => setConfirm(true)}><ArchiveRestore size={14} />ZIP を選んで復元…</button></div>
-    <h3 className="spaced m-[0_0_6px] font-serif text-[16px] leading-[normal] font-semibold text-ink mt-[26px]">保存場所</h3>
-    <p className="muted">データはこの PC の次のフォルダにだけ保存されます。クラウドには同期しません。</p>
+    <h3 className="m-[0_0_6px] font-serif text-[16px] leading-[normal] font-semibold text-ink">{d.backup}</h3>
+    <p className="muted">{d.backupIntro}</p>
+    <p className="muted">{d.backupNoKey}</p>
+    <div className="form-actions start"><button className="btn-primary" disabled={busy} onClick={() => void backup()}><Download size={14} />{d.createBackup}</button></div>
+    <h3 className="spaced m-[0_0_6px] font-serif text-[16px] leading-[normal] font-semibold text-ink mt-[26px]">{d.restore}</h3>
+    <p className="muted">{d.restoreIntro}</p>
+    <div className="form-actions start"><button className="btn-secondary" disabled={busy} onClick={() => setConfirm(true)}><ArchiveRestore size={14} />{d.pickZip}</button></div>
+    <h3 className="spaced m-[0_0_6px] font-serif text-[16px] leading-[normal] font-semibold text-ink mt-[26px]">{d.location}</h3>
+    <p className="muted">{d.locationIntro}</p>
     <div className="path-row mt-[8px] flex items-center gap-[10px] rounded-[9px] border border-line bg-inset py-[8px] pr-[8px] pl-[12px]"><code className="min-w-0 flex-1 font-mono text-[11.5px] leading-[normal] font-normal [overflow-wrap:anywhere] text-ink-4">{dataDir || "…"}</code>
-      <button className="btn-secondary small" onClick={() => void window.continuity.openDataFolder().catch(e => onNotice("フォルダを開けませんでした: " + message(e), "error"))}><FolderOpen size={13} />開く</button></div>
-    {confirm && <ConfirmDialog title="バックアップから復元しますか？" confirm="ZIP を選ぶ"
-      body="いまの会話・プロジェクト・設定などが、選んだバックアップの内容に置き換わります。置き換える前の状態は自動で保存されます。"
+      <button className="btn-secondary small" onClick={() => void window.continuity.openDataFolder().catch(e => onNotice(d.openFolderFailed + message(e), "error"))}><FolderOpen size={13} />{d.open}</button></div>
+    {confirm && <ConfirmDialog title={d.confirmTitle} confirm={d.confirmButton}
+      body={d.confirmBody}
       onConfirm={() => void restore()} onClose={() => setConfirm(false)} />}
   </>;
 }

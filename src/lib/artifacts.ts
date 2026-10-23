@@ -1,3 +1,5 @@
+import { t } from "../i18n";
+
 /** Code that opens as an artifact (side panel) rather than a plain code block. */
 export type ArtifactKind = "html" | "svg" | "markdown" | "mermaid" | "react";
 export type ArtifactRequest = { title: string; language: ArtifactKind; code: string };
@@ -18,16 +20,18 @@ export function artifactKind(language: string, code: string): ArtifactKind | nul
 }
 
 export function artifactTitle(kind: ArtifactKind, code: string): string {
-  if (kind === "html") return /<title[^>]*>([^<]{1,80})<\/title>/i.exec(code)?.[1]?.trim() || /<h1[^>]*>([^<]{1,80})<\/h1>/i.exec(code)?.[1]?.trim() || "Web ページ";
-  if (kind === "svg") return /<title[^>]*>([^<]{1,80})<\/title>/i.exec(code)?.[1]?.trim() || "画像";
-  if (kind === "react") return /export\s+default\s+(?:function|class)\s+([A-Z]\w{0,60})/.exec(code)?.[1] || /export\s+default\s+([A-Z]\w{0,60})\s*;?\s*$/m.exec(code)?.[1] || "React コンポーネント";
-  if (kind === "markdown") return /^#{1,3}\s+(.{1,80})$/m.exec(code)?.[1]?.trim() || "文書";
+  const s = t().lib.artifacts;
+  if (kind === "html") return /<title[^>]*>([^<]{1,80})<\/title>/i.exec(code)?.[1]?.trim() || /<h1[^>]*>([^<]{1,80})<\/h1>/i.exec(code)?.[1]?.trim() || s.webPage;
+  if (kind === "svg") return /<title[^>]*>([^<]{1,80})<\/title>/i.exec(code)?.[1]?.trim() || s.image;
+  if (kind === "react") return /export\s+default\s+(?:function|class)\s+([A-Z]\w{0,60})/.exec(code)?.[1] || /export\s+default\s+([A-Z]\w{0,60})\s*;?\s*$/m.exec(code)?.[1] || s.reactComponent;
+  if (kind === "markdown") return /^#{1,3}\s+(.{1,80})$/m.exec(code)?.[1]?.trim() || s.document;
   const titled = /^\s*(?:%%\s*title:|title:?)\s*(.{1,60})$/im.exec(code)?.[1]?.trim();
   const type = /^\s*(flowchart|graph|sequenceDiagram|classDiagram|stateDiagram(?:-v2)?|erDiagram|gantt|pie|journey|mindmap|timeline|gitGraph|quadrantChart|xychart-beta|sankey-beta|block-beta)\b/m.exec(code)?.[1];
-  return titled || (type ? `図（${type}）` : "図");
+  return titled || (type ? s.diagramOf(type) : s.diagram);
 }
 
-export const KIND_LABEL: Record<ArtifactKind, string> = { html: "HTML", svg: "SVG", markdown: "文書", mermaid: "図", react: "React" };
+// Getters so the labels follow the current language wherever they are read.
+export const KIND_LABEL: Record<ArtifactKind, string> = { html: "HTML", svg: "SVG", get markdown() { return t().lib.artifacts.document; }, get mermaid() { return t().lib.artifacts.diagram; }, react: "React" };
 export const KIND_EXT: Record<ArtifactKind, string> = { html: "html", svg: "svg", markdown: "md", mermaid: "mmd", react: "jsx" };
 
 /** Same kind and title across a chat are treated as versions of one artifact. */

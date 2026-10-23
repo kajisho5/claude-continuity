@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { CheckSquare, Plus, Search, Square, Star, Trash2 } from "lucide-react";
 import { relativeTime } from "../lib/time";
+import { useT } from "../i18n";
 
 /** `.chats-page` (also the artifacts and projects pages). */
 export const PAGE = "chats-page flex-1 animate-[fadeUp_.25s_var(--ease)_both] overflow-x-hidden overflow-y-auto px-[max(24px,calc((100%_-_760px)/2))] pt-[36px] pb-[40px]";
@@ -21,6 +22,8 @@ type Row = { id: string; title: string; updatedAt?: string; starred?: boolean; p
 
 /** Full chat history with search, like the "Chats" page of the Claude apps. */
 export default function ChatsPage({ chats, onOpen, onNew, onDelete, now }: { chats: Row[]; onOpen: (id: string) => void; onNew: () => void; onDelete: (ids: string[]) => void; now: number }) {
+  const t = useT();
+  const s = t.pages.chats;
   const [query, setQuery] = useState("");
   const [selecting, setSelecting] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -31,25 +34,25 @@ export default function ChatsPage({ chats, onOpen, onNew, onDelete, now }: { cha
     return [...filtered].sort((a, b) => (Date.parse(b.updatedAt ?? "") || 0) - (Date.parse(a.updatedAt ?? "") || 0));
   }, [chats, query]);
   return <section className={PAGE}>
-    <div className={PAGE_HEAD}><h1 className={PAGE_TITLE}>チャット履歴</h1><button className="btn-primary" onClick={onNew}><Plus size={15} />新しい会話</button></div>
-    <label className={SEARCH}><Search size={16} /><input className={SEARCH_INPUT} autoFocus value={query} onChange={e => setQuery(e.target.value)} placeholder="会話を検索…" aria-label="会話を検索" /></label>
+    <div className={PAGE_HEAD}><h1 className={PAGE_TITLE}>{s.title}</h1><button className="btn-primary" onClick={onNew}><Plus size={15} />{s.newChat}</button></div>
+    <label className={SEARCH}><Search size={16} /><input className={SEARCH_INPUT} autoFocus value={query} onChange={e => setQuery(e.target.value)} placeholder={s.searchPlaceholder} aria-label={s.search} /></label>
     <div className="chats-toolbar mt-[16px] mx-[2px] mb-[6px] flex items-center gap-[8px]">
-      <p className="chats-count m-0 flex-1 text-[12.5px] text-muted">{selecting ? `${selected.size} 件を選択中` : query ? `「${query}」に一致する会話 ${rows.length} 件` : `${rows.length} 件の会話`}</p>
+      <p className="chats-count m-0 flex-1 text-[12.5px] text-muted">{selecting ? s.selectedCount(selected.size) : query ? s.matchCount(query, rows.length) : s.totalCount(rows.length)}</p>
       {selecting
         ? <>
-          <button className="btn-text" onClick={() => setSelected(selected.size === rows.length ? new Set() : new Set(rows.map(r => r.id)))}>{selected.size === rows.length && rows.length ? "選択を解除" : "すべて選択"}</button>
-          <button className="btn-danger small" disabled={!selected.size} onClick={() => { onDelete([...selected]); setSelected(new Set()); setSelecting(false); }}><Trash2 size={13} />{selected.size} 件を削除</button>
-          <button className="btn-secondary small" onClick={() => { setSelecting(false); setSelected(new Set()); }}>キャンセル</button>
+          <button className="btn-text" onClick={() => setSelected(selected.size === rows.length ? new Set() : new Set(rows.map(r => r.id)))}>{selected.size === rows.length && rows.length ? s.deselectAll : s.selectAll}</button>
+          <button className="btn-danger small" disabled={!selected.size} onClick={() => { onDelete([...selected]); setSelected(new Set()); setSelecting(false); }}><Trash2 size={13} />{s.deleteSelected(selected.size)}</button>
+          <button className="btn-secondary small" onClick={() => { setSelecting(false); setSelected(new Set()); }}>{t.common.cancel}</button>
         </>
-        : rows.length > 0 && <button className="btn-secondary small" onClick={() => setSelecting(true)}><CheckSquare size={13} />選択</button>}
+        : rows.length > 0 && <button className="btn-secondary small" onClick={() => setSelecting(true)}><CheckSquare size={13} />{s.select}</button>}
     </div>
     <ul className={LIST}>
       {rows.map(c => <li key={c.id} className={(selecting && selected.has(c.id) ? "selected " : "") + ROW}><button className={ROW_BTN + (selecting && selected.has(c.id) ? " bg-accent/10" : " bg-transparent hover:bg-surface")} onClick={() => selecting ? toggle(c.id) : onOpen(c.id)} aria-pressed={selecting ? selected.has(c.id) : undefined}>
         <span className={ROW_TITLE}>{selecting && (selected.has(c.id) ? <CheckSquare size={15} className="check on shrink-0 text-accent" /> : <Square size={15} className="check shrink-0 text-subtle" />)}{c.starred && <Star size={13} className={STAR} fill="currentColor" />}{c.title}</span>
         {c.preview && <span className={ROW_PREVIEW}>{c.preview}</span>}
-        <small className={ROW_META}>{[c.projectName, relativeTime(c.updatedAt, now) && `最終メッセージ ${relativeTime(c.updatedAt, now)}`].filter(Boolean).join(" · ")}</small>
+        <small className={ROW_META}>{[c.projectName, relativeTime(c.updatedAt, now) && s.lastMessage(relativeTime(c.updatedAt, now))].filter(Boolean).join(" · ")}</small>
       </button></li>)}
     </ul>
-    {rows.length === 0 && <p className="hint mb-0">一致する会話はありません。</p>}
+    {rows.length === 0 && <p className="hint mb-0">{s.noMatches}</p>}
   </section>;
 }

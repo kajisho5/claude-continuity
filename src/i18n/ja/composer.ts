@@ -1,1 +1,8 @@
-export const composer = {};
+export const composer = {
+  message: "メッセージ",
+  attachFiles: "ファイルを添付",
+  stopTip: "停止（Esc）",
+  stop: "停止",
+  sendTip: "送信（Enter）",
+  send: "送信"
+};

@@ -41,3 +41,16 @@ describe("transcriptHandoff", () => {
     expect(fullTranscript("t", [{ role: "user", content: " " }, { role: "assistant", content: "x" }])).toBe("# t\n\n【Claude】\nx\n");
   });
 });
+
+describe("handoff in English", async () => {
+  const { setLocale } = await import("../i18n");
+  it("labels turns and omissions in English", () => {
+    setLocale("en");
+    try {
+      expect(fullTranscript("t", [{ role: "user", content: "hi" }, { role: "assistant", content: "x" }])).toBe("# t\n\n[Me]\nhi\n\n[Claude]\nx\n");
+      const r = transcriptHandoff("t", turns(20, 400), "win32");
+      expect(r.text.startsWith("This is a handoff")).toBe(true);
+      expect(r.text).toContain("(Earlier messages omitted)");
+    } finally { setLocale("ja"); }
+  });
+});

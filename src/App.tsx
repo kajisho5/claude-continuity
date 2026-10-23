@@ -26,8 +26,10 @@ import { ConfirmDialog, RenameDialog } from "./components/Dialog";
 import { PLAN_LABELS, summarizeCredit, type CreditSettings, type UsageRow } from "./lib/credit";
 import { costOf, formatUsd, priceHint } from "./lib/pricing";
 import { DEFAULT_PREFS, type Prefs } from "./lib/prefs";
-import { resolveLocale, setLocale } from "./i18n";
-import { CONTINUE_PROMPT, mergeContinuation } from "./lib/continue";
+import { intlLocale, resolveLocale, setLocale, useT, type Messages } from "./i18n";
+import { ja } from "./i18n/ja";
+import { en } from "./i18n/en";
+import { continuePrompt, mergeContinuation } from "./lib/continue";
 import { plainPreview } from "./lib/time";
 import { editUserMessage, selectUserVersion } from "./lib/versions";
 
@@ -36,24 +38,25 @@ type Chat = { id: string; title: string; messages: Msg[]; source?: string; proje
 type Model = { id: string; displayName: string; createdAt?: string; maxTokens?: number; effortLevels: string[]; adaptiveThinking: boolean; imageInput: boolean; pdfInput: boolean };
 type Pending = { chatId: string; requestId: string; text: string; thinking: string; activity: string; startedAt: number; firstTextAt?: number };
 type Reply = Omit<Msg, "role" | "attachments" | "alternates" | "altIndex">;
-const welcome: Chat = { id: "welcome", title: "はじめに", messages: [{ role: "assistant", content: "Claude Continuityへようこそ。APIキーを設定するとClaude APIと会話できます。左側からClaudeのエクスポートを読み込むと、対応する会話をこの画面で開けます。\n\n注意：インポートした会話は、続きを送信した時点で選択した文脈がAnthropic APIへ送信されます。" }] };
-const EFFORT_LABELS: Record<string, string> = { low: "低", medium: "中", high: "高", xhigh: "より高", max: "最大" };
-const STYLES: { id: string; label: string }[] = [
-  { id: "standard", label: "標準" }, { id: "concise", label: "簡潔" }, { id: "detailed", label: "詳しく" }, { id: "explanatory", label: "説明調" }, { id: "custom", label: "カスタム" }
-];
-const DEFAULT_TITLES = new Set(["新しい会話", "はじめに"]);
-const SUGGESTIONS = [
-  { label: "要約する", prompt: "次の文章を、要点を3つにまとめてください。\n\n" },
-  { label: "書く", prompt: "次の内容でメールの下書きを書いてください：" },
-  { label: "コード", prompt: "次の処理をするコードを書いてください：" },
-  { label: "学ぶ", prompt: "初心者向けに、次のことを例を交えて説明してください：" },
-  { label: "考える", prompt: "次のテーマについて、異なる視点からアイデアを5つ出してください：" }
-];
+const welcomeChat = (t: Messages): Chat => ({ id: "welcome", title: t.app.welcomeTitle, messages: [{ role: "assistant", content: t.app.welcomeContent }] });
+const STYLE_IDS = ["standard", "concise", "detailed", "explanatory"] as const;
+// Default titles and the welcome text in every language, so they are still recognized (and re-translated) after the language changes.
+const NEW_CHAT_TITLES = new Set([ja.app.newChat, en.app.newChat]);
+const WELCOME_TITLES = new Set([ja.app.welcomeTitle, en.app.welcomeTitle]);
+const WELCOME_CONTENTS = new Set([ja.app.welcomeContent, en.app.welcomeContent]);
+const DEFAULT_TITLES = new Set([...NEW_CHAT_TITLES, ...WELCOME_TITLES]);
+/** Shows the untouched welcome chat and empty new chats in the current language. */
+function localizeDefaults(c: Chat, t: Messages): Chat {
+  if (c.id === "welcome" && c.messages.length === 1 && WELCOME_TITLES.has(c.title) && WELCOME_CONTENTS.has(c.messages[0].content) && c.messages[0].content !== t.app.welcomeContent) return { ...c, title: t.app.welcomeTitle, messages: [{ ...c.messages[0], content: t.app.welcomeContent }] };
+  if (c.messages.length === 0 && NEW_CHAT_TITLES.has(c.title) && c.title !== t.app.newChat) return { ...c, title: t.app.newChat };
+  return c;
+}
 const IS_MAC = typeof navigator !== "undefined" && /mac/i.test(navigator.platform);
 const KEYS = IS_MAC ? { newChat: "⇧⌘O", search: "⌘K" } : { newChat: "Ctrl+Shift+O", search: "Ctrl+K" };
-function greeting(date = new Date()): string {
+function greeting(t: Messages, date = new Date()): string {
   const h = date.getHours();
-  return h < 5 ? "夜更かしですね" : h < 11 ? "おはようございます" : h < 18 ? "こんにちは" : "こんばんは";
+  const g = t.app.greeting;
+  return h < 5 ? g.lateNight : h < 11 ? g.morning : h < 18 ? g.afternoon : g.evening;
 }
 
 function sortModels(models: Model[]): Model[] {
@@ -73,7 +76,8 @@ function snapshot(m: Msg): Reply {
 }
 
 export default function App() {
- const [chats,setChats]=useState<Chat[]>([welcome]);
+ const t=useT();
+ const [chats,setChats]=useState<Chat[]>(()=>[welcomeChat(t)]);
  const [active,setActive]=useState("welcome");
  const [draft,setDraft]=useState("");
  const [pendingAttachments,setPendingAttachments]=useState<Attachment[]>([]);
@@ -89,7 +93,8 @@ export default function App() {
  const [shortcuts,setShortcuts]=useState(false);
  const [toasts,setToasts]=useState<Toast[]>([]);
  const [pending,setPending]=useState<Pending|null>(null);
- const [status,setStatus]=useState("準備完了");
+ // Empty means ready: the footer then shows the disclaimer.
+ const [status,setStatus]=useState("");
  const [loaded,setLoaded]=useState(false);
  const [lastUsage,setLastUsage]=useState<{inputTokens:number;outputTokens:number;costUsd:number|null}|null>(null);
  const [usageRows,setUsageRows]=useState<UsageRow[]>([]);
@@ -115,7 +120,7 @@ export default function App() {
  const searchRef=useRef<HTMLInputElement>(null);
  const messagesRef=useRef<HTMLElement>(null);
  const busy=pending!==null;
- const chat=chats.find(c=>c.id===active)??chats[0]??welcome;
+ const chat=chats.find(c=>c.id===active)??chats[0]??welcomeChat(t);
  const chatProject=projects.find(p=>p.id===chat.projectId)??null;
  const currentModel=availableModels.find(m=>m.id===model);
  const usageTotal=useMemo(()=>usageRows.reduce((acc,row)=>({inputTokens:acc.inputTokens+row.inputTokens,outputTokens:acc.outputTokens+row.outputTokens,calls:acc.calls+1,mcpCalls:acc.mcpCalls+(row.source==="mcp"?1:0)}),{inputTokens:0,outputTokens:0,calls:0,mcpCalls:0}),[usageRows]);
@@ -127,7 +132,7 @@ export default function App() {
  useEffect(()=>{
    Promise.all([window.continuity.keyStatus(),window.continuity.loadChats(),window.continuity.loadUsage(),window.continuity.loadCredit(),window.continuity.loadProjects(),window.continuity.loadPrefs()])
     .then(([s,saved,usage,savedCredit,savedProjects,savedPrefs])=>{setConfigured(s.configured); if(saved.length){setChats(saved as Chat[]);setActive(saved[0].id);} setUsageRows(toUsageRows(usage)); setCredit(savedCredit); setOnboarding(!savedCredit?.onboardingDone); setProjects(savedProjects); setPrefs(savedPrefs); setLoaded(true);})
-    .catch(e=>{setStatus("初期化エラー: "+err(e));setLoaded(true);});
+    .catch(e=>{setStatus(t.app.status.initError+err(e));setLoaded(true);});
    // Re-evaluate the credit cycle as time passes (day boundaries, expiry).
    const timer=window.setInterval(()=>setNow(Date.now()),60_000);
    const unsubscribe=window.continuity.onStream(event=>{
@@ -141,14 +146,14 @@ export default function App() {
    return ()=>{window.clearInterval(timer);unsubscribe();offUpdate();};
  },[]);
  async function refreshModels(announce=false){
-   if(!configured){setSettings("api");setStatus("先にAnthropic APIキーを設定してください");return;}
+   if(!configured){setSettings("api");setStatus(t.app.status.setKeyFirst);return;}
    setModelsLoading(true);
    try{
      const sorted=sortModels(await window.continuity.listModels());
      setAvailableModels(sorted);
      setModel(current=>sorted.some(m=>m.id===current)?current:(sorted.find(m=>m.id.includes("opus"))?.id??sorted[0]?.id??current));
-     setStatus(sorted.length?`${sorted.length}件の利用可能モデルを${announce?"更新":"取得"}しました`:"利用可能なモデルが見つかりませんでした");
-   }catch(e){setStatus("モデル一覧取得エラー: "+err(e));}
+     setStatus(sorted.length?t.app.status.modelsLoaded(sorted.length,announce):t.app.status.noModels);
+   }catch(e){setStatus(t.app.status.modelsError+err(e));}
    finally{setModelsLoading(false);}
  }
  useEffect(()=>{ if(configured) void refreshModels(); },[configured]);
@@ -162,6 +167,7 @@ export default function App() {
  // eslint-disable-next-line react-hooks/exhaustive-deps
  },[chatArtifacts.length]);
  useEffect(()=>{setLocale(resolveLocale(prefs.language));},[prefs.language]);
+ useEffect(()=>{setChats(cs=>cs.some(c=>localizeDefaults(c,t)!==c)?cs.map(c=>localizeDefaults(c,t)):cs);},[t,loaded]);
  useEffect(()=>{
    // Resolve the theme here rather than trusting the OS bridge: "system" follows prefers-color-scheme, the others are fixed.
    const media=window.matchMedia("(prefers-color-scheme: dark)");
@@ -180,7 +186,7 @@ export default function App() {
  useEffect(()=>{ if(effort&&currentModel&&!currentModel.effortLevels.includes(effort)) setEffort(""); },[currentModel,effort]);
  useEffect(()=>{
    if(!loaded)return;
-   const timer=window.setTimeout(()=>{window.continuity.saveChats(chats.filter(c=>!c.incognito)).catch(e=>setStatus("ローカル保存エラー: "+err(e)));},350);
+   const timer=window.setTimeout(()=>{window.continuity.saveChats(chats.filter(c=>!c.incognito)).catch(e=>setStatus(t.app.status.saveError+err(e)));},350);
    return ()=>window.clearTimeout(timer);
  },[chats,loaded]);
  useEffect(()=>{ const el=messagesRef.current; if(el&&atBottom) el.scrollTop=el.scrollHeight; },[chat.messages.length,pending?.text,pending?.thinking]);
@@ -212,16 +218,16 @@ export default function App() {
    try{
      const result=await window.continuity.chooseExport();
      if(!result)return;
-     if(!result.count){setStatus("会話を認識できませんでした。エクスポート形式を確認してください。");alert("このファイルから会話を抽出できませんでした。JSON/ZIPの構造に合わせた対応が必要な可能性があります。");return;}
-     setChats(cs=>{const existing=new Set(cs.map(c=>c.id));const incoming=result.conversations.filter(c=>!existing.has(c.id));const mapped=incoming.map(c=>({...c,title:c.title||"インポートした会話"}));if(mapped.length){setActive(mapped[0].id);setView("chat");setStatus(`${mapped.length}件の会話をインポートしました（${result.fileName}）`);toast(`${mapped.length}件の会話を読み込みました`);return [...mapped,...cs];}setStatus("読み込んだ会話はすべて既に存在します。");return cs;});
-   }catch(e){setStatus("インポートエラー: "+err(e));toast("読み込みに失敗しました: "+err(e),"error");}
+     if(!result.count){setStatus(t.app.status.importUnrecognized);alert(t.app.importAlert);return;}
+     setChats(cs=>{const existing=new Set(cs.map(c=>c.id));const incoming=result.conversations.filter(c=>!existing.has(c.id));const mapped=incoming.map(c=>({...c,title:c.title||t.app.importedChat}));if(mapped.length){setActive(mapped[0].id);setView("chat");setStatus(t.app.status.imported(mapped.length,result.fileName));toast(t.app.toast.imported(mapped.length));return [...mapped,...cs];}setStatus(t.app.status.importAllExist);return cs;});
+   }catch(e){setStatus(t.app.status.importError+err(e));toast(t.app.toast.importFailed+err(e),"error");}
  }
  function toast(text:string,kind:Toast["kind"]="ok"){
    const id=Date.now()+Math.random();
    setToasts(list=>[...list.slice(-2),{id,text,kind}]);
    window.setTimeout(()=>setToasts(list=>list.filter(t=>t.id!==id)),kind==="error"?6000:3200);
  }
- async function saveKey(apiKey:string){ await window.continuity.saveApiKey(apiKey);setConfigured(true);setStatus("APIキーをOSの安全な保存領域に保存しました");toast("API キーを保存しました"); }
+ async function saveKey(apiKey:string){ await window.continuity.saveApiKey(apiKey);setConfigured(true);setStatus(t.app.status.keySaved);toast(t.app.toast.keySaved); }
  async function saveCredit(next:CreditSettings){ setCredit(await window.continuity.saveCredit(next)); }
  async function savePrefs(next:Prefs){ setPrefs(await window.continuity.savePrefs(next)); }
  async function saveProjects(next:Project[]){ setProjects(await window.continuity.saveProjects(next)); }
@@ -229,7 +235,7 @@ export default function App() {
    if(apiKey){await window.continuity.saveApiKey(apiKey);setConfigured(true);}
    await saveCredit(next);
    setOnboarding(false);
-   setStatus("初期設定が完了しました");
+   setStatus(t.app.status.onboardingDone);
  }
  async function skipOnboarding(){
    await saveCredit({plan:null,monthlyAmountUsd:0,resetDay:new Date().getDate(),onboardingDone:true});
@@ -237,7 +243,7 @@ export default function App() {
  }
  function addAttachments(result:{added:Attachment[];errors:string[]}){
    if(result.added.length) setPendingAttachments(list=>[...list,...result.added]);
-   if(result.errors.length) setStatus("添付できませんでした: "+result.errors.join(" / "));
+   if(result.errors.length) setStatus(t.app.status.attachFailed+result.errors.join(" / "));
  }
  async function onPaste(e:React.ClipboardEvent){
    const files=Array.from(e.clipboardData.files);
@@ -253,10 +259,10 @@ export default function App() {
 
  /** Sends `history` (ending with a user turn) and appends or replaces the reply. */
  async function runReply(target:Chat,history:Msg[],mode:{kind:"append";retitle?:boolean}|{kind:"regenerate";previous:Msg}|{kind:"continue";previous:Msg}){
-   if(!configured){setSettings("api");setStatus("先にAnthropic APIキーを設定してください");return;}
+   if(!configured){setSettings("api");setStatus(t.app.status.setKeyFirst);return;}
    const requestId=crypto.randomUUID();
    const start:Pending={chatId:target.id,requestId,text:"",thinking:"",activity:"",startedAt:Date.now()};
-   pendingRef.current=start;setPending(start);setStatus("Claudeに問い合わせ中…");
+   pendingRef.current=start;setPending(start);setStatus(t.app.status.asking);
    const container=target.container&&(!target.container.expiresAt||Date.parse(target.container.expiresAt)>Date.now())?target.container.id:undefined;
    try{
      const response=await window.continuity.reply({requestId,model,effort:effort||undefined,style:target.style,projectId:target.projectId,tools:target.incognito?{...target.tools,memory:false}:target.tools,containerId:container,chatId:target.id,incognito:!!target.incognito,
@@ -280,24 +286,24 @@ export default function App() {
        setUsageRows(rows=>[...rows,{...response.usage,createdAt:new Date().toISOString()}]);
        setLastUsage({inputTokens:response.usage.inputTokens,outputTokens:response.usage.outputTokens,costUsd:cost});
      }
-     const costText=cost!=null?` · 推定 ${formatUsd(cost,4)}`:"";
-     const searches=response.usage.webSearchRequests?` · 検索 ${response.usage.webSearchRequests}回`:"";
+     const costText=cost!=null?t.app.status.cost(formatUsd(cost,4)):"";
+     const searches=response.usage.webSearchRequests?t.app.status.searches(response.usage.webSearchRequests):"";
      const notices=response.notices.length?` · ${response.notices.join(" / ")}`:"";
-     setStatus((response.aborted?`応答を停止しました${costText}`:`応答完了 · ${response.usage.inputTokens.toLocaleString()} input / ${response.usage.outputTokens.toLocaleString()} output tokens${searches}${costText}`)+notices);
+     setStatus((response.aborted?t.app.status.stopped(costText):t.app.status.done(response.usage.inputTokens.toLocaleString(intlLocale()),response.usage.outputTokens.toLocaleString(intlLocale()))+searches+costText)+notices);
      if(prefs.notifyOnReply&&!response.aborted&&!document.hasFocus()&&typeof Notification!=="undefined"){
        // The body is left out for incognito chats so nothing private lingers in the OS notification center.
-       const note=new Notification(target.incognito?"Claude が回答しました":target.title,{body:target.incognito?"シークレットチャット":(plainPreview(response.text,120)||"回答が完了しました")});
+       const note=new Notification(target.incognito?t.app.notify.incognitoTitle:target.title,{body:target.incognito?t.app.notify.incognitoBody:(plainPreview(response.text,120)||t.app.notify.done)});
        note.onclick=()=>{void window.continuity.focusWindow();setActive(target.id);setView("chat");};
      }
      if(mode.kind==="append"&&mode.retitle&&prefs.autoTitle&&!target.incognito&&response.text&&!response.aborted) void autoTitle(target.id,history[history.length-1].content,response.text);
    }catch(e){
      // A failed regeneration keeps the previous answer; a failed new turn shows the error in place of a reply.
      const tooLong=/prompt is too long|too many (input )?tokens|context (window|length)/i.test(err(e));
-     const hint=tooLong?"会話や添付が長すぎて、モデルが扱える量を超えました。添付を減らすか、新しい会話で続けてください（右上の「Claude で続ける」の要約を新しい会話に貼る方法もあります）。":"Consoleのクレジット残高、APIキー、利用可能モデルを確認してください。";
-     const fallback:Msg=mode.kind==="append"?{role:"assistant",content:"APIエラー: "+err(e)+"\n\n"+hint}:mode.previous;
+     const hint=tooLong?t.app.error.tooLong:t.app.error.checkConsole;
+     const fallback:Msg=mode.kind==="append"?{role:"assistant",content:t.app.error.prefix+err(e)+"\n\n"+hint}:mode.previous;
      patchChat(target.id,c=>({...c,messages:[...(mode.kind==="continue"?history.slice(0,-2):history),fallback]}));
-     setStatus(mode.kind==="regenerate"?"再生成に失敗しました: "+err(e):mode.kind==="continue"?"続きの生成に失敗しました: "+err(e):"APIリクエストに失敗しました");
-     if(mode.kind!=="append") toast((mode.kind==="regenerate"?"再生成":"続きの生成")+"に失敗しました: "+err(e),"error");
+     setStatus(mode.kind==="regenerate"?t.app.status.regenerateFailed+err(e):mode.kind==="continue"?t.app.status.continueFailed+err(e):t.app.status.requestFailed);
+     if(mode.kind!=="append") toast((mode.kind==="regenerate"?t.app.status.regenerateFailed:t.app.status.continueFailed)+err(e),"error");
    }
    finally{pendingRef.current=null;setPending(null);}
  }
@@ -315,14 +321,14 @@ export default function App() {
    const userMsg:Msg={role:"user",content:text,...(pendingAttachments.length?{attachments:pendingAttachments}:{})};
    const history=[...current.messages,userMsg];
    const provisional=DEFAULT_TITLES.has(current.title);
-   const title=provisional?(text||pendingAttachments[0]?.name||"新しい会話").slice(0,48):current.title;
+   const title=provisional?(text||pendingAttachments[0]?.name||t.app.newChat).slice(0,48):current.title;
    patchChat(current.id,c=>({...c,messages:history,title,updatedAt:new Date().toISOString()}));setDraft("");setPendingAttachments([]);
    await runReply({...current,title},history,{kind:"append",retitle:provisional});
  }
  function continueReply(index:number){
    const previous=chat.messages[index];
    if(busy||previous?.role!=="assistant")return;
-   const history:Msg[]=[...chat.messages.slice(0,index+1),{role:"user",content:CONTINUE_PROMPT}];
+   const history:Msg[]=[...chat.messages.slice(0,index+1),{role:"user",content:continuePrompt()}];
    void runReply(chat,history,{kind:"continue",previous});
  }
  function regenerate(index:number){
@@ -349,30 +355,30 @@ export default function App() {
    })}));
  }
  async function saveFile(fileId:string,name:string){
-   try{const result=await window.continuity.saveGeneratedFile(fileId,name);if(!result.canceled){setStatus(`保存しました: ${result.filePath}`);toast(`${name} を保存しました`);}}
-   catch(e){setStatus("ファイル保存エラー: "+err(e));toast("ファイルを保存できませんでした: "+err(e),"error");}
+   try{const result=await window.continuity.saveGeneratedFile(fileId,name);if(!result.canceled){setStatus(t.app.status.savedFile(result.filePath??""));toast(t.app.toast.savedFile(name));}}
+   catch(e){setStatus(t.app.status.fileSaveError+err(e));toast(t.app.toast.fileSaveFailed+err(e),"error");}
  }
  function stop(){ if(pending) void window.continuity.abortReply(pending.requestId); }
- async function exportChat(id=active){const target=chats.find(c=>c.id===id);if(!target)return;try{const result=await window.continuity.exportChat({fileName:target.title.replace(/[^\p{L}\p{N} _-]/gu,"").slice(0,80)||"conversation",data:JSON.stringify(target,null,2)});if(!result.canceled){setStatus("会話をJSONにエクスポートしました");toast("JSON に書き出しました");}}catch(e){setStatus("エクスポートエラー: "+err(e));toast("書き出しに失敗しました: "+err(e),"error");}}
+ async function exportChat(id=active){const target=chats.find(c=>c.id===id);if(!target)return;try{const result=await window.continuity.exportChat({fileName:target.title.replace(/[^\p{L}\p{N} _-]/gu,"").slice(0,80)||"conversation",data:JSON.stringify(target,null,2)});if(!result.canceled){setStatus(t.app.status.exportedJson);toast(t.app.toast.exportedJson);}}catch(e){setStatus(t.app.status.exportError+err(e));toast(t.app.toast.exportFailed+err(e),"error");}}
  async function exportHtml(id:string){
    const target=chats.find(c=>c.id===id);if(!target)return;
    try{
      // Rendered on demand so react-dom/server is only loaded when someone exports.
      const { chatToHtml }=await import("./lib/exportHtml");
      const result=await window.continuity.exportChat({fileName:target.title.replace(/[^\p{L}\p{N} _-]/gu,"").slice(0,80)||"conversation",data:chatToHtml(target),format:"html"});
-     if(!result.canceled)toast("HTML に書き出しました。ブラウザで開いて共有できます");
-   }catch(e){toast("書き出しに失敗しました: "+err(e),"error");}
+     if(!result.canceled)toast(t.app.toast.exportedHtml);
+   }catch(e){toast(t.app.toast.exportFailed+err(e),"error");}
  }
- function requestDelete(id:string){if(busy){setStatus("応答中は削除できません。");return;}if(chats.length<=1){setStatus("最後の会話は削除できません。");return;}setConfirmDelete(id);}
- function deleteChat(id:string){const remaining=chats.filter(c=>c.id!==id);if(!remaining.length)return;setChats(remaining);if(id===active){setActive(remaining[0].id);setArtifact(null);}setStatus("会話を削除しました");toast("会話を削除しました");}
+ function requestDelete(id:string){if(busy){setStatus(t.app.status.cantDeleteBusy);return;}if(chats.length<=1){setStatus(t.app.status.cantDeleteLast);return;}setConfirmDelete(id);}
+ function deleteChat(id:string){const remaining=chats.filter(c=>c.id!==id);if(!remaining.length)return;setChats(remaining);if(id===active){setActive(remaining[0].id);setArtifact(null);}setStatus(t.app.status.deleted);toast(t.app.toast.deleted);}
  function deleteMany(ids:string[]){
-   if(busy){toast("応答中は削除できません","error");return;}
+   if(busy){toast(t.app.toast.cantDeleteBusy,"error");return;}
    const drop=new Set(ids);
    const remaining=chats.filter(c=>!drop.has(c.id));
-   const next=remaining.length?remaining:[{id:"chat-"+Date.now(),title:"新しい会話",messages:[]} as Chat];
+   const next=remaining.length?remaining:[{id:"chat-"+Date.now(),title:t.app.newChat,messages:[]} as Chat];
    setChats(next);
    if(drop.has(active)){setActive(next[0].id);setArtifact(null);}
-   toast(`${ids.length} 件の会話を削除しました`);
+   toast(t.app.toast.deletedMany(ids.length));
  }
  function chatMenu(c:Chat,variant:"row"|"title"){
    return <ChatMenu title={c.title} starred={!!c.starred} variant={variant} projects={projects} projectId={c.projectId}
@@ -381,16 +387,16 @@ export default function App() {
  }
  function newChat(projectId?:string){
    // Reuse an untouched empty chat instead of stacking blank ones, as the Claude apps do.
-   const blank=chats.find(c=>c.messages.length===0&&!c.incognito&&c.title==="新しい会話"&&(c.projectId??null)===(projectId??null));
+   const blank=chats.find(c=>c.messages.length===0&&!c.incognito&&NEW_CHAT_TITLES.has(c.title)&&(c.projectId??null)===(projectId??null));
    if(blank){setActive(blank.id);}
-   else{const id="chat-"+Date.now();setChats(cs=>[{id,title:"新しい会話",messages:[],...(projectId?{projectId}:{})},...cs]);setActive(id);}
+   else{const id="chat-"+Date.now();setChats(cs=>[{id,title:t.app.newChat,messages:[],...(projectId?{projectId}:{})},...cs]);setActive(id);}
    setArtifact(null);setView("chat");setTimeout(()=>composerRef.current?.focus(),0);
  }
  function newProject(){setProjectModal({project:{id:crypto.randomUUID(),name:"",instructions:"",knowledge:[],memory:false},isNew:true});}
  async function upsertProject(project:Project){
    const exists=projects.some(p=>p.id===project.id);
    await saveProjects(exists?projects.map(p=>p.id===project.id?project:p):[...projects,project]);
-   if(!exists){setOpenProject(project.id);setView("project");toast("プロジェクトを作成しました");}
+   if(!exists){setOpenProject(project.id);setView("project");toast(t.app.toast.projectCreated);}
  }
  function deleteProject(id:string){ void saveProjects(projects.filter(p=>p.id!==id)); setChats(cs=>cs.map(c=>c.projectId===id?{...c,projectId:undefined}:c)); if(openProject===id){setOpenProject(null);setView("projects");} }
 
@@ -423,45 +429,45 @@ export default function App() {
    onRemoveAttachment={id=>setPendingAttachments(list=>list.filter(x=>x.id!==id))} onPickFiles={()=>void window.continuity.pickAttachments().then(addAttachments)}
    onPaste={e=>void onPaste(e)} onSend={()=>void send()} onStop={stop} busy={busy}
    tools={chat.incognito?{...chat.tools,memory:false}:chat.tools??{}} onTools={tools=>patchChat(chat.id,c=>({...c,tools}))} projectMemory={chatProject?.memory}
-   style={chat.style==="custom"?"custom:custom":chat.style??"standard"} styles={[...STYLES.filter(s=>s.id!=="custom").map(s=>({value:s.id,label:s.label})),...prefs.customStyles.map(st=>({value:"custom:"+st.id,label:st.name}))]} onStyle={v=>patchChat(chat.id,c=>({...c,style:v}))}
-   model={model} models={availableModels.length?availableModels.map(m=>({value:m.id,label:m.displayName})):[{value:model,label:modelsLoading?"取得中…":model}]} onModel={setModel} modelsLoading={modelsLoading} onRefreshModels={()=>void refreshModels(true)}
-   effort={effort} efforts={currentModel?.effortLevels.length?[{value:"",label:"思考: 既定"},...currentModel.effortLevels.map(l=>({value:l,label:`思考: ${EFFORT_LABELS[l]??l}`}))]:[]} onEffort={setEffort}
+   style={chat.style==="custom"?"custom:custom":chat.style??"standard"} styles={[...STYLE_IDS.map(id=>({value:id,label:t.app.styles[id]})),...prefs.customStyles.map(st=>({value:"custom:"+st.id,label:st.name}))]} onStyle={v=>patchChat(chat.id,c=>({...c,style:v}))}
+   model={model} models={availableModels.length?availableModels.map(m=>({value:m.id,label:m.displayName})):[{value:model,label:modelsLoading?t.app.modelsLoading:model}]} onModel={setModel} modelsLoading={modelsLoading} onRefreshModels={()=>void refreshModels(true)}
+   effort={effort} efforts={currentModel?.effortLevels.length?[{value:"",label:t.app.effortDefault},...currentModel.effortLevels.map(l=>({value:l,label:t.app.effort(t.app.effortLevels[l]??l)}))]:[]} onEffort={setEffort}
    connectors={chat.incognito?[]:connectors.filter(c=>c.enabled).map(c=>({id:c.id,name:c.name}))} onManageConnectors={()=>setSettings("connectors")}
-   placeholder={chat.incognito?"シークレットチャット（保存されません）":fresh?"今日はどんなお手伝いをしましょうか？":"返信…"} placement={fresh?"down":"up"}/>;
+   placeholder={chat.incognito?t.app.placeholder.incognito:fresh?t.app.placeholder.fresh:t.app.placeholder.reply} placement={fresh?"down":"up"}/>;
  return <ArtifactContext.Provider value={setArtifact}><div className={"shell chatfont-"+prefs.chatFont+(sidebarOpen?"":" sidebar-closed")+" flex h-screen min-h-[600px]"+(prefs.chatFont==="sans"?" [--chat-font:var(--sans)]":prefs.chatFont==="system"?' [--chat-font:system-ui,-apple-system,"Segoe_UI","Hiragino_Sans","Yu_Gothic_UI",sans-serif]':"")}>
   <aside aria-hidden={!sidebarOpen} className={"flex min-h-0 shrink-0 flex-col overflow-hidden border-r bg-sidebar py-[22px] transition-[width,padding] duration-[220ms] ease-claude "+(sidebarOpen?"w-[264px] border-line px-[14px] max-[1000px]:w-[220px]":"w-0 border-transparent px-0")}>
    <div className="brand flex items-center gap-[10px] pt-0 pr-[2px] pb-[18px] pl-[6px]"><span className="mark grid size-[30px] shrink-0 place-items-center"><LogoMark size={30} title="Claude Continuity"/></span><b className="flex-1 whitespace-nowrap font-serif text-[15px] font-semibold text-ink-2">Claude Continuity</b>
-    <button className="ghost-btn tip tip-below" data-tip="サイドバーを閉じる" aria-label="サイドバーを閉じる" onClick={()=>setSidebarOpen(false)}><PanelLeftClose size={17}/></button></div>
-   <button className="new-chat group/new flex w-full items-center gap-[10px] rounded-[9px] border-0 bg-transparent px-[8px] py-[7px] text-left text-[13px] font-semibold text-ink-2 hover:bg-line" onClick={()=>newChat()}><span className="plus-dot grid size-[24px] shrink-0 place-items-center rounded-full bg-accent text-on-accent transition-transform duration-200 ease-claude group-hover/new:rotate-90 group-hover/new:scale-[1.05] group-active/new:rotate-0 group-active/new:scale-[.92]"><Plus size={15} strokeWidth={2.6}/></span>新しい会話<kbd className="ml-auto opacity-0 transition-opacity duration-150 ease-[ease] group-hover/new:opacity-100">{KEYS.newChat}</kbd></button>
-   <div className="search-box group/search mt-[6px] mb-[2px] flex items-center gap-[8px] rounded-[9px] border border-transparent px-[8px] text-subtle focus-within:border-line-strong focus-within:bg-inset"><Search size={14}/><input ref={searchRef} className="chat-search m-0 w-full rounded-[7px] border-0 bg-transparent px-0 py-[8px] text-[12.5px] text-ink-2 outline-none placeholder:text-faint" value={search} onChange={e=>setSearch(e.target.value)} placeholder="会話を検索" aria-label="会話を検索"/><kbd className="ml-auto opacity-0 transition-opacity duration-150 ease-[ease] group-hover/search:opacity-100 group-focus-within/search:opacity-100">{KEYS.search}</kbd></div>
-   <button className={"side-nav mt-[2px] flex w-full items-center gap-[10px] rounded-[9px] border-0 px-[10px] py-[8px] text-left text-[13px] hover:bg-line hover:text-ink [&_svg]:text-muted"+(view==="chats"?" active bg-line text-ink":" bg-transparent text-ink-4")} onClick={()=>{setView("chats");setArtifact(null);}}><MessagesSquare size={16}/>チャット</button>
-   <button className={"side-nav mt-[2px] flex w-full items-center gap-[10px] rounded-[9px] border-0 px-[10px] py-[8px] text-left text-[13px] hover:bg-line hover:text-ink [&_svg]:text-muted"+(view==="artifacts"?" active bg-line text-ink":" bg-transparent text-ink-4")} onClick={()=>{setView("artifacts");setArtifact(null);}}><Shapes size={16}/>アーティファクト</button>
-   <button className={"side-nav mt-[2px] flex w-full items-center gap-[10px] rounded-[9px] border-0 px-[10px] py-[8px] text-left text-[13px] hover:bg-line hover:text-ink [&_svg]:text-muted"+(view==="projects"||view==="project"?" active bg-line text-ink":" bg-transparent text-ink-4")} onClick={()=>{setView("projects");setArtifact(null);}}><FolderOpen size={16}/>プロジェクト</button>
+    <button className="ghost-btn tip tip-below" data-tip={t.app.closeSidebar} aria-label={t.app.closeSidebar} onClick={()=>setSidebarOpen(false)}><PanelLeftClose size={17}/></button></div>
+   <button className="new-chat group/new flex w-full items-center gap-[10px] rounded-[9px] border-0 bg-transparent px-[8px] py-[7px] text-left text-[13px] font-semibold text-ink-2 hover:bg-line" onClick={()=>newChat()}><span className="plus-dot grid size-[24px] shrink-0 place-items-center rounded-full bg-accent text-on-accent transition-transform duration-200 ease-claude group-hover/new:rotate-90 group-hover/new:scale-[1.05] group-active/new:rotate-0 group-active/new:scale-[.92]"><Plus size={15} strokeWidth={2.6}/></span>{t.app.newChat}<kbd className="ml-auto opacity-0 transition-opacity duration-150 ease-[ease] group-hover/new:opacity-100">{KEYS.newChat}</kbd></button>
+   <div className="search-box group/search mt-[6px] mb-[2px] flex items-center gap-[8px] rounded-[9px] border border-transparent px-[8px] text-subtle focus-within:border-line-strong focus-within:bg-inset"><Search size={14}/><input ref={searchRef} className="chat-search m-0 w-full rounded-[7px] border-0 bg-transparent px-0 py-[8px] text-[12.5px] text-ink-2 outline-none placeholder:text-faint" value={search} onChange={e=>setSearch(e.target.value)} placeholder={t.app.searchChats} aria-label={t.app.searchChats}/><kbd className="ml-auto opacity-0 transition-opacity duration-150 ease-[ease] group-hover/search:opacity-100 group-focus-within/search:opacity-100">{KEYS.search}</kbd></div>
+   <button className={"side-nav mt-[2px] flex w-full items-center gap-[10px] rounded-[9px] border-0 px-[10px] py-[8px] text-left text-[13px] hover:bg-line hover:text-ink [&_svg]:text-muted"+(view==="chats"?" active bg-line text-ink":" bg-transparent text-ink-4")} onClick={()=>{setView("chats");setArtifact(null);}}><MessagesSquare size={16}/>{t.app.nav.chats}</button>
+   <button className={"side-nav mt-[2px] flex w-full items-center gap-[10px] rounded-[9px] border-0 px-[10px] py-[8px] text-left text-[13px] hover:bg-line hover:text-ink [&_svg]:text-muted"+(view==="artifacts"?" active bg-line text-ink":" bg-transparent text-ink-4")} onClick={()=>{setView("artifacts");setArtifact(null);}}><Shapes size={16}/>{t.app.nav.artifacts}</button>
+   <button className={"side-nav mt-[2px] flex w-full items-center gap-[10px] rounded-[9px] border-0 px-[10px] py-[8px] text-left text-[13px] hover:bg-line hover:text-ink [&_svg]:text-muted"+(view==="projects"||view==="project"?" active bg-line text-ink":" bg-transparent text-ink-4")} onClick={()=>{setView("projects");setArtifact(null);}}><FolderOpen size={16}/>{t.app.nav.projects}</button>
    <div className="side-scroll mx-[-6px] mt-[4px] mb-0 min-h-0 flex-1 overflow-x-hidden overflow-y-auto px-[6px]">
-    {starredChats.length>0&&<><div className="label mx-[10px] mt-[18px] mb-[6px] text-[10.5px] font-medium tracking-[.4px] text-subtle">スター付き</div>
+    {starredChats.length>0&&<><div className="label mx-[10px] mt-[18px] mb-[6px] text-[10.5px] font-medium tracking-[.4px] text-subtle">{t.app.starred}</div>
      <div className="chatlist flex min-h-0 flex-none flex-col gap-px overflow-visible">{starredChats.map(c=>chatRow(c))}</div></>}
-    <div className="label mx-[10px] mt-[18px] mb-[6px] text-[10.5px] font-medium tracking-[.4px] text-subtle">最近の会話</div>
-    <div className="chatlist flex min-h-0 flex-none flex-col gap-px overflow-visible">{recentChats.map(c=>chatRow(c))}{recentChats.length===0&&<p className="hint tight mx-[9px] mt-[2px] mb-[4px] text-[9.5px]">{search?"一致する会話はありません。":"まだ会話はありません。"}</p>}</div>
+    <div className="label mx-[10px] mt-[18px] mb-[6px] text-[10.5px] font-medium tracking-[.4px] text-subtle">{t.app.recents}</div>
+    <div className="chatlist flex min-h-0 flex-none flex-col gap-px overflow-visible">{recentChats.map(c=>chatRow(c))}{recentChats.length===0&&<p className="hint tight mx-[9px] mt-[2px] mb-[4px] text-[9.5px]">{search?t.app.noMatches:t.app.noChats}</p>}</div>
    </div>
    <CreditCard summary={summary} totals={usageTotal} onConfigure={()=>setOnboarding(true)}/>
-   <AccountMenu name={prefs.displayName} plan={credit?.plan?`${PLAN_LABELS[credit.plan]} プラン`:"プラン未設定"} configured={configured}
+   <AccountMenu name={prefs.displayName} plan={credit?.plan?t.app.planName(PLAN_LABELS[credit.plan]):t.app.noPlan} configured={configured}
     onSettings={()=>setSettings("general")} onShortcuts={()=>setShortcuts(true)} onImport={()=>void importExport()} onOnboarding={()=>setOnboarding(true)}/>
   </aside>
   <main className={"relative flex min-w-0 flex-1 flex-col"+(dragging?" dragging":"")} onDragOver={e=>{e.preventDefault();setDragging(true);}} onDragLeave={e=>{if(e.currentTarget===e.target)setDragging(false);}} onDrop={e=>void onDrop(e)}>
    <header className="flex h-[52px] shrink-0 items-center justify-start gap-[8px] px-[16px] text-[12px] text-muted">
-    {!sidebarOpen&&<button className="ghost-btn tip tip-below" data-tip="サイドバーを開く" aria-label="サイドバーを開く" onClick={()=>setSidebarOpen(true)}><PanelLeftOpen size={17}/></button>}
+    {!sidebarOpen&&<button className="ghost-btn tip tip-below" data-tip={t.app.openSidebar} aria-label={t.app.openSidebar} onClick={()=>setSidebarOpen(true)}><PanelLeftOpen size={17}/></button>}
     <span className="crumbs flex min-w-0 flex-1 items-center gap-[4px]">
      {view!=="chat"?null:fresh
-      ? chat.incognito?null:<select className="project-select max-w-[180px] rounded-[8px] border border-accent/45 bg-accent/16 px-[8px] py-[4px] text-[10px] font-semibold text-link" value={chat.projectId??""} onChange={e=>patchChat(chat.id,c=>({...c,projectId:e.target.value||undefined}))} aria-label="この会話のプロジェクト">
-         <option value="">プロジェクトなし</option>{projects.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select>
+      ? chat.incognito?null:<select className="project-select max-w-[180px] rounded-[8px] border border-accent/45 bg-accent/16 px-[8px] py-[4px] text-[10px] font-semibold text-link" value={chat.projectId??""} onChange={e=>patchChat(chat.id,c=>({...c,projectId:e.target.value||undefined}))} aria-label={t.app.chatProject}>
+         <option value="">{t.app.noProject}</option>{projects.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select>
       : <>{chatProject&&<><button className="crumb-project inline-flex items-center gap-[6px] whitespace-nowrap rounded-[8px] border-0 bg-transparent px-[8px] py-[6px] text-[13px] text-muted hover:bg-line hover:text-ink" onClick={()=>{setOpenProject(chatProject.id);setView("project");setArtifact(null);}}><FolderOpen size={14}/>{chatProject.name}</button><span className="crumb-sep mx-[-4px] text-faint">/</span></>}{chatMenu(chat,"title")}</>}
     </span>
     <div className="header-actions flex items-center gap-[2px]">
      {view==="chat"&&fresh&&!chat.projectId&&<button className={"ghost-btn incognito-toggle tip tip-below tip-end"+(chat.incognito?" on bg-ink-2 text-bg enabled:hover:bg-ink enabled:hover:text-bg":"")} aria-pressed={!!chat.incognito}
-       data-tip={chat.incognito?"シークレットチャットをやめる":"シークレットチャット（保存しない）"} aria-label="シークレットチャット" onClick={()=>patchChat(chat.id,c=>({...c,incognito:!c.incognito}))}><Ghost size={17}/></button>}
-     {view==="chat"&&!fresh&&chat.incognito&&<span className="incognito-badge inline-flex items-center gap-[6px] rounded-[9px] border border-dashed border-line-input px-[10px] py-[5px] text-[12px] text-muted"><Ghost size={13}/>シークレット · 保存されません</span>}
-     {view==="chat"&&!fresh&&<button className="btn-secondary small handoff-btn tip tip-below tip-end rounded-[9px]" data-tip="Claude アプリの新しいチャットに文脈を渡す" onClick={()=>setHandoff(true)}><ArrowUpRight size={14}/>Claude で続ける</button>}
-     {!configured&&<button className="btn-secondary small" onClick={()=>setSettings("api")}><span className="dot"/>APIキーを設定</button>}
+       data-tip={chat.incognito?t.app.incognito.stop:t.app.incognito.start} aria-label={t.app.incognito.label} onClick={()=>patchChat(chat.id,c=>({...c,incognito:!c.incognito}))}><Ghost size={17}/></button>}
+     {view==="chat"&&!fresh&&chat.incognito&&<span className="incognito-badge inline-flex items-center gap-[6px] rounded-[9px] border border-dashed border-line-input px-[10px] py-[5px] text-[12px] text-muted"><Ghost size={13}/>{t.app.incognito.badge}</span>}
+     {view==="chat"&&!fresh&&<button className="btn-secondary small handoff-btn tip tip-below tip-end rounded-[9px]" data-tip={t.app.handoffTip} onClick={()=>setHandoff(true)}><ArrowUpRight size={14}/>{t.app.handoff}</button>}
+     {!configured&&<button className="btn-secondary small" onClick={()=>setSettings("api")}><span className="dot"/>{t.app.setApiKey}</button>}
     </div></header>
    {view==="artifacts"?<div className="workspace flex min-h-0 flex-1"><ArtifactsPage entries={artifactEntries} now={now} onOpen={e=>{setActive(e.chatId);setView("chat");setTimeout(()=>setArtifact(e.latest),0);}}/></div>:
     view==="projects"?<div className="workspace flex min-h-0 flex-1"><ProjectsPage projects={projects} chats={chatRows} now={now} onCreate={newProject} onOpen={id=>{setOpenProject(id);setView("project");}}/></div>:
@@ -474,12 +480,12 @@ export default function App() {
      {fresh
       ? <section className="welcome -mt-[6vh] flex w-[min(720px,100%-48px)] animate-[fadeUp_.35s_var(--ease)_both] flex-col items-stretch gap-[20px]">
          {chat.incognito
-          ? <><h1 className="incognito-title m-0 flex items-center justify-center gap-[14px] font-serif text-[36px] leading-[1.2] font-normal tracking-[-.3px] text-ink-2 [&_svg]:text-ink-3"><Ghost size={32}/>シークレットチャット</h1><p className="-mt-[10px] mb-0 text-center text-[13px] text-muted">この会話は履歴に保存されず、メモリも使いません。ほかの会話に移ると消えます。</p></>
-          : <h1 className="m-0 flex items-center justify-center gap-[14px] font-serif text-[36px] leading-[1.2] font-normal tracking-[-.3px] text-ink-2"><LogoGlyph size={34}/>{chatProject?chatProject.name:greeting()+(prefs.displayName?`、${prefs.displayName}さん`:"")}</h1>}
-         {chatProject&&<p className="-mt-[10px] mb-0 text-center text-[13px] text-muted">このプロジェクトの指示とナレッジが自動で付きます。</p>}
+          ? <><h1 className="incognito-title m-0 flex items-center justify-center gap-[14px] font-serif text-[36px] leading-[1.2] font-normal tracking-[-.3px] text-ink-2 [&_svg]:text-ink-3"><Ghost size={32}/>{t.app.incognito.label}</h1><p className="-mt-[10px] mb-0 text-center text-[13px] text-muted">{t.app.incognito.note}</p></>
+          : <h1 className="m-0 flex items-center justify-center gap-[14px] font-serif text-[36px] leading-[1.2] font-normal tracking-[-.3px] text-ink-2"><LogoGlyph size={34}/>{chatProject?chatProject.name:greeting(t)+(prefs.displayName?t.app.greetingName(prefs.displayName):"")}</h1>}
+         {chatProject&&<p className="-mt-[10px] mb-0 text-center text-[13px] text-muted">{t.app.projectNote}</p>}
          {composer("welcome")}
-         <div className="suggestions flex flex-wrap justify-center gap-[8px]">{SUGGESTIONS.map(sg=><button key={sg.label} className="rounded-[10px] border border-line-strong bg-transparent px-[13px] py-[7px] text-[12.5px] text-ink-3 hover:border-line-input hover:bg-surface" onClick={()=>{setDraft(sg.prompt);composerRef.current?.focus();}}>{sg.label}</button>)}</div>
-         {!chatProject&&<button className="link-btn inline-flex items-center gap-[6px] self-center rounded-[6px] border-0 bg-transparent px-[8px] py-[4px] text-[12px] text-subtle hover:text-ink-3" onClick={()=>void importExport()}><FileUp size={13}/> Claude のエクスポートから会話を続ける</button>}
+         <div className="suggestions flex flex-wrap justify-center gap-[8px]">{t.app.suggestions.map(sg=><button key={sg.label} className="rounded-[10px] border border-line-strong bg-transparent px-[13px] py-[7px] text-[12.5px] text-ink-3 hover:border-line-input hover:bg-surface" onClick={()=>{setDraft(sg.prompt);composerRef.current?.focus();}}>{sg.label}</button>)}</div>
+         {!chatProject&&<button className="link-btn inline-flex items-center gap-[6px] self-center rounded-[6px] border-0 bg-transparent px-[8px] py-[4px] text-[12px] text-subtle hover:text-ink-3" onClick={()=>void importExport()}><FileUp size={13}/> {t.app.continueFromExport}</button>}
         </section>
       : <>
        <section className="messages flex-1 overflow-auto scroll-auto px-[24px] pt-[12px] pb-[24px] max-[1000px]:px-[22px]" ref={messagesRef} onScroll={e=>{const el=e.currentTarget;setAtBottom(el.scrollHeight-el.scrollTop-el.clientHeight<120);}}>
@@ -494,23 +500,23 @@ export default function App() {
          </article>}
         </div>
        </section>
-       {!atBottom&&<button className="to-bottom tip absolute bottom-[150px] left-1/2 z-[3] grid size-[34px] -translate-x-1/2 animate-fade-in place-items-center rounded-full border border-line-strong bg-surface-2 text-ink-3 shadow-[0_8px_24px_var(--shadow)] hover:bg-raised" data-tip="最新へ" aria-label="最新のメッセージへ" onClick={scrollToBottom}><ArrowDown size={16}/></button>}
+       {!atBottom&&<button className="to-bottom tip absolute bottom-[150px] left-1/2 z-[3] grid size-[34px] -translate-x-1/2 animate-fade-in place-items-center rounded-full border border-line-strong bg-surface-2 text-ink-3 shadow-[0_8px_24px_var(--shadow)] hover:bg-raised" data-tip={t.app.toBottomTip} aria-label={t.app.toBottom} onClick={scrollToBottom}><ArrowDown size={16}/></button>}
        <footer className="px-[24px] pt-0 pb-[14px] max-[1000px]:px-[18px]">{composer("footer")}
-        <div className="status mx-auto mt-[8px] mb-0 flex max-w-[760px] flex-wrap justify-center gap-x-[10px] gap-y-[4px] px-[8px] text-center text-[11px] text-subtle"><span className="status-text">{status==="準備完了"?"Claude は間違えることがあります。回答は必ずご確認ください。":status}</span>{hint&&<span className="status-hint text-faint before:mr-[10px] before:text-faint before:content-['·']">{hint}</span>}</div>
+        <div className="status mx-auto mt-[8px] mb-0 flex max-w-[760px] flex-wrap justify-center gap-x-[10px] gap-y-[4px] px-[8px] text-center text-[11px] text-subtle"><span className="status-text">{status||t.app.disclaimer}</span>{hint&&<span className="status-hint text-faint before:mr-[10px] before:text-faint before:content-['·']">{hint}</span>}</div>
        </footer>
       </>}
     </div>
     {artifact&&<ArtifactPanel artifact={artifact} versions={artifactVersions.length?artifactVersions:[artifact]} onSelect={setArtifact} onClose={()=>setArtifact(null)}/>}
    </div>}
    {(update.state==="available"||update.state==="downloading"||update.state==="ready")&&updateDismissed!==update.state+update.version&&<div className="update-banner absolute top-[58px] left-1/2 z-[6] flex max-w-[min(720px,calc(100%-40px))] animate-toast-in items-center gap-[12px] rounded-[12px] border border-line-strong bg-modal py-[8px] pr-[8px] pl-[16px] text-[12.5px] whitespace-normal text-ink-2 shadow-[0_8px_24px_var(--shadow)] -translate-x-1/2" role="status">
-     <span className="update-banner-text flex min-w-0 flex-col gap-px"><b className="text-[13px] text-ink">{update.state==="ready"?"アップデートの準備ができました":"アップデートがあります"}</b>{statusText(update)}</span>
+     <span className="update-banner-text flex min-w-0 flex-col gap-px"><b className="text-[13px] text-ink">{update.state==="ready"?t.app.update.ready:t.app.update.available}</b>{statusText(update)}</span>
      {update.state==="downloading"&&<span className="update-progress block h-[6px] w-[140px] shrink-0 overflow-hidden rounded-[3px] bg-line" aria-label={`${update.percent}%`}><i className="block h-full bg-accent transition-[width] duration-300 ease-[ease]" style={{width:`${update.percent}%`}}/></span>}
-     {update.state!=="downloading"&&"notes" in update&&update.notes&&<button className="link text-[12px] whitespace-nowrap no-underline" onClick={()=>setSettings("about")}>変更内容</button>}
-     {update.state==="available"&&<button className="btn-primary small" onClick={()=>void window.continuity.downloadUpdate()}>ダウンロード</button>}
-     {update.state==="ready"&&<button className="btn-primary small" onClick={()=>void window.continuity.installUpdate()}>再起動して更新</button>}
-     {update.state!=="downloading"&&<button className="btn-text px-[8px] py-[6px] whitespace-nowrap" onClick={()=>setUpdateDismissed(update.state+update.version)}>あとで</button>}
+     {update.state!=="downloading"&&"notes" in update&&update.notes&&<button className="link text-[12px] whitespace-nowrap no-underline" onClick={()=>setSettings("about")}>{t.app.update.notes}</button>}
+     {update.state==="available"&&<button className="btn-primary small" onClick={()=>void window.continuity.downloadUpdate()}>{t.app.update.download}</button>}
+     {update.state==="ready"&&<button className="btn-primary small" onClick={()=>void window.continuity.installUpdate()}>{t.app.update.restart}</button>}
+     {update.state!=="downloading"&&<button className="btn-text px-[8px] py-[6px] whitespace-nowrap" onClick={()=>setUpdateDismissed(update.state+update.version)}>{t.app.update.later}</button>}
    </div>}
-   {dragging&&<div className="drop-hint pointer-events-none absolute inset-[12px] z-[4] grid animate-[fadeIn_.15s_ease] place-items-center rounded-[14px] border-2 border-dashed border-accent bg-accent/10 text-[14px] font-semibold text-link light:bg-[color-mix(in_srgb,var(--accent)_8%,#fff)]">ここにドロップして添付</div>}
+   {dragging&&<div className="drop-hint pointer-events-none absolute inset-[12px] z-[4] grid animate-[fadeIn_.15s_ease] place-items-center rounded-[14px] border-2 border-dashed border-accent bg-accent/10 text-[14px] font-semibold text-link light:bg-[color-mix(in_srgb,var(--accent)_8%,#fff)]">{t.app.dropHint}</div>}
   </main>
   {settings&&<SettingsPage initialTab={settings} prefs={prefs} onSavePrefs={savePrefs} configured={configured} onSaveKey={saveKey}
     credit={credit} onSaveCredit={saveCredit} onRestartOnboarding={()=>{setSettings(null);setOnboarding(true);}} onClose={()=>setSettings(null)} onNotice={toast} onConnectors={setConnectors}
@@ -520,9 +526,9 @@ export default function App() {
   {shortcuts&&<ShortcutsDialog onClose={()=>setShortcuts(false)}/>}
   <Toaster toasts={toasts} onDismiss={id=>setToasts(list=>list.filter(t=>t.id!==id))}/>
   {renaming&&<RenameDialog initial={chats.find(c=>c.id===renaming)?.title??""} onSave={title=>patchChat(renaming,c=>({...c,title}))} onClose={()=>setRenaming(null)}/>}
-  {confirmDelete&&<ConfirmDialog title="会話を削除しますか？" body={`「${chats.find(c=>c.id===confirmDelete)?.title??""}」を端末内の履歴から削除します。元に戻せません。`} confirm="削除"
+  {confirmDelete&&<ConfirmDialog title={t.app.confirmDelete.title} body={t.app.confirmDelete.body(chats.find(c=>c.id===confirmDelete)?.title??"")} confirm={t.common.delete}
     onConfirm={()=>deleteChat(confirmDelete)} onClose={()=>setConfirmDelete(null)}/>}
-  {confirmBulk&&<ConfirmDialog title={`${confirmBulk.length} 件の会話を削除しますか？`} body="選んだ会話を端末内の履歴から削除します。元に戻せません（バックアップがあれば復元できます）。" confirm="削除"
+  {confirmBulk&&<ConfirmDialog title={t.app.confirmBulk.title(confirmBulk.length)} body={t.app.confirmBulk.body} confirm={t.common.delete}
     onConfirm={()=>deleteMany(confirmBulk)} onClose={()=>setConfirmBulk(null)}/>}
   {projectModal&&<ProjectModal project={projectModal.project} isNew={projectModal.isNew} onSave={upsertProject} onDelete={()=>deleteProject(projectModal.project.id)} onClose={()=>setProjectModal(null)}/>}
   {onboarding&&loaded&&<OnboardingWizard keyConfigured={configured} onFinish={finishOnboarding} onSkip={skipOnboarding}/>}
