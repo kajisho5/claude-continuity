@@ -33,6 +33,7 @@ export const message: typeof Ja = {
     code: (n: number) => times(n, "code run", "code runs"),
     memory: (n: number) => times(n, "memory call", "memory calls"),
     history: (n: number) => times(n, "past-chat search", "past-chat searches"),
+    knowledge: (n: number) => times(n, "knowledge search", "knowledge searches"),
     connector: (n: number) => times(n, "connector call", "connector calls"),
     other: (n: number) => times(n, "other call", "other calls"),
     hasErrors: "Has errors",

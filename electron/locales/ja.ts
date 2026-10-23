@@ -51,6 +51,14 @@ export const ja = {
     tooManyFiles: "ファイルが多すぎます（500 個まで）。",
     badArchive: "この .zip は安全に読み込めません（フォルダの外を指すパスが含まれています）。"
   },
+  knowledge: {
+    toolDescription: "このプロジェクトのナレッジ（登録されたテキスト資料）を検索し、関連する箇所を返します。ナレッジは大きいため会話には全文を入れていません。資料の内容に関わる質問では、答える前にこのツールで調べ、必要なら言葉を変えて何度か検索してください。",
+    queryDescription: "探したい内容のキーワードや短い文",
+    maxResultsDescription: "返す箇所の最大数（1〜12、既定 6）",
+    noHits: "該当する箇所は見つかりませんでした。別の言葉で検索してみてください。",
+    hitHeading: (name: string, part: number) => `【${name} · 第 ${part} 部分】`,
+    systemNote: (names: string) => `# プロジェクトのナレッジ\n次の資料は大きいため全文を送っていません。内容が必要なときは search_project_knowledge で検索してください:\n${names}`
+  },
   memory: {
     viewTruncated: "\n…（長いため省略。view_range で続きを表示してください）"
   },
@@ -92,6 +100,7 @@ export const ja = {
       webFetch: "ページを読み込んでいます…",
       code: "コードを実行しています…",
       memory: "メモリを確認しています…",
+      knowledge: "ナレッジを検索しています…",
       pastChats: "過去の会話を探しています…"
     },
     clipped: "\n…（以下略）",
@@ -106,6 +115,7 @@ export const ja = {
     exitCode: (code: number) => `終了コード ${code}`,
     fileOp: "ファイル操作",
     memoryOp: "メモリ操作",
+    knowledgeSearch: (query: string) => `ナレッジを検索: ${query}`,
     historySearch: (query: string) => `過去の会話から「${query}」を検索`,
     tool: "ツール"
   },

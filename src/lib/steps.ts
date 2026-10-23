@@ -2,7 +2,7 @@ import { t } from "../i18n";
 
 /** One tool call made while answering (mirrors electron/request.ts ToolStep). */
 export type ToolStep = {
-  kind: "search" | "fetch" | "code" | "file" | "memory" | "history" | "connector" | "other";
+  kind: "search" | "fetch" | "code" | "file" | "memory" | "history" | "knowledge" | "connector" | "other";
   label: string;
   detail?: string;
   output?: string;

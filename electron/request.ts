@@ -186,12 +186,13 @@ export function activityLabel(name: string | undefined): string | null {
     case "code_execution": case "bash_code_execution": case "text_editor_code_execution": return t.code;
     case "memory": return t.memory;
     case "search_past_chats": return t.pastChats;
+    case "search_project_knowledge": return t.knowledge;
     default: return null;
   }
 }
 
 export type ToolStep = {
-  kind: "search" | "fetch" | "code" | "file" | "memory" | "history" | "connector" | "other";
+  kind: "search" | "fetch" | "code" | "file" | "memory" | "history" | "knowledge" | "connector" | "other";
   label: string;
   detail?: string;
   output?: string;
@@ -246,6 +247,9 @@ export function extractSteps(blocks: unknown[], clientResults: Map<string, { con
     } else if (b.name === "memory") {
       const own = clientResults.get(b.id);
       steps.push({ kind: "memory", label: `${t.memoryLabels[String(input.command)] ?? t.memoryOp}${input.path ? `: ${clip(input.path, 300)}` : ""}`, ...(own ? { output: clip(own.content), ...(own.isError ? { error: true } : {}) } : {}) });
+    } else if (b.name === "search_project_knowledge") {
+      const own = clientResults.get(b.id);
+      steps.push({ kind: "knowledge", label: t.knowledgeSearch(clip(input.query, 200)), ...(own ? { output: clip(own.content), ...(own.isError ? { error: true } : {}) } : {}) });
     } else if (b.name === "search_past_chats") {
       const own = clientResults.get(b.id);
       steps.push({ kind: "history", label: t.historySearch(clip(input.query, 200)), ...(own ? { output: clip(own.content), ...(own.isError ? { error: true } : {}) } : {}) });

@@ -31,6 +31,7 @@ export const message = {
     code: (n: number) => `コード実行 ${n} 回`,
     memory: (n: number) => `メモリ ${n} 回`,
     history: (n: number) => `過去の会話を検索 ${n} 回`,
+    knowledge: (n: number) => `ナレッジを検索 ${n} 回`,
     connector: (n: number) => `コネクタ ${n} 回`,
     other: (n: number) => `その他 ${n} 回`,
     hasErrors: "エラーあり",

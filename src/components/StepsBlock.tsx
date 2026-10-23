@@ -1,8 +1,8 @@
-import { Brain, ChevronDown, Code2, FileText, Globe, History, Plug, Search, Wrench } from "lucide-react";
+import { BookOpen, Brain, ChevronDown, Code2, FileText, Globe, History, Plug, Search, Wrench } from "lucide-react";
 import type { ToolStep } from "../lib/steps";
 import { useT, type Messages } from "../i18n";
 
-const ICONS = { search: Search, fetch: Globe, code: Code2, file: FileText, memory: Brain, history: History, connector: Plug, other: Wrench } as const;
+const ICONS = { search: Search, fetch: Globe, code: Code2, file: FileText, memory: Brain, history: History, knowledge: BookOpen, connector: Plug, other: Wrench } as const;
 const hostOf = (url: string) => { try { return new URL(url).hostname; } catch { return url; } };
 
 function summary(steps: ToolStep[], t: Messages): string {
@@ -10,7 +10,7 @@ function summary(steps: ToolStep[], t: Messages): string {
   const count = (kind: ToolStep["kind"]) => steps.filter(s => s.kind === kind).length;
   const parts = [
     count("search") && s.search(count("search")), count("fetch") && s.fetch(count("fetch")),
-    count("code") + count("file") && s.code(count("code") + count("file")), count("memory") && s.memory(count("memory")), count("history") && s.history(count("history")), count("connector") && s.connector(count("connector")), count("other") && s.other(count("other"))
+    count("code") + count("file") && s.code(count("code") + count("file")), count("memory") && s.memory(count("memory")), count("history") && s.history(count("history")), count("knowledge") && s.knowledge(count("knowledge")), count("connector") && s.connector(count("connector")), count("other") && s.other(count("other"))
   ].filter(Boolean);
   return parts.join(" · ");
 }

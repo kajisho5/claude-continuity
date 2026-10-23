@@ -52,6 +52,14 @@ export const en: typeof Ja = {
     tooManyFiles: "Too many files (500 at most).",
     badArchive: "This .zip can't be read safely (it has paths pointing outside its folder)."
   },
+  knowledge: {
+    toolDescription: "Searches this project's knowledge (the text files added to it) and returns the most relevant passages. The knowledge is too large to include in full, so search it before answering questions about it, rephrasing and searching again when needed.",
+    queryDescription: "Keywords or a short phrase to look for",
+    maxResultsDescription: "Maximum number of passages to return (1-12, default 6)",
+    noHits: "No matching passages. Try different words.",
+    hitHeading: (name: string, part: number) => `[${name} · part ${part}]`,
+    systemNote: (names: string) => `# Project knowledge\nThese files are too large to send in full. Use search_project_knowledge when you need their content:\n${names}`
+  },
   memory: {
     viewTruncated: "\n…(truncated because it is long; use view_range to see the rest)"
   },
@@ -93,6 +101,7 @@ export const en: typeof Ja = {
       webFetch: "Fetching page…",
       code: "Running code…",
       memory: "Checking memory…",
+      knowledge: "Searching project knowledge…",
       pastChats: "Searching past chats…"
     },
     clipped: "\n…(truncated)",
@@ -107,6 +116,7 @@ export const en: typeof Ja = {
     exitCode: (code: number) => `Exit code ${code}`,
     fileOp: "File operation",
     memoryOp: "Memory operation",
+    knowledgeSearch: (query: string) => `Searched knowledge: ${query}`,
     historySearch: (query: string) => `Searched past chats for "${query}"`,
     tool: "Tool"
   },

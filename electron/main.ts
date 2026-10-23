@@ -14,6 +14,7 @@ import { setupUpdater } from "./updater";
 import { getMainLocale, mainT, resolveMainLocale, setMainLocale } from "./i18n";
 import { connectorRequest, MCP_CONNECTOR_BETA, serverName, validateConnector, type Connector, type ConnectorView } from "./connectors";
 import { containerSkills, readSkillSource } from "./skills";
+import { buildIndex, formatKnowledgeHits, knowledgeTool, searchKnowledge, type KnowledgeIndex } from "./knowledge";
 import { desktopConfigPath, LocalMcpPool, parseDesktopConfig, parseEnv, toolDefinitions, toToolResult, validateLocal, type LocalServer, type LocalToolRef } from "./localMcp";
 import { HANDOFF_PREFIX, fitsHandoff } from "../src/lib/handoff";
 import { activityLabel, buildMessages, historyBudget, buildSystem, buildTools, extractFileIds, extractSteps, extractText, type ChatTurn, type Project, type StyleId, type ToolFlags } from "./request";
@@ -238,7 +239,7 @@ function sanitizeReply(m: any) {
     ...(m.aborted === true ? { aborted: true } : {}),
     ...(typeof m.stopReason === "string" ? { stopReason: m.stopReason.slice(0, 40) } : {}),
     ...(Array.isArray(m.steps) ? { steps: m.steps.slice(0, 100).map((st: any) => ({
-      kind: ["search", "fetch", "code", "file", "memory", "history", "connector", "other"].includes(st?.kind) ? st.kind : "other", label: str(st?.label, 500) ?? "",
+      kind: ["search", "fetch", "code", "file", "memory", "history", "knowledge", "connector", "other"].includes(st?.kind) ? st.kind : "other", label: str(st?.label, 500) ?? "",
       ...(st?.detail ? { detail: str(st.detail, 5000) } : {}), ...(st?.output ? { output: str(st.output, 5000) } : {}), ...(st?.error === true ? { error: true } : {}),
       ...(Array.isArray(st?.sources) ? { sources: st.sources.slice(0, 20).map((c: any) => ({ url: str(c?.url, 2000) ?? "", title: str(c?.title, 500) ?? "" })) } : {})
     })) } : {}),
@@ -784,6 +785,22 @@ function sanitizeTurns(list: unknown): ChatTurn[] {
   return list.filter((m: any) => m && (m.role === "user" || m.role === "assistant") && typeof m.content === "string")
     .map((m: any) => ({ role: m.role, content: m.content.slice(0, 2_000_000), ...(m.role === "user" ? { attachments: sanitizeAttachments(m.attachments) } : {}) }));
 }
+// ---- Project knowledge: sent whole while it fits, searched (BM25) once the text files outgrow the budget ----
+const knowledgeIndexes = new Map<string, { key: string; index: KnowledgeIndex }>();
+async function projectKnowledge(project: Project | null, store: AttachmentStore, maxInputTokens?: number): Promise<{ inline: Attachment[]; index: KnowledgeIndex | null; searched: string[] }> {
+  const all = project?.knowledge ?? [];
+  const text = all.filter(k => k.kind === "text");
+  if (!project || !text.length) return { inline: all, index: null, searched: [] };
+  const docs = await Promise.all(text.map(async k => ({ id: k.id, name: k.name, text: (await store.read(k.id)).toString("utf8") })));
+  // Half of the history budget: the conversation itself still needs room.
+  const limit = Math.floor(historyBudget(maxInputTokens) / 2);
+  if (docs.reduce((sum, d) => sum + d.text.length, 0) <= limit) return { inline: all, index: null, searched: [] };
+  const key = text.map(k => k.id).join(",");
+  let cached = knowledgeIndexes.get(project.id);
+  if (!cached || cached.key !== key) { cached = { key, index: buildIndex(docs) }; knowledgeIndexes.set(project.id, cached); }
+  return { inline: all.filter(k => k.kind !== "text"), index: cached.index, searched: text.map(k => k.name) };
+}
+
 // ---- Approval for local MCP tools (asked in the chat, like Claude Desktop) ----
 const approvals = new Map<string, (decision: ApprovalDecision) => void>();
 type ApprovalDecision = "once" | "always" | "deny";
@@ -860,14 +877,20 @@ ipcMain.handle("claude:reply", async (event, payload: ReplyPayload) => {
       return uploaded.id;
     }
   };
-  const built = await buildMessages(turns, project?.knowledge ?? [], loader, { containerUploads: codeOn, caps, maxChars: historyBudget(info?.maxInputTokens) });
+  // Text knowledge too large to send whole is searched instead (as the Claude apps do for big projects).
+  const knowledge = await projectKnowledge(project, store, info?.maxInputTokens);
+  if (knowledge.index) tools.push(knowledgeTool());
+  const built = await buildMessages(turns, knowledge.inline, loader, { containerUploads: codeOn, caps, maxChars: historyBudget(info?.maxInputTokens) });
   const messages: MessageParam[] = built.messages;
   // Custom styles are chosen as "custom:<id>"; the bare "custom" of earlier versions maps to id "custom".
   const customId = payload.style === "custom" ? "custom" : payload.style?.startsWith("custom:") ? payload.style.slice(7) : null;
   const customPrompt = customId ? prefs.customStyles.find(st => st.id === customId)?.prompt ?? "" : "";
   const style = (customId ? "custom" : payload.style) as StyleId | undefined;
   const research = flags.research === true;
-  const system = buildSystem(style, customPrompt, project, { ...(prefs.shareName ? { name: prefs.displayName } : {}), preferences: prefs.preferences }, { research });
+  const system = [
+    buildSystem(style, customPrompt, project, { ...(prefs.shareName ? { name: prefs.displayName } : {}), preferences: prefs.preferences }, { research }),
+    knowledge.index ? mainT().knowledge.systemNote(knowledge.searched.map(name => `- ${name}`).join("\n")) : ""
+  ].filter(Boolean).join("\n\n") || undefined;
   const containerId = typeof payload.containerId === "string" && payload.containerId ? payload.containerId : undefined;
 
   const controller = new AbortController();
@@ -977,6 +1000,8 @@ ipcMain.handle("claude:reply", async (event, payload: ReplyPayload) => {
           }
           const outcome = block.name === "memory"
             ? await runMemoryCommand(memoryRoot(), (block.input ?? {}) as Record<string, unknown>)
+            : block.name === "search_project_knowledge" && knowledge.index
+              ? { content: formatKnowledgeHits(searchKnowledge(knowledge.index, String((block.input as { query?: unknown })?.query ?? ""), Number((block.input as { max_results?: unknown })?.max_results) || 6)) }
             : block.name === "search_past_chats"
               ? await pastChatsOutcome(block.input as { query?: unknown; max_results?: unknown }, payload.chatId, payload.projectId)
               : { content: `Error: unknown tool ${block.name}`, isError: true };
