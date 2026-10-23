@@ -1,28 +1,28 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowDown, Plus, ShieldCheck, FileUp, ExternalLink, FolderOpen, Pencil, PanelLeftClose, PanelLeftOpen, Search } from "lucide-react";
+import { ArrowDown, Plus, FileUp, FolderOpen, MessagesSquare, Pencil, PanelLeftClose, PanelLeftOpen, Search } from "lucide-react";
 import CreditCard from "./components/CreditCard";
 import LogoMark, { LogoGlyph } from "./components/LogoMark";
-import CreditSettingsForm from "./components/CreditSettingsForm";
 import OnboardingWizard from "./components/OnboardingWizard";
 import { ArtifactContext, Markdown, ThinkingBlock, type ArtifactRequest } from "./components/MessageContent";
 import MessageItem, { type Msg } from "./components/MessageItem";
 import Composer, { type ComposerHandle } from "./components/Composer";
 import { type Tools } from "./components/ToolsMenu";
 import ProjectModal, { type Project } from "./components/ProjectModal";
-import PreferencesSection from "./components/PreferencesSection";
-import McpSection from "./components/McpSection";
+import SettingsPage, { type SettingsTab } from "./components/SettingsPage";
+import Toaster, { type Toast } from "./components/Toaster";
+import ChatsPage from "./components/ChatsPage";
 import ArtifactPanel from "./components/ArtifactPanel";
 import ChatMenu from "./components/ChatMenu";
 import AccountMenu from "./components/AccountMenu";
 import { ConfirmDialog, RenameDialog } from "./components/Dialog";
 import { PLAN_LABELS, summarizeCredit, type CreditSettings, type UsageRow } from "./lib/credit";
 import { costOf, formatUsd, priceHint } from "./lib/pricing";
+import { DEFAULT_PREFS, type Prefs } from "./lib/prefs";
 
 type Attachment = NonNullable<Msg["attachments"]>[number];
-type Chat = { id: string; title: string; messages: Msg[]; source?: string; projectId?: string; starred?: boolean; style?: string; tools?: Tools; container?: { id: string; expiresAt?: string } };
+type Chat = { id: string; title: string; messages: Msg[]; source?: string; projectId?: string; starred?: boolean; updatedAt?: string; style?: string; tools?: Tools; container?: { id: string; expiresAt?: string } };
 type Model = { id: string; displayName: string; createdAt?: string; maxTokens?: number; effortLevels: string[]; adaptiveThinking: boolean; imageInput: boolean; pdfInput: boolean };
 type Pending = { chatId: string; requestId: string; text: string; thinking: string; activity: string; startedAt: number; firstTextAt?: number };
-type Prefs = { autoTitle: boolean; customStyle: string; displayName: string };
 type Reply = Omit<Msg, "role" | "attachments" | "alternates" | "altIndex">;
 const welcome: Chat = { id: "welcome", title: "はじめに", messages: [{ role: "assistant", content: "Claude Continuityへようこそ。APIキーを設定するとClaude APIと会話できます。左側からClaudeのエクスポートを読み込むと、対応する会話をこの画面で開けます。\n\n注意：インポートした会話は、続きを送信した時点で選択した文脈がAnthropic APIへ送信されます。" }] };
 const EFFORT_LABELS: Record<string, string> = { low: "低", medium: "中", high: "高", xhigh: "より高", max: "最大" };
@@ -70,9 +70,10 @@ export default function App() {
  const [effort,setEffort]=useState("");
  const [availableModels,setAvailableModels]=useState<Model[]>([]);
  const [modelsLoading,setModelsLoading]=useState(false);
- const [key,setKey]=useState("");
  const [configured,setConfigured]=useState(false);
- const [settings,setSettings]=useState(false);
+ const [settings,setSettings]=useState<SettingsTab|null>(null);
+ const [view,setView]=useState<"chat"|"chats">("chat");
+ const [toasts,setToasts]=useState<Toast[]>([]);
  const [pending,setPending]=useState<Pending|null>(null);
  const [status,setStatus]=useState("準備完了");
  const [loaded,setLoaded]=useState(false);
@@ -84,7 +85,7 @@ export default function App() {
  const [projects,setProjects]=useState<Project[]>([]);
  const [projectFilter,setProjectFilter]=useState<string|null>(null);
  const [projectModal,setProjectModal]=useState<{project:Project;isNew:boolean}|null>(null);
- const [prefs,setPrefs]=useState<Prefs>({autoTitle:true,customStyle:"",displayName:""});
+ const [prefs,setPrefs]=useState<Prefs>(DEFAULT_PREFS);
  const [artifact,setArtifact]=useState<ArtifactRequest|null>(null);
  const [dragging,setDragging]=useState(false);
  const [sidebarOpen,setSidebarOpen]=useState(true);
@@ -117,7 +118,7 @@ export default function App() {
    return ()=>{window.clearInterval(timer);unsubscribe();};
  },[]);
  async function refreshModels(announce=false){
-   if(!configured){setSettings(true);setStatus("先にAnthropic APIキーを設定してください");return;}
+   if(!configured){setSettings("api");setStatus("先にAnthropic APIキーを設定してください");return;}
    setModelsLoading(true);
    try{
      const sorted=sortModels(await window.continuity.listModels());
@@ -153,7 +154,6 @@ export default function App() {
      else if(e.key==="Escape"){
        if(pendingRef.current) void window.continuity.abortReply(pendingRef.current.requestId);
        else if(artifact) setArtifact(null);
-       else if(settings) setSettings(false);
        else if(projectModal) setProjectModal(null);
      }
    };
@@ -167,13 +167,15 @@ export default function App() {
      const result=await window.continuity.chooseExport();
      if(!result)return;
      if(!result.count){setStatus("会話を認識できませんでした。エクスポート形式を確認してください。");alert("このファイルから会話を抽出できませんでした。JSON/ZIPの構造に合わせた対応が必要な可能性があります。");return;}
-     setChats(cs=>{const existing=new Set(cs.map(c=>c.id));const incoming=result.conversations.filter(c=>!existing.has(c.id));const mapped=incoming.map(c=>({...c,title:c.title||"インポートした会話"}));if(mapped.length){setActive(mapped[0].id);setStatus(`${mapped.length}件の会話をインポートしました（${result.fileName}）`);return [...mapped,...cs];}setStatus("読み込んだ会話はすべて既に存在します。");return cs;});
-   }catch(e){setStatus("インポートエラー: "+err(e));}
+     setChats(cs=>{const existing=new Set(cs.map(c=>c.id));const incoming=result.conversations.filter(c=>!existing.has(c.id));const mapped=incoming.map(c=>({...c,title:c.title||"インポートした会話"}));if(mapped.length){setActive(mapped[0].id);setView("chat");setStatus(`${mapped.length}件の会話をインポートしました（${result.fileName}）`);toast(`${mapped.length}件の会話を読み込みました`);return [...mapped,...cs];}setStatus("読み込んだ会話はすべて既に存在します。");return cs;});
+   }catch(e){setStatus("インポートエラー: "+err(e));toast("読み込みに失敗しました: "+err(e),"error");}
  }
- async function saveKey(){
-   try{await window.continuity.saveApiKey(key.trim());setConfigured(true);setKey("");setSettings(false);setStatus("APIキーをOSの安全な保存領域に保存しました");}
-   catch(e){setStatus(err(e));}
+ function toast(text:string,kind:Toast["kind"]="ok"){
+   const id=Date.now()+Math.random();
+   setToasts(list=>[...list.slice(-2),{id,text,kind}]);
+   window.setTimeout(()=>setToasts(list=>list.filter(t=>t.id!==id)),kind==="error"?6000:3200);
  }
+ async function saveKey(apiKey:string){ await window.continuity.saveApiKey(apiKey);setConfigured(true);setStatus("APIキーをOSの安全な保存領域に保存しました");toast("API キーを保存しました"); }
  async function saveCredit(next:CreditSettings){ setCredit(await window.continuity.saveCredit(next)); }
  async function savePrefs(next:Prefs){ setPrefs(await window.continuity.savePrefs(next)); }
  async function saveProjects(next:Project[]){ setProjects(await window.continuity.saveProjects(next)); }
@@ -205,7 +207,7 @@ export default function App() {
 
  /** Sends `history` (ending with a user turn) and appends or replaces the reply. */
  async function runReply(target:Chat,history:Msg[],mode:{kind:"append";retitle?:boolean}|{kind:"regenerate";previous:Msg}){
-   if(!configured){setSettings(true);setStatus("先にAnthropic APIキーを設定してください");return;}
+   if(!configured){setSettings("api");setStatus("先にAnthropic APIキーを設定してください");return;}
    const requestId=crypto.randomUUID();
    const start:Pending={chatId:target.id,requestId,text:"",thinking:"",activity:"",startedAt:Date.now()};
    pendingRef.current=start;setPending(start);setStatus("Claudeに問い合わせ中…");
@@ -222,7 +224,7 @@ export default function App() {
        const versions=mode.previous.alternates?.length?mode.previous.alternates:[snapshot(mode.previous)];
        next={...next,alternates:[...versions,reply],altIndex:versions.length};
      }
-     patchChat(target.id,c=>({...c,messages:[...history,next],...(response.container?{container:response.container}:{})}));
+     patchChat(target.id,c=>({...c,messages:[...history,next],updatedAt:new Date().toISOString(),...(response.container?{container:response.container}:{})}));
      setAtBottom(true);
      if(response.usage.inputTokens||response.usage.outputTokens){
        setUsageRows(rows=>[...rows,{...response.usage,createdAt:new Date().toISOString()}]);
@@ -256,7 +258,7 @@ export default function App() {
    const history=[...current.messages,userMsg];
    const provisional=DEFAULT_TITLES.has(current.title);
    const title=provisional?(text||pendingAttachments[0]?.name||"新しい会話").slice(0,48):current.title;
-   patchChat(current.id,c=>({...c,messages:history,title}));setDraft("");setPendingAttachments([]);
+   patchChat(current.id,c=>({...c,messages:history,title,updatedAt:new Date().toISOString()}));setDraft("");setPendingAttachments([]);
    await runReply({...current,title},history,{kind:"append",retitle:provisional});
  }
  function regenerate(index:number){
@@ -280,13 +282,13 @@ export default function App() {
    })}));
  }
  async function saveFile(fileId:string,name:string){
-   try{const result=await window.continuity.saveGeneratedFile(fileId,name);if(!result.canceled)setStatus(`保存しました: ${result.filePath}`);}
-   catch(e){setStatus("ファイル保存エラー: "+err(e));}
+   try{const result=await window.continuity.saveGeneratedFile(fileId,name);if(!result.canceled){setStatus(`保存しました: ${result.filePath}`);toast(`${name} を保存しました`);}}
+   catch(e){setStatus("ファイル保存エラー: "+err(e));toast("ファイルを保存できませんでした: "+err(e),"error");}
  }
  function stop(){ if(pending) void window.continuity.abortReply(pending.requestId); }
- async function exportChat(id=active){const target=chats.find(c=>c.id===id);if(!target)return;try{const result=await window.continuity.exportChat({fileName:target.title.replace(/[^\p{L}\p{N} _-]/gu,"").slice(0,80)||"conversation",data:JSON.stringify(target,null,2)});if(!result.canceled)setStatus("会話をJSONにエクスポートしました");}catch(e){setStatus("エクスポートエラー: "+err(e));}}
+ async function exportChat(id=active){const target=chats.find(c=>c.id===id);if(!target)return;try{const result=await window.continuity.exportChat({fileName:target.title.replace(/[^\p{L}\p{N} _-]/gu,"").slice(0,80)||"conversation",data:JSON.stringify(target,null,2)});if(!result.canceled){setStatus("会話をJSONにエクスポートしました");toast("JSON に書き出しました");}}catch(e){setStatus("エクスポートエラー: "+err(e));toast("書き出しに失敗しました: "+err(e),"error");}}
  function requestDelete(id:string){if(busy){setStatus("応答中は削除できません。");return;}if(chats.length<=1){setStatus("最後の会話は削除できません。");return;}setConfirmDelete(id);}
- function deleteChat(id:string){const remaining=chats.filter(c=>c.id!==id);if(!remaining.length)return;setChats(remaining);if(id===active){setActive(remaining[0].id);setArtifact(null);}setStatus("会話を削除しました");}
+ function deleteChat(id:string){const remaining=chats.filter(c=>c.id!==id);if(!remaining.length)return;setChats(remaining);if(id===active){setActive(remaining[0].id);setArtifact(null);}setStatus("会話を削除しました");toast("会話を削除しました");}
  function chatMenu(c:Chat,variant:"row"|"title"){
    return <ChatMenu title={c.title} starred={!!c.starred} variant={variant} projects={projects} projectId={c.projectId}
      onStar={()=>patchChat(c.id,x=>({...x,starred:!x.starred}))} onRename={()=>setRenaming(c.id)} onExport={()=>void exportChat(c.id)}
@@ -297,7 +299,7 @@ export default function App() {
    const blank=chats.find(c=>c.messages.length===0&&c.title==="新しい会話"&&(c.projectId??null)===(projectFilter??null));
    if(blank){setActive(blank.id);}
    else{const id="chat-"+Date.now();setChats(cs=>[{id,title:"新しい会話",messages:[],...(projectFilter?{projectId:projectFilter}:{})},...cs]);setActive(id);}
-   setArtifact(null);setTimeout(()=>composerRef.current?.focus(),0);
+   setArtifact(null);setView("chat");setTimeout(()=>composerRef.current?.focus(),0);
  }
  function newProject(){setProjectModal({project:{id:crypto.randomUUID(),name:"",instructions:"",knowledge:[],memory:false},isNew:true});}
  async function upsertProject(project:Project){ await saveProjects(projects.some(p=>p.id===project.id)?projects.map(p=>p.id===project.id?project:p):[...projects,project]); }
@@ -306,11 +308,12 @@ export default function App() {
  const hint=priceHint(model);
  const showPending=pending&&pending.chatId===chat.id;
  const query=search.toLowerCase();
- const visibleChats=chats.filter(c=>(!projectFilter||c.projectId===projectFilter)&&(c.title.toLowerCase().includes(query)||c.messages.some(m=>m.content.toLowerCase().includes(query))));
+ // Untouched new chats stay out of the lists until the first message, as in the Claude apps.
+ const visibleChats=chats.filter(c=>c.messages.length>0&&(!projectFilter||c.projectId===projectFilter)&&(c.title.toLowerCase().includes(query)||c.messages.some(m=>m.content.toLowerCase().includes(query))));
  const starredChats=visibleChats.filter(c=>c.starred);
  const recentChats=visibleChats.filter(c=>!c.starred);
- const chatRow=(c:Chat)=><div key={c.id} className={"chatrow"+(c.id===active?" active":"")}>
-   <button className="chatlink" onClick={()=>{setActive(c.id);setArtifact(null);}} title={c.title}><span>{c.title}</span></button>
+ const chatRow=(c:Chat)=><div key={c.id} className={"chatrow"+(c.id===active&&view==="chat"?" active":"")}>
+   <button className="chatlink" onClick={()=>{setActive(c.id);setArtifact(null);setView("chat");}} title={c.title}><span>{c.title}</span></button>
    {chatMenu(c,"row")}
  </div>;
  const lastAssistant=chat.messages.length-1;
@@ -323,12 +326,13 @@ export default function App() {
    model={model} models={availableModels.length?availableModels.map(m=>({value:m.id,label:m.displayName})):[{value:model,label:modelsLoading?"取得中…":model}]} onModel={setModel} modelsLoading={modelsLoading} onRefreshModels={()=>void refreshModels(true)}
    effort={effort} efforts={currentModel?.effortLevels.length?[{value:"",label:"思考: 既定"},...currentModel.effortLevels.map(l=>({value:l,label:`思考: ${EFFORT_LABELS[l]??l}`}))]:[]} onEffort={setEffort}
    placeholder={fresh?"今日はどんなお手伝いをしましょうか？":"返信…"} placement={fresh?"down":"up"}/>;
- return <ArtifactContext.Provider value={setArtifact}><div className={"shell"+(sidebarOpen?"":" sidebar-closed")}>
+ return <ArtifactContext.Provider value={setArtifact}><div className={"shell font-"+prefs.chatFont+(sidebarOpen?"":" sidebar-closed")}>
   <aside aria-hidden={!sidebarOpen}>
    <div className="brand"><span className="mark"><LogoMark size={30} title="Claude Continuity"/></span><b>Claude Continuity</b>
     <button className="ghost-btn tip tip-below" data-tip="サイドバーを閉じる" aria-label="サイドバーを閉じる" onClick={()=>setSidebarOpen(false)}><PanelLeftClose size={17}/></button></div>
    <button className="new-chat" onClick={newChat}><span className="plus-dot"><Plus size={15} strokeWidth={2.6}/></span>新しい会話<kbd>{KEYS.newChat}</kbd></button>
    <div className="search-box"><Search size={14}/><input ref={searchRef} className="chat-search" value={search} onChange={e=>setSearch(e.target.value)} placeholder="会話を検索" aria-label="会話を検索"/><kbd>{KEYS.search}</kbd></div>
+   <button className={"side-nav"+(view==="chats"?" active":"")} onClick={()=>{setView("chats");setArtifact(null);}}><MessagesSquare size={16}/>チャット</button>
    <div className="side-scroll">
     <div className="label row">プロジェクト<button className="ghost-btn small tip" data-tip="プロジェクトを作成" onClick={newProject} aria-label="プロジェクトを作成"><Plus size={14}/></button></div>
     <div className="projectlist">
@@ -345,20 +349,23 @@ export default function App() {
    </div>
    <CreditCard summary={summary} totals={usageTotal} onConfigure={()=>setOnboarding(true)}/>
    <AccountMenu name={prefs.displayName} plan={credit?.plan?`${PLAN_LABELS[credit.plan]} プラン`:"プラン未設定"} configured={configured}
-    onSettings={()=>setSettings(true)} onImport={()=>void importExport()} onOnboarding={()=>setOnboarding(true)}/>
+    onSettings={()=>setSettings("general")} onImport={()=>void importExport()} onOnboarding={()=>setOnboarding(true)}/>
   </aside>
   <main className={dragging?"dragging":""} onDragOver={e=>{e.preventDefault();setDragging(true);}} onDragLeave={e=>{if(e.currentTarget===e.target)setDragging(false);}} onDrop={e=>void onDrop(e)}>
    <header>
     {!sidebarOpen&&<button className="ghost-btn tip tip-below" data-tip="サイドバーを開く" aria-label="サイドバーを開く" onClick={()=>setSidebarOpen(true)}><PanelLeftOpen size={17}/></button>}
     <span className="crumbs">
-     {fresh
+     {view==="chats"?null:fresh
       ? <select className="project-select" value={chat.projectId??""} onChange={e=>patchChat(chat.id,c=>({...c,projectId:e.target.value||undefined}))} aria-label="この会話のプロジェクト">
          <option value="">プロジェクトなし</option>{projects.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select>
       : <>{chatProject&&<><button className="crumb-project" onClick={()=>setProjectFilter(chatProject.id)}><FolderOpen size={14}/>{chatProject.name}</button><span className="crumb-sep">/</span></>}{chatMenu(chat,"title")}</>}
     </span>
     <div className="header-actions">
-     {!configured&&<button className="btn-secondary small" onClick={()=>setSettings(true)}><span className="dot"/>APIキーを設定</button>}
+     {!configured&&<button className="btn-secondary small" onClick={()=>setSettings("api")}><span className="dot"/>APIキーを設定</button>}
     </div></header>
+   {view==="chats"?<div className="workspace"><ChatsPage now={now} onNew={newChat} onOpen={id=>{setActive(id);setView("chat");}}
+     chats={chats.filter(c=>c.messages.length>0).map(c=>({id:c.id,title:c.title,updatedAt:c.updatedAt,starred:c.starred,projectName:projects.find(p=>p.id===c.projectId)?.name,
+       preview:([...c.messages].reverse().find(m=>m.role==="assistant")?.content??c.messages[0]?.content??"").replace(/\s+/g," ").slice(0,140)}))}/></div>:
    <div className="workspace">
     <div className={"conversation"+(fresh?" fresh":"")}>
      {fresh
@@ -389,19 +396,12 @@ export default function App() {
       </>}
     </div>
     {artifact&&<ArtifactPanel artifact={artifact} onClose={()=>setArtifact(null)}/>}
-   </div>
+   </div>}
    {dragging&&<div className="drop-hint">ここにドロップして添付</div>}
   </main>
-  {settings&&<div className="overlay" onClick={()=>setSettings(false)}><div className="modal" onClick={e=>e.stopPropagation()}><button className="close" onClick={()=>setSettings(false)} aria-label="閉じる">×</button>
-   <h2>設定</h2><p className="muted">Anthropic Consoleで発行したAPIキーを入力してください。</p>
-   <label className="field"><span>API Key</span><input className="text-input" type="password" value={key} onChange={e=>setKey(e.target.value)} placeholder={configured?"保存済み。変更する場合のみ入力":"sk-ant-…"} autoComplete="off"/></label>
-   <div className="hint"><ShieldCheck size={13}/> APIキーはOSの安全な保存領域に暗号化して保存します。 <a href="https://platform.claude.com/settings/keys" target="_blank" rel="noreferrer">キーを作成 <ExternalLink size={11}/></a></div>
-   <div className="actions"><button className="btn-secondary" onClick={()=>setSettings(false)}>キャンセル</button><button className="btn-primary" disabled={!key.trim()} onClick={()=>void saveKey()}>保存</button></div>
-   <CreditSettingsForm value={credit} onSave={saveCredit}/>
-   <PreferencesSection prefs={prefs} onSave={savePrefs}/>
-   <McpSection/>
-   <div className="credit-guide"><b>Maxプランの月間APIクレジットを使う</b><p>Max 5x は月 $100、Max 20x は月 $200 相当。請求サイクル末で失効し、繰り越されません。Claude Code では使えません（API・Agent SDK・Playground が対象）。</p><a href="https://platform.claude.com/docs/en/about-claude/api-credits-for-subscribers" target="_blank" rel="noreferrer">公式設定手順</a><a href="https://platform.claude.com/settings/billing" target="_blank" rel="noreferrer">ConsoleのBillingを開く</a><button className="link" onClick={()=>{setSettings(false);setOnboarding(true);}}>初期設定をやり直す</button></div>
-   <small className="fineprint">このアプリはAPIキーでAnthropic APIを呼び出します。リンク済み組織のクレジットが利用されます。購入済み残高への自動リロードはこのアプリから設定・変更しません。送信した会話文脈と添付ファイルはAnthropic APIへ送られます。</small></div></div>}
+  {settings&&<SettingsPage initialTab={settings} prefs={prefs} onSavePrefs={savePrefs} configured={configured} onSaveKey={saveKey}
+    credit={credit} onSaveCredit={saveCredit} onRestartOnboarding={()=>{setSettings(null);setOnboarding(true);}} onClose={()=>setSettings(null)}/>}
+  <Toaster toasts={toasts} onDismiss={id=>setToasts(list=>list.filter(t=>t.id!==id))}/>
   {renaming&&<RenameDialog initial={chats.find(c=>c.id===renaming)?.title??""} onSave={title=>patchChat(renaming,c=>({...c,title}))} onClose={()=>setRenaming(null)}/>}
   {confirmDelete&&<ConfirmDialog title="会話を削除しますか？" body={`「${chats.find(c=>c.id===confirmDelete)?.title??""}」を端末内の履歴から削除します。元に戻せません。`} confirm="削除"
     onConfirm={()=>deleteChat(confirmDelete)} onClose={()=>setConfirmDelete(null)}/>}

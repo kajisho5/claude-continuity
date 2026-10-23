@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, safeStorage, shell } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, nativeTheme, safeStorage, shell } from "electron";
 import path from "node:path";
 import fs from "node:fs/promises";
 import { randomUUID } from "node:crypto";
@@ -20,7 +20,7 @@ async function ensureDataDir() { await fs.mkdir(dataDir(), { recursive: true });
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1440, height: 920, minWidth: 900, minHeight: 620,
-    backgroundColor: "#262522", title: "Claude Continuity",
+    backgroundColor: nativeTheme.shouldUseDarkColors ? "#262522" : "#FAF9F5", title: "Claude Continuity",
     webPreferences: { preload: path.join(__dirname, "preload.js"), contextIsolation: true, nodeIntegration: false, sandbox: true }
   });
   // Links in replies and guides open in the system browser; the app window never navigates away.
@@ -35,13 +35,16 @@ function createWindow() {
   else void mainWindow.loadFile(path.join(__dirname, "../dist/index.html"));
 }
 app.whenReady().then(async () => {
-  await ensureDataDir(); createWindow();
+  await ensureDataDir();
+  // The renderer follows prefers-color-scheme, which nativeTheme.themeSource controls.
+  nativeTheme.themeSource = (await loadPrefs()).theme;
+  createWindow();
   app.on("activate", () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
 });
 app.on("window-all-closed", () => { if (process.platform !== "darwin") app.quit(); });
 
 type NormalizedMessage = { role: "user" | "assistant"; content: string };
-type NormalizedConversation = { id: string; title: string; messages: NormalizedMessage[]; source: string };
+type NormalizedConversation = { id: string; title: string; messages: NormalizedMessage[]; source: string; updatedAt?: string };
 
 function textFromMessage(message: any): string {
   if (typeof message === "string") return message;
@@ -84,6 +87,10 @@ function findConversationArrays(value: any, found: any[] = [], depth = 0): any[]
   }
   return found;
 }
+function isoDate(value: unknown): { updatedAt?: string } {
+  const time = typeof value === "string" || typeof value === "number" ? new Date(value).getTime() : NaN;
+  return Number.isFinite(time) ? { updatedAt: new Date(time).toISOString() } : {};
+}
 function parseExportText(text: string, source: string): NormalizedConversation[] {
   let data: any;
   try { data = JSON.parse(text); } catch { return []; }
@@ -97,6 +104,7 @@ function parseExportText(text: string, source: string): NormalizedConversation[]
       id: `imported-${id}`,
       title: String(item.name ?? item.title ?? item.summary ?? "インポートした会話").trim() || "インポートした会話",
       messages,
+      ...isoDate(item.updated_at ?? item.created_at),
       source
     });
   }
@@ -178,6 +186,7 @@ ipcMain.handle("chats:save", async (_event, chats: unknown[]) => {
     source: typeof chat.source === "string" ? chat.source.slice(0, 1000) : undefined,
     ...(typeof chat.projectId === "string" ? { projectId: chat.projectId.slice(0, 100) } : {}),
     ...(chat.starred === true ? { starred: true } : {}),
+    ...isoDate(chat.updatedAt),
     ...(typeof chat.style === "string" ? { style: chat.style.slice(0, 40) } : {}),
     ...(chat.tools && typeof chat.tools === "object" ? { tools: Object.fromEntries(["webSearch", "webFetch", "files", "analysis", "memory"].map(k => [k, chat.tools[k] === true])) } : {}),
     ...(chat.container && typeof chat.container.id === "string" ? { container: { id: chat.container.id.slice(0, 200), expiresAt: str(chat.container.expiresAt, 60) } } : {}),
@@ -313,17 +322,29 @@ ipcMain.handle("credit:save", async (_event, value: any) => {
 
 // ---- Preferences and projects ----
 const prefsFile = () => path.join(dataDir(), "prefs.json");
-type Prefs = { autoTitle: boolean; customStyle: string; displayName: string };
+type Theme = "system" | "light" | "dark";
+type ChatFont = "serif" | "sans" | "system";
+type Prefs = { autoTitle: boolean; customStyle: string; displayName: string; theme: Theme; chatFont: ChatFont };
+const THEMES: Theme[] = ["system", "light", "dark"];
+const FONTS: ChatFont[] = ["serif", "sans", "system"];
+function sanitizePrefs(raw: any): Prefs {
+  return {
+    autoTitle: raw?.autoTitle !== false,
+    customStyle: typeof raw?.customStyle === "string" ? raw.customStyle.slice(0, 4000) : "",
+    displayName: typeof raw?.displayName === "string" ? raw.displayName.trim().slice(0, 40) : "",
+    theme: THEMES.includes(raw?.theme) ? raw.theme : "dark",
+    chatFont: FONTS.includes(raw?.chatFont) ? raw.chatFont : "serif"
+  };
+}
 async function loadPrefs(): Promise<Prefs> {
-  try {
-    const raw = JSON.parse(await fs.readFile(prefsFile(), "utf8"));
-    return { autoTitle: raw.autoTitle !== false, customStyle: typeof raw.customStyle === "string" ? raw.customStyle.slice(0, 4000) : "", displayName: typeof raw.displayName === "string" ? raw.displayName.trim().slice(0, 40) : "" };
-  } catch { return { autoTitle: true, customStyle: "", displayName: "" }; }
+  try { return sanitizePrefs(JSON.parse(await fs.readFile(prefsFile(), "utf8"))); }
+  catch { return sanitizePrefs({}); }
 }
 ipcMain.handle("prefs:load", () => loadPrefs());
-ipcMain.handle("prefs:save", async (_event, value: any) => {
-  const prefs: Prefs = { autoTitle: value?.autoTitle !== false, customStyle: String(value?.customStyle ?? "").slice(0, 4000), displayName: String(value?.displayName ?? "").trim().slice(0, 40) };
+ipcMain.handle("prefs:save", async (_event, value: unknown) => {
+  const prefs = sanitizePrefs(value);
   await fs.writeFile(prefsFile(), JSON.stringify(prefs), "utf8");
+  nativeTheme.themeSource = prefs.theme;
   return prefs;
 });
 const projectsFile = () => path.join(dataDir(), "projects.json");

@@ -18,7 +18,7 @@ type ContinuityConversation = {
   projectId?: string; style?: string; tools?: ContinuityTools; container?: { id: string; expiresAt?: string };
 };
 type ContinuityProject = { id: string; name: string; instructions: string; knowledge: ContinuityAttachment[]; memory: boolean };
-type ContinuityPrefs = { autoTitle: boolean; customStyle: string; displayName: string };
+type ContinuityPrefs = import("./lib/prefs").Prefs;
 type ContinuityUsage = {
   model: string; inputTokens: number; outputTokens: number;
   cacheCreationInputTokens: number; cacheReadInputTokens: number; webSearchRequests?: number; source?: string;

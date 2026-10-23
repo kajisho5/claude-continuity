@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import { Trash2 } from "lucide-react";
 import { formatBytes } from "./MessageItem";
+import { type Prefs } from "../lib/prefs";
 
-type Prefs = { autoTitle: boolean; customStyle: string; displayName: string };
 type MemoryFile = { path: string; size: number; content: string };
 
 export default function PreferencesSection({ prefs, onSave }: { prefs: Prefs; onSave: (prefs: Prefs) => Promise<void> }) {
@@ -16,16 +16,13 @@ export default function PreferencesSection({ prefs, onSave }: { prefs: Prefs; on
     setMemory(await window.continuity.listMemory());
   }
   return <section className="credit-form">
-    <h3>応答の設定</h3>
-    <label className="field"><span>表示名</span>
-      <input className="text-input" value={draft.displayName} maxLength={40} onChange={e => setDraft({ ...draft, displayName: e.target.value })} placeholder="あいさつとサイドバーに表示します（端末内のみ）" /></label>
-    <label className="toggle-row"><span><b>会話タイトルを自動で付ける</b><small>最初の回答のあと、Haiku で短いタイトルを付けます（ごく少額のクレジットを使います）</small></span>
-      <input type="checkbox" className="switch" checked={draft.autoTitle} onChange={e => setDraft({ ...draft, autoTitle: e.target.checked })} /></label>
-    <label className="field"><span>カスタムスタイル</span>
+    <h3>カスタムスタイル</h3>
+    <p className="muted">入力欄のツール →「スタイルを使用」→「カスタム」で使われます。</p>
+    <label className="field"><span className="sr-only">カスタムスタイル</span>
       <textarea className="text-input" value={draft.customStyle} onChange={e => setDraft({ ...draft, customStyle: e.target.value })}
         placeholder="例: 箇条書き中心で、専門用語には短い補足を付けてください。" /></label>
     <div className="form-actions">{message && <span className="form-message">{message}</span>}
-      <button className="btn-primary" onClick={() => void onSave(draft).then(() => setMessage("保存しました"))}>応答の設定を保存</button></div>
+      <button className="btn-primary" onClick={() => void onSave({ ...prefs, customStyle: draft.customStyle }).then(() => setMessage("保存しました"))}>スタイルを保存</button></div>
     <h3 className="spaced">メモリ</h3>
     <p className="muted">メモリをオンにした会話で Claude が保存した内容です。</p>
     {memory === null ? <p className="hint">読み込み中…</p> : memory.length === 0 ? <p className="hint">保存されたメモリはありません。</p> :
