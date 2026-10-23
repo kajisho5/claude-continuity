@@ -33,6 +33,7 @@
     "zod": "^4.6.7"
   },
   "devDependencies": {
+    "@tailwindcss/vite": "^4.3.3",
     "@types/adm-zip": "^0.5.5",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
@@ -41,6 +42,7 @@
     "electron": "^34.0.0",
     "electron-builder": "^25.1.8",
     "esbuild": "^0.24.2",
+    "tailwindcss": "^4.3.3",
     "typescript": "~5.7.2",
     "vite": "^6.0.7",
     "vitest": "^3.2.7",
