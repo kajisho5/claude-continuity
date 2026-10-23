@@ -14,8 +14,10 @@ export function previewDocument(artifact: { language: "html" | "svg"; code: stri
   if (artifact.language === "svg") {
     return `<!doctype html><html><head>${meta}<style>html,body{margin:0;height:100%;display:grid;place-items:center;background:#fff}svg{max-width:100%;max-height:100%}</style></head><body>${artifact.code}</body></html>`;
   }
-  return /<head[\s>]/i.test(artifact.code)
-    ? artifact.code.replace(/<head([^>]*)>/i, `<head$1>${meta}`)
+  // The policy goes first, ahead of any markup or script in the code: the parser puts a leading <meta> into
+  // the head even when the code brings its own <html>/<head>, so nothing runs before the policy applies.
+  return /<(html|head)[\s>]/i.test(artifact.code)
+    ? `${meta}${artifact.code}`
     : `<!doctype html><html><head>${meta}</head><body>${artifact.code}</body></html>`;
 }
 

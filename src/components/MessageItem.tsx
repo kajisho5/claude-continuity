@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight, Download, FileText, Image as ImageIcon, Pencil, RefreshCw, StepForward, X } from "lucide-react";
 import { CopyButton, Markdown, ThinkingBlock, linkCitations } from "./MessageContent";
 import { LogoGlyph } from "./LogoMark";
@@ -28,12 +28,18 @@ const previewCache = new Map<string, string | null>();
 function AttachmentViewer({ attachment, image, onClose }: { attachment: Attachment; image: string | null; onClose: () => void }) {
   const t = useT();
   const [text, setText] = useState<{ text: string; truncated: boolean } | null>(null);
+  // onClose is a new function on every parent render (each streamed token); keep it in a ref so the file is
+  // read once and the listener is not re-added per render.
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
   useEffect(() => {
     if (attachment.kind === "text") window.continuity.attachmentText(attachment.id).then(setText).catch(() => setText({ text: t.message.couldNotLoad, truncated: false }));
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") { e.stopPropagation(); onClose(); } };
+  }, [attachment.id, attachment.kind]);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape" && !e.isComposing && e.keyCode !== 229) { e.stopPropagation(); closeRef.current(); } };
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
-  }, [attachment.id, attachment.kind, onClose]);
+  }, []);
   return <div className="overlay viewer z-50 bg-[#000c] light:bg-[#2a26201f]" onMouseDown={onClose}>
     <div className={"viewer-box kind-" + attachment.kind + " flex max-h-[92vh] max-w-[min(1100px,94vw)] animate-[popIn_.18s_var(--ease)_both] flex-col overflow-hidden rounded-[14px] border border-line-strong bg-modal" + (attachment.kind === "text" ? " w-[min(900px,94vw)]" : "")} role="dialog" aria-modal="true" aria-label={attachment.name} onMouseDown={e => e.stopPropagation()}>
       <div className="viewer-head flex items-center gap-[10px] border-b border-line py-[10px] pr-[10px] pl-[16px]"><b className="truncate text-[13px] text-ink">{attachment.name}</b><small className="flex-1 text-[11px] whitespace-nowrap text-subtle">{t.message.attachmentKind[attachment.kind]} · {formatBytes(attachment.size)}</small>
@@ -116,7 +122,7 @@ export default function MessageItem({ message: m, isLast, busy, onRegenerate, on
       {editing
         ? <div className="edit-box mt-[8px] w-full rounded-[10px] border-[1.5px] border-accent bg-surface-2 p-[10px]">
           <textarea className="min-h-[70px] w-full resize-y border-0 bg-transparent font-sans text-[13px] leading-[1.7] text-ink outline-0 focus-visible:outline-none" value={draft} onChange={e => setDraft(e.target.value)} autoFocus aria-label={t.message.editMessage}
-            onKeyDown={e => { if (e.key === "Escape") { setEditing(false); setDraft(m.content); } }} />
+            onKeyDown={e => { if (e.key === "Escape" && !e.nativeEvent.isComposing && e.keyCode !== 229) { setEditing(false); setDraft(m.content); } }} />
           <div className="edit-actions flex items-center justify-end gap-[8px]"><span className="flex-1 text-[9.5px] text-muted">{t.message.editHint}</span>
             <button className="btn-secondary small" onClick={() => { setEditing(false); setDraft(m.content); }}>{t.common.cancel}</button>
             <button className="btn-primary small" disabled={!draft.trim() || busy} onClick={() => { setEditing(false); onEdit(draft.trim()); }}>{t.message.saveAndSend}</button></div>

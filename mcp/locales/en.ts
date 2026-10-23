@@ -15,6 +15,7 @@ export const en: typeof Ja = {
       "Name the files you relied on, if any, and distinguish facts from guesses. Answer in the language of the request."
     ].join("\n"),
     emptyInstructions: "instructions is empty",
+    unknownPrice: (model: string) => `Not run: no price is known for ${model}, so the per-call limit can't be checked. Choose a listed model (for example claude-opus-5-5).`,
     overBudget: (worst: string, cap: string, tokens: string) => `Not run: the worst-case estimate of ${worst} exceeds the per-call limit of ${cap} (input ${tokens} tokens). Pass fewer files or raise CONTINUITY_MCP_MAX_USD_PER_CALL.`
   },
   server: {

@@ -104,3 +104,13 @@ describe("summarizeCredit", () => {
     expect(summary.spentUsd).toBeCloseTo(24, 6);
   });
 });
+
+describe("daysLeft across a daylight-saving change", () => {
+  it("counts calendar days, not 24-hour blocks", () => {
+    const settings: CreditSettings = { plan: "max20x", monthlyAmountUsd: 200, resetDay: 5, onboardingDone: true };
+    // 4 days 23.5 wall-clock hours before the next reset, whichever DST rules the test machine uses.
+    const now = new Date(2026, 9, 31, 0, 30);
+    const summary = summarizeCredit([], settings, now);
+    expect(summary?.daysLeft).toBe(5);
+  });
+});

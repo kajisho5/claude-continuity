@@ -23,7 +23,7 @@ export default function HandoffDialog(p: Props) {
   const [edited, setEdited] = useState<string | null>(null);
   useEffect(() => { window.continuity.mcpInfo().then(info => setPlatform(info.platform)).catch(() => setPlatform("unknown")); }, []);
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") { e.stopPropagation(); p.onClose(); } };
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape" && !e.isComposing && e.keyCode !== 229) { e.stopPropagation(); p.onClose(); } };
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
   }, [p.onClose]);

@@ -94,7 +94,8 @@ export function toToolResult(result: any): { content: any[]; text: string; isErr
   const texts: string[] = [];
   let budget = MAX_RESULT_CHARS;
   const pushText = (s: string) => {
-    if (budget <= 0) return;
+    // The API rejects empty text blocks; "success, no output" falls through to emptyResult below.
+    if (!s || budget <= 0) return;
     const clipped = s.length > budget ? s.slice(0, budget) + mainT().localMcp.truncated : s;
     budget -= clipped.length;
     content.push({ type: "text", text: clipped }); texts.push(clipped);
@@ -116,10 +117,22 @@ type Live = { key: string; client: any; transport: any; tools?: McpTool[]; stder
 /** Keeps one running process per server; restarted when its settings change or it exits. */
 export class LocalMcpPool {
   private live = new Map<string, Live>();
+  // Starts in progress, so two callers (a reply and the Test button) share one process instead of spawning two.
+  private starting = new Map<string, { key: string; promise: Promise<Live> }>();
   constructor(private clientInfo: { name: string; version: string }) {}
 
-  private async connect(server: LocalServer): Promise<Live> {
+  private connect(server: LocalServer): Promise<Live> {
     const key = JSON.stringify([server.command, server.args, server.env]);
+    const inFlight = this.starting.get(server.id);
+    if (inFlight && inFlight.key === key) return inFlight.promise;
+    const promise = (inFlight ? inFlight.promise.catch(() => undefined) : Promise.resolve()).then(() => this.start(server, key));
+    this.starting.set(server.id, { key, promise });
+    const clear = () => { if (this.starting.get(server.id)?.promise === promise) this.starting.delete(server.id); };
+    promise.then(clear, clear);
+    return promise;
+  }
+
+  private async start(server: LocalServer, key: string): Promise<Live> {
     const current = this.live.get(server.id);
     if (current && current.key === key) return current;
     if (current) await this.close(server.id);

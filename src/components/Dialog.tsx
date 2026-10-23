@@ -3,7 +3,7 @@ import { useT } from "../i18n";
 
 function Frame({ title, children, onClose }: { title: string; children: ReactNode; onClose: () => void }) {
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") { e.stopPropagation(); onClose(); } };
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape" && !e.isComposing && e.keyCode !== 229) { e.stopPropagation(); onClose(); } };
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
   }, [onClose]);

@@ -87,7 +87,9 @@ export function summarizeCredit(rows: UsageRow[], settings: CreditSettings | nul
   const cycleMs = end.getTime() - start.getTime();
   const elapsedRatio = Math.min(1, Math.max(0, (now.getTime() - start.getTime()) / cycleMs));
   const usedRatio = amount > 0 ? (amount - remaining) / amount : 0;
-  const daysLeft = Math.max(0, Math.ceil((end.getTime() - now.getTime()) / DAY_MS));
+  // Measured in local wall-clock time, so a daylight-saving change does not add or drop a day.
+  const wall = (d: Date) => d.getTime() - d.getTimezoneOffset() * 60_000;
+  const daysLeft = Math.max(0, Math.ceil((wall(end) - wall(now)) / DAY_MS));
   const pace: Pace = usedRatio < elapsedRatio - PACE_TOLERANCE ? "under"
     : usedRatio > elapsedRatio + PACE_TOLERANCE ? "over" : "on";
 
