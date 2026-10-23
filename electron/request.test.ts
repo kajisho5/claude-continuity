@@ -6,6 +6,17 @@ const caps: ModelCaps = { webSearch: true, codeExecution: true, imageInput: true
 const att = (kind: Attachment["kind"], name: string): Attachment => ({ id: name, name, kind, size: 3, mediaType: kind === "image" ? "image/png" : kind === "pdf" ? "application/pdf" : "text/plain" });
 const loader = { read: async () => Buffer.from("abc"), uploadForContainer: async (a: Attachment) => `file_${a.name}` };
 
+describe("historyBudget", () => {
+  it("scales with the model's input limit within bounds", async () => {
+    const { historyBudget } = await import("./request");
+    expect(historyBudget(undefined)).toBe(120_000);
+    expect(historyBudget(200_000)).toBe(120_000);
+    expect(historyBudget(1_000_000)).toBe(600_000);
+    expect(historyBudget(50_000)).toBe(60_000);
+    expect(historyBudget(10_000_000)).toBe(1_500_000);
+  });
+});
+
 describe("buildSystem", () => {
   it("adds the profile only when given", () => {
     expect(buildSystem(undefined, "", null)).toBeUndefined();

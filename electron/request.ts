@@ -75,8 +75,18 @@ export async function attachmentBlocks(attachments: Attachment[], loader: Attach
   return { blocks, skipped };
 }
 
-export async function buildMessages(turns: ChatTurn[], knowledge: Attachment[], loader: AttachmentLoader, opts: { containerUploads: boolean; caps: ModelCaps }): Promise<{ messages: MessageParam[]; skipped: string[] }> {
-  const history = selectHistory(turns);
+/**
+ * Character budget for the history sent with a request, from the model's input token limit.
+ * 0.6 characters per token stays under the limit even for Japanese (about one token per character)
+ * and leaves room for the system prompt, project knowledge and attachments.
+ */
+export function historyBudget(maxInputTokens: number | undefined): number {
+  return maxInputTokens ? Math.min(Math.max(Math.floor(maxInputTokens * 0.6), 60_000), 1_500_000) : 120_000;
+}
+
+export async function buildMessages(turns: ChatTurn[], knowledge: Attachment[], loader: AttachmentLoader, opts: { containerUploads: boolean; caps: ModelCaps; maxChars?: number }): Promise<{ messages: MessageParam[]; skipped: string[]; omitted: number }> {
+  const history = selectHistory(turns, opts.maxChars);
+  const omitted = turns.filter(t => t.content || t.attachments?.length).length - history.length;
   const skipped: string[] = [];
   const messages: MessageParam[] = [];
   for (let i = 0; i < history.length; i++) {
@@ -96,7 +106,7 @@ export async function buildMessages(turns: ChatTurn[], knowledge: Attachment[], 
     if (last && last.role === turn.role) (last.content as ContentBlockParam[]).push(...content);
     else messages.push({ role: turn.role, content });
   }
-  return { messages, skipped: [...new Set(skipped)] };
+  return { messages, skipped: [...new Set(skipped)], omitted: Math.max(0, omitted) };
 }
 
 export function buildTools(flags: ToolFlags, caps: ModelCaps): { tools: ToolUnion[]; skills: string[]; unavailable: string[] } {

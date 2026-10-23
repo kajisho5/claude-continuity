@@ -255,7 +255,7 @@ export default function App() {
    const container=target.container&&(!target.container.expiresAt||Date.parse(target.container.expiresAt)>Date.now())?target.container.id:undefined;
    try{
      const response=await window.continuity.reply({requestId,model,effort:effort||undefined,style:target.style,projectId:target.projectId,tools:target.incognito?{...target.tools,memory:false}:target.tools,containerId:container,chatId:target.id,incognito:!!target.incognito,
-       messages:history.slice(-60).map(m=>({role:m.role,content:m.content,...(m.attachments?.length?{attachments:m.attachments}:{})}))});
+       messages:history.slice(-2000).map(m=>({role:m.role,content:m.content,...(m.attachments?.length?{attachments:m.attachments}:{})}))});
      const cost=costOf(response.usage.model,response.usage);
      const thoughtUntil=pendingRef.current?.firstTextAt??Date.now();
      const reply:Reply={content:response.text,model:response.usage.model,...(response.thinking?{thinking:response.thinking,thinkingSeconds:(thoughtUntil-start.startedAt)/1000}:{}),...(cost!=null?{costUsd:cost}:{}),...(response.aborted?{aborted:true}:{}),
@@ -287,7 +287,9 @@ export default function App() {
      if(mode.kind==="append"&&mode.retitle&&prefs.autoTitle&&!target.incognito&&response.text&&!response.aborted) void autoTitle(target.id,history[history.length-1].content,response.text);
    }catch(e){
      // A failed regeneration keeps the previous answer; a failed new turn shows the error in place of a reply.
-     const fallback:Msg=mode.kind==="append"?{role:"assistant",content:"APIエラー: "+err(e)+"\n\nConsoleのクレジット残高、APIキー、利用可能モデルを確認してください。"}:mode.previous;
+     const tooLong=/prompt is too long|too many (input )?tokens|context (window|length)/i.test(err(e));
+     const hint=tooLong?"会話や添付が長すぎて、モデルが扱える量を超えました。添付を減らすか、新しい会話で続けてください（右上の「Claude で続ける」の要約を新しい会話に貼る方法もあります）。":"Consoleのクレジット残高、APIキー、利用可能モデルを確認してください。";
+     const fallback:Msg=mode.kind==="append"?{role:"assistant",content:"APIエラー: "+err(e)+"\n\n"+hint}:mode.previous;
      patchChat(target.id,c=>({...c,messages:[...(mode.kind==="continue"?history.slice(0,-2):history),fallback]}));
      setStatus(mode.kind==="regenerate"?"再生成に失敗しました: "+err(e):mode.kind==="continue"?"続きの生成に失敗しました: "+err(e):"APIリクエストに失敗しました");
      if(mode.kind!=="append") toast((mode.kind==="regenerate"?"再生成":"続きの生成")+"に失敗しました: "+err(e),"error");

@@ -11,7 +11,7 @@ import { createBackup, readBackup, restoreEntries } from "./backup";
 import { formatHits, searchPastChats } from "./pastChats";
 import { setupUpdater } from "./updater";
 import { HANDOFF_PREFIX, fitsHandoff } from "../src/lib/handoff";
-import { activityLabel, buildMessages, buildSystem, buildTools, extractFileIds, extractSteps, extractText, type ChatTurn, type Project, type StyleId, type ToolFlags } from "./request";
+import { activityLabel, buildMessages, historyBudget, buildSystem, buildTools, extractFileIds, extractSteps, extractText, type ChatTurn, type Project, type StyleId, type ToolFlags } from "./request";
 
 // Only `npm run dev` passes --dev; `npm start` after a build must load the bundled renderer.
 const isDev = !app.isPackaged && process.argv.includes("--dev");
@@ -571,7 +571,7 @@ ipcMain.handle("claude:reply", async (event, payload: ReplyPayload) => {
       return uploaded.id;
     }
   };
-  const built = await buildMessages(turns, project?.knowledge ?? [], loader, { containerUploads: codeOn, caps });
+  const built = await buildMessages(turns, project?.knowledge ?? [], loader, { containerUploads: codeOn, caps, maxChars: historyBudget(info?.maxInputTokens) });
   const messages: MessageParam[] = built.messages;
   // Custom styles are chosen as "custom:<id>"; the bare "custom" of earlier versions maps to id "custom".
   const customId = payload.style === "custom" ? "custom" : payload.style?.startsWith("custom:") ? payload.style.slice(7) : null;
@@ -678,7 +678,7 @@ ipcMain.handle("claude:reply", async (event, payload: ReplyPayload) => {
   }
   // "pause_turn"/"tool_use" here mean the loop limit cut the turn short; the UI offers to continue.
   const steps = extractSteps(turnBlocks, clientResults);
-  return { text, thinking, aborted, usage, citations, files, container, steps, ...(stopReason && stopReason !== "end_turn" && stopReason !== "stop_sequence" && !aborted ? { stopReason } : {}), notices: [...built.skipped.map(s => `添付をスキップ: ${s}`), ...unavailable.map(u => `${u}はこのモデルでは使えません`)] };
+  return { text, thinking, aborted, usage, citations, files, container, steps, ...(stopReason && stopReason !== "end_turn" && stopReason !== "stop_sequence" && !aborted ? { stopReason } : {}), notices: [...(built.omitted ? [`古いやり取り ${built.omitted} 件はモデルの上限のため送っていません`] : []), ...built.skipped.map(s => `添付をスキップ: ${s}`), ...unavailable.map(u => `${u}はこのモデルでは使えません`)] };
 });
 
 // ---- Hand off to the Claude apps (claude://claude.ai/new?q=…, prefilled, never auto-sent) ----
