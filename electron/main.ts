@@ -5,7 +5,8 @@ import { randomUUID } from "node:crypto";
 import Anthropic from "@anthropic-ai/sdk";
 import AdmZip from "adm-zip";
 
-const isDev = !app.isPackaged;
+// Only `npm run dev` passes --dev; `npm start` after a build must load the bundled renderer.
+const isDev = !app.isPackaged && process.argv.includes("--dev");
 let mainWindow: BrowserWindow | null = null;
 const dataDir = () => path.join(app.getPath("userData"), "claude-continuity");
 const sessionId = randomUUID();
