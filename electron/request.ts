@@ -50,6 +50,11 @@ const TRIM_STEP = 20;
  * being resent (and overflowing the context) with every later request.
  */
 export function selectHistory(turns: ChatTurn[], maxChars = 120_000): ChatTurn[] {
+  return selectHistoryRange(turns, maxChars).history;
+}
+
+/** Like selectHistory, also giving the index in `turns` where the kept part starts (0 when nothing is left out). */
+export function selectHistoryRange(turns: ChatTurn[], maxChars = 120_000): { start: number; history: ChatTurn[] } {
   const filled = (t: ChatTurn) => !!(t.content || t.attachments?.length);
   let remaining = maxChars, images = 0, bytes = 0;
   let start = turns.length;
@@ -72,10 +77,15 @@ export function selectHistory(turns: ChatTurn[], maxChars = 120_000): ChatTurn[]
     const stepped = Math.ceil(start / TRIM_STEP) * TRIM_STEP;
     if (stepped <= lastUser - TRIM_STEP / 2) start = stepped;
   }
-  const ordered = turns.slice(start).filter(filled).map(t => (cut && t === turns[start] ? cut : t));
-  while (ordered.length && ordered[0].role !== "user") ordered.shift();
-  return ordered;
+  let first = start;
+  while (first < turns.length && (!filled(turns[first]) || turns[first].role !== "user")) first++;
+  const ordered = turns.slice(first).filter(filled).map(t => (cut && t === turns[start] ? cut : t));
+  return { start: first, history: ordered };
 }
+
+/** A summary of the turns before `upto` sent in their place: the API's compaction block, or text written by a small model. */
+export type HistorySummary = { upto: number; kind: "api"; block: unknown } | { upto: number; kind: "text"; text: string };
+export const summaryText = (text: string) => `<conversation_summary>\n${text}\n</conversation_summary>`;
 
 export type AttachmentLoader = {
   read: (attachment: Attachment) => Promise<Buffer>;
@@ -121,11 +131,19 @@ export function historyBudget(maxInputTokens: number | undefined): number {
   return maxInputTokens ? Math.min(Math.max(Math.floor(maxInputTokens * 0.6), 60_000), 1_500_000) : 120_000;
 }
 
-export async function buildMessages(turns: ChatTurn[], knowledge: Attachment[], loader: AttachmentLoader, opts: { containerUploads: boolean; caps: ModelCaps; maxChars?: number }): Promise<{ messages: MessageParam[]; skipped: string[]; omitted: number }> {
-  const history = selectHistory(turns, opts.maxChars);
-  const omitted = turns.filter(t => t.content || t.attachments?.length).length - history.length;
+export async function buildMessages(turns: ChatTurn[], knowledge: Attachment[], loader: AttachmentLoader, opts: { containerUploads: boolean; caps: ModelCaps; maxChars?: number; summary?: HistorySummary | null }): Promise<{ messages: MessageParam[]; skipped: string[]; omitted: number; summarized: number }> {
+  const filled = (t: ChatTurn) => !!(t.content || t.attachments?.length);
+  const summary = opts.summary ?? null;
+  // With a summary, everything from `upto` on is sent as it is (the caller chose `upto` to fit the budget).
+  const history = summary ? turns.slice(summary.upto).filter(filled) : selectHistory(turns, opts.maxChars);
+  while (summary && history.length && history[0].role !== "user") history.shift();
+  const summarized = summary ? turns.slice(0, summary.upto).filter(filled).length : 0;
+  const omitted = turns.filter(filled).length - history.length - summarized;
   const skipped: string[] = [];
   const messages: MessageParam[] = [];
+  // The compaction block goes first as an assistant message, then the kept turns word for word
+  // (https://platform.claude.com/docs/en/build-with-claude/compaction-keep-recent-turns).
+  if (summary?.kind === "api") messages.push({ role: "assistant", content: [summary.block as ContentBlockParam] });
   for (let i = 0; i < history.length; i++) {
     const turn = history[i];
     let content: ContentBlockParam[] = [];
@@ -137,13 +155,14 @@ export async function buildMessages(turns: ChatTurn[], knowledge: Attachment[], 
         skipped.push(...built.skipped);
       }
     }
+    if (i === 0 && summary?.kind === "text") content.unshift({ type: "text", text: summaryText(summary.text) });
     if (turn.content) content.push({ type: "text", text: turn.content });
     if (!content.length) content = [{ type: "text", text: mainT().request.attachmentsOnly }];
     const last = messages[messages.length - 1];
     if (last && last.role === turn.role) (last.content as ContentBlockParam[]).push(...content);
     else messages.push({ role: turn.role, content });
   }
-  return { messages, skipped: [...new Set(skipped)], omitted: Math.max(0, omitted) };
+  return { messages, skipped: [...new Set(skipped)], omitted: Math.max(0, omitted), summarized };
 }
 
 /** Per-request cap for web search and for web fetch in research mode (each search is billed; see the tools menu). */

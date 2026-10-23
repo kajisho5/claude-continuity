@@ -1,0 +1,96 @@
+/** Strings for spending: the estimate before sending, limits, Batch, long-chat summaries and before-expiry suggestions. */
+export const spend = {
+  estimate: {
+    line: (tokens: string, usd: string) => `送信時の目安：入力 約 ${tokens} トークン・${usd}`,
+    batchNote: "（Batch で半額後）",
+    withoutTools: "・ツール定義を除く",
+    counting: "送信時の目安を計算しています…",
+    limits: (today: string, daily: string | null, perMessage: string | null) => [`今日 ${today}${daily ? ` / 上限 ${daily}` : ""}`, perMessage ? `1回の上限 ${perMessage}` : ""].filter(Boolean).join(" · "),
+    detail: "入力は送る内容（履歴・添付・指示）を Anthropic の count_tokens（無料）で数えた目安です。プロンプトキャッシュが効くと実際はこれより安くなります。"
+  },
+  confirm: {
+    title: "このメッセージは上限を超えそうです",
+    intro: "送る前に確認してください。",
+    input: "入力の見積もり",
+    inputValue: (tokens: string, usd: string) => `${tokens} トークン・${usd}`,
+    output: (tokens: string) => `出力の見積もり（目安 ${tokens}）`,
+    worst: "最大のケース（出力が上限まで）",
+    perMessage: "1回あたりの上限",
+    over: (usd: string) => `${usd} を超えます`,
+    within: (usd: string) => `${usd}（範囲内）`,
+    today: "今日の使用額",
+    hint: "ヒント：Batch（半額）で送るか、古い資料を外すと安くなります。",
+    cancel: "やめる",
+    batch: "Batch で送る",
+    send: "このまま送る",
+    blocked: (reason: string) => `上限を超えるため送信しませんでした（${reason}）。設定 → クレジットで変更できます。`,
+    reasonPerMessage: "1回あたりの上限",
+    reasonDaily: "1日あたりの上限"
+  },
+  limits: {
+    heading: "使いすぎ防止",
+    intro: "送る前に見積もり（count_tokens・無料）を出し、上限を超えそうなら止めます。見積もりはツール定義を含まない目安です。",
+    perMessage: "1回あたりの上限",
+    daily: "1日あたりの上限",
+    emptyMeansNone: "空欄で上限なし",
+    mode: "超えそうなとき",
+    confirm: "確認する",
+    block: "送らない",
+    invalid: "0 より大きい金額（$10,000 まで）を入れてください。",
+    save: "保存",
+    saved: "保存しました"
+  },
+  longChats: {
+    heading: "長いチャット",
+    intro: "入力の上限を超えた古いやり取りを、捨てる代わりに要約して送ります（公式の圧縮機能・対応外のモデルでは自前の要約）。",
+    toggle: "古いやり取りを要約して続ける",
+    note: "要約は約20ターンごとに作り直します。費用は使用記録に入ります。シークレットチャットでは保存しません。"
+  },
+  divider: {
+    text: (n: number) => `ここより前の ${n} 件は要約して送っています`,
+    view: "要約を見る",
+    title: "送っている要約",
+    encrypted: "この要約は API が暗号化して返したため、本文を表示できません（送るときはそのまま使われます）。",
+    close: "閉じる"
+  },
+  batch: {
+    tool: "Batch（半額・あとで届く）",
+    toolDesc: "半額で送り、返事はあとで届きます（多くは1時間以内、最長24時間）",
+    chip: "Batch（半額）",
+    creating: "Batch を作成しています…",
+    created: "Batch で送りました。届いたら通知します。",
+    failed: "Batch を作成できませんでした: ",
+    pendingTitle: "Batch で処理中（半額）",
+    estimate: (usd: string) => `推定 ${usd}`,
+    pendingNote: "多くは1時間以内に届きます（最長24時間）。届いたら通知します。",
+    sentAt: (time: string) => `${time} に送信`,
+    canceling: "キャンセルしています…",
+    cancel: "キャンセル",
+    expired: "24 時間以内に処理されませんでした（課金なし）",
+    canceled: "キャンセルしました",
+    errored: "処理できませんでした",
+    resend: "普通に送り直す",
+    nav: "Batch",
+    pageTitle: "Batch",
+    pageIntro: "半額で、あとで届きます。結果は29日間取り出せます。",
+    empty: "Batch で送った依頼はまだありません。ツールメニューの「Batch」をオンにすると、その会話のメッセージを半額で送れます。",
+    status: { pending: (min: number) => `処理中 ${min}分`, done: "完了", expired: "期限切れ", canceled: "キャンセル", errored: "エラー" },
+    meta: (model: string, cost: string, time: string) => [model, cost, time].filter(Boolean).join(" · "),
+    costHalf: (usd: string) => `${usd}（半額）`,
+    open: "開く",
+    clear: "完了したものを消す",
+    notifyTitle: "Batch の返答が届きました",
+    unavailableIncognito: "シークレットチャットでは Batch を使えません"
+  },
+  suggest: {
+    heading: "期限までの使い道",
+    batchSummary: "過去の会話を Batch で要約（半額）",
+    research: "リサーチで調べ物を始める",
+    delegate: "Claude Code の作業を任せる",
+    dismiss: "今回は閉じる",
+    batchPrompt: "添付した過去の会話から、テーマごとに要点・決まったこと・未解決の点を資料にまとめてください。",
+    pastChatsFile: "past-chats.md",
+    user: "ユーザー",
+    assistant: "アシスタント"
+  }
+};

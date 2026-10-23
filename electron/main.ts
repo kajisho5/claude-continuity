@@ -20,7 +20,9 @@ import { containerSkills, readSkillSource } from "./skills";
 import { buildIndex, formatKnowledgeHits, knowledgeTool, pdfText, searchKnowledge, type KnowledgeIndex } from "./knowledge";
 import { desktopConfigPath, LocalMcpPool, parseDesktopConfig, parseEnv, toolDefinitions, toToolResult, validateLocal, type LocalServer, type LocalToolRef } from "./localMcp";
 import { HANDOFF_PREFIX, fitsHandoff } from "../src/lib/handoff";
-import { activityLabel, buildMessages, historyBudget, buildSystem, buildTools, extractFileIds, extractSteps, extractText, RESEARCH_MAX_USES, type ChatTurn, type Project, type StyleId, type ToolFlags } from "./request";
+import { isPastRetention, pendingCount, sanitizeJobs, type BatchJob } from "./batches";
+import { asHistorySummary, chunks, COMPACTION_BETA, fingerprint, supportsCompaction, transcriptMessages, validSummary, type StoredSummary } from "./compaction";
+import { activityLabel, buildMessages, historyBudget, selectHistoryRange, buildSystem, buildTools, extractFileIds, extractSteps, extractText, RESEARCH_MAX_USES, type ChatTurn, type Project, type StyleId, type ToolFlags } from "./request";
 import { costOf, priceFor } from "../src/lib/pricing";
 
 // Only `npm run dev` passes --dev; `npm start` after a build must load the bundled renderer.
@@ -280,6 +282,14 @@ function sanitizeAttachment(a: any): Attachment | null {
   return { id: a.id, name: str(a.name, 200) ?? "file", mediaType: str(a.mediaType, 120) ?? "application/octet-stream", size: Number(a.size) || 0, kind };
 }
 const sanitizeAttachments = (list: unknown) => Array.isArray(list) ? list.slice(0, 50).map(sanitizeAttachment).filter((a): a is Attachment => a !== null) : undefined;
+const BATCH_STATES = ["pending", "done", "expired", "canceled", "errored"];
+/** A chat's summary of its older turns (see compaction.ts); a compaction block is kept as the API returned it. */
+function sanitizeSummary(c: any): StoredSummary | undefined {
+  if (!c || typeof c !== "object" || !Number.isInteger(c.upto) || c.upto <= 0 || (c.kind !== "api" && c.kind !== "text")) return undefined;
+  const block = c.kind === "api" && c.block && typeof c.block === "object" && c.block.type === "compaction" && JSON.stringify(c.block).length <= 1_000_000 ? c.block : undefined;
+  if (c.kind === "api" && !block) return undefined;
+  return { upto: c.upto, fingerprint: str(c.fingerprint, 64) ?? "", kind: c.kind, ...(block ? { block } : {}), text: str(c.text, 400_000) ?? "", model: str(c.model, 200) ?? "", createdAt: str(c.createdAt, 40) ?? "" };
+}
 function sanitizeReply(m: any) {
   return {
     content: String(m.content ?? "").slice(0, 2_000_000),
@@ -289,6 +299,7 @@ function sanitizeReply(m: any) {
     ...(typeof m.costUsd === "number" && Number.isFinite(m.costUsd) ? { costUsd: m.costUsd } : {}),
     ...(m.aborted === true ? { aborted: true } : {}),
     ...(typeof m.stopReason === "string" ? { stopReason: m.stopReason.slice(0, 40) } : {}),
+    ...(m.batch && typeof m.batch.id === "string" ? { batch: { id: m.batch.id.slice(0, 100), status: BATCH_STATES.includes(m.batch.status) ? m.batch.status : "pending", ...(typeof m.batch.note === "string" ? { note: m.batch.note.slice(0, 500) } : {}) } } : {}),
     ...(Array.isArray(m.steps) ? { steps: m.steps.slice(0, 100).map((st: any) => ({
       kind: ["search", "fetch", "code", "file", "memory", "history", "knowledge", "connector", "other"].includes(st?.kind) ? st.kind : "other", label: str(st?.label, 500) ?? "",
       ...(st?.detail ? { detail: str(st.detail, 5000) } : {}), ...(st?.output ? { output: str(st.output, 5000) } : {}), ...(st?.error === true ? { error: true } : {}),
@@ -327,9 +338,10 @@ ipcMain.handle("chats:save", async (event, chats: unknown[]) => {
     ...isoDate(chat.updatedAt),
     ...(typeof chat.style === "string" ? { style: chat.style.slice(0, 60) } : {}),
     ...(chat.tools && typeof chat.tools === "object" ? { tools: {
-      ...Object.fromEntries(["research", "webSearch", "webFetch", "files", "analysis", "memory"].map(k => [k, chat.tools[k] === true])),
+      ...Object.fromEntries(["research", "webSearch", "webFetch", "files", "analysis", "memory", "batch"].map(k => [k, chat.tools[k] === true])),
       ...(Array.isArray(chat.tools.connectors) ? { connectors: chat.tools.connectors.filter((c: unknown) => typeof c === "string").slice(0, 30).map((c: string) => c.slice(0, 40)) } : {})
     } } : {}),
+    ...(sanitizeSummary(chat.compaction) ? { compaction: sanitizeSummary(chat.compaction) } : {}),
     ...(chat.container && typeof chat.container.id === "string" ? { container: { id: chat.container.id.slice(0, 200), expiresAt: str(chat.container.expiresAt, 60) } } : {}),
     messages: Array.isArray(chat.messages) ? chat.messages.slice(-5000).map((m: any) => sanitizeMessage(m, 0)) : []
   }));
@@ -486,7 +498,7 @@ ipcMain.handle("mcp:pickFolder", async () => {
   const result = await dialog.showOpenDialog({ title: mainT().main.mcpFolderTitle, properties: ["openDirectory", "multiSelections"] });
   return result.canceled ? [] : result.filePaths;
 });
-type UsageEntry = { model: string; inputTokens: number; outputTokens: number; cacheCreationInputTokens: number; cacheReadInputTokens: number; webSearchRequests: number };
+type UsageEntry = { model: string; inputTokens: number; outputTokens: number; cacheCreationInputTokens: number; cacheReadInputTokens: number; webSearchRequests: number; batch?: boolean };
 function recordUsage(entry: UsageEntry) {
   // One writer at a time, so overlapping replies (or a title and a reply) cannot drop each other's rows.
   return withFileLock(usageFile(), async () => {
@@ -611,7 +623,8 @@ const prefsFile = () => path.join(dataDir(), "prefs.json");
 type Theme = "system" | "light" | "dark";
 type ChatFont = "serif" | "sans" | "system";
 type CustomStyle = { id: string; name: string; prompt: string };
-type Prefs = { autoTitle: boolean; customStyle: string; customStyles: CustomStyle[]; displayName: string; theme: Theme; chatFont: ChatFont; shareName: boolean; preferences: string; searchPastChats: boolean; notifyOnReply: boolean; checkUpdates: boolean; language: Language; quickShortcut: QuickShortcut; enabledSkills: string[]; lastModel: string; lastEffort: string };
+type Prefs = { autoTitle: boolean; customStyle: string; customStyles: CustomStyle[]; displayName: string; theme: Theme; chatFont: ChatFont; shareName: boolean; preferences: string; searchPastChats: boolean; notifyOnReply: boolean; checkUpdates: boolean; language: Language; quickShortcut: QuickShortcut; enabledSkills: string[]; lastModel: string; lastEffort: string;
+  compactLongChats: boolean; limitPerMessageUsd: number | null; limitDailyUsd: number | null; limitMode: "confirm" | "block"; suggestDismissedCycle: string };
 type Language = "system" | "ja" | "en";
 /** Global shortcut that brings the app forward with a new chat ("" = off). */
 type QuickShortcut = "" | "CommandOrControl+Alt+Space" | "CommandOrControl+Shift+Space" | "Alt+Space";
@@ -630,6 +643,7 @@ function sanitizeStyles(raw: any): CustomStyle[] {
   // Earlier versions kept a single custom style; carry it over as "カスタム" (its chats used style "custom").
   return typeof raw?.customStyle === "string" && raw.customStyle.trim() ? [{ id: "custom", name: mainT().main.customStyleName, prompt: raw.customStyle.slice(0, 4000) }] : [];
 }
+const usdLimit = (v: unknown) => typeof v === "number" && Number.isFinite(v) && v > 0 && v <= 10000 ? v : null;
 function sanitizePrefs(raw: any): Prefs {
   return {
     autoTitle: raw?.autoTitle !== false,
@@ -650,7 +664,15 @@ function sanitizePrefs(raw: any): Prefs {
     enabledSkills: Array.isArray(raw?.enabledSkills) ? [...new Set(raw.enabledSkills.filter((s: unknown) => typeof s === "string" && /^[\w-]{1,100}$/.test(s)) as string[])].slice(0, 16) : [],
     // The model and thinking effort picked last, so a restart keeps them.
     lastModel: typeof raw?.lastModel === "string" && /^[\w.:-]{1,100}$/.test(raw.lastModel) ? raw.lastModel : "",
-    lastEffort: typeof raw?.lastEffort === "string" && /^[a-z]{0,20}$/.test(raw.lastEffort) ? raw.lastEffort : ""
+    lastEffort: typeof raw?.lastEffort === "string" && /^[a-z]{0,20}$/.test(raw.lastEffort) ? raw.lastEffort : "",
+    // Long chats: older turns are summarized instead of dropped (on unless turned off).
+    compactLongChats: raw?.compactLongChats !== false,
+    // Spending limits checked before sending (null = no limit).
+    limitPerMessageUsd: usdLimit(raw?.limitPerMessageUsd),
+    limitDailyUsd: usdLimit(raw?.limitDailyUsd),
+    limitMode: raw?.limitMode === "block" ? "block" : "confirm",
+    // The credit cycle (its start date) whose before-expiry suggestions were dismissed.
+    suggestDismissedCycle: typeof raw?.suggestDismissedCycle === "string" ? raw.suggestDismissedCycle.slice(0, 40) : ""
   };
 }
 async function loadPrefs(): Promise<Prefs> {
@@ -930,6 +952,8 @@ ipcMain.handle("files:save", async (_event, payload: { fileId: string; name: str
 type ReplyPayload = {
   requestId: string; messages: ChatTurn[]; model?: string; effort?: string;
   style?: string; projectId?: string; tools?: ToolFlags; containerId?: string; chatId?: string; incognito?: boolean;
+  /** The chat's stored summary of its older turns, reused while it still matches (see compaction.ts). */
+  compaction?: unknown;
 };
 const activeReplies = new Map<string, AbortController>();
 // Stop pressed while a reply is still being prepared (attachments uploading, local servers starting).
@@ -1026,6 +1050,12 @@ function rememberAllowedTool(id: string, tool: string) {
     await writeStoredConnectors(list.map(c => c.id === id ? { ...c, allowedTools: [...new Set([...(c.allowedTools ?? []), tool])].slice(0, 200) } : c));
   });
 }
+/** Turns a connector on or off without touching its settings (off: it is not offered in the tools menu or sent). */
+ipcMain.handle("connectors:setEnabled", (_event, id: string, enabled: boolean) => withConnectors(async () => {
+  const next = (await readStoredConnectors()).map(c => c.id === String(id) ? { ...c, enabled: enabled === true } : c);
+  await writeStoredConnectors(next);
+  return next.map(viewOf);
+}));
 ipcMain.handle("connectors:resetAllowed", async (_event, id: string) => {
   const list = await withConnectors(async () => {
     const next = (await readStoredConnectors()).map(c => c.id === String(id) ? { ...c, allowedTools: [] } : c);
@@ -1053,7 +1083,13 @@ ipcMain.handle("claude:reply", async (event, payload: ReplyPayload) => {
   try { return await runReply(event, payload, requestId, controller); }
   finally { if (activeReplies.get(requestId) === controller) activeReplies.delete(requestId); earlyAborts.delete(requestId); }
 });
-async function runReply(event: Electron.IpcMainInvokeEvent, payload: ReplyPayload, requestId: string, controller: AbortController) {
+/**
+ * How a request is sent: as a streamed reply (every tool), through the Batch API (no tools that run on this
+ * computer, which a batch cannot call back), or only counted for the estimate (nothing uploaded or summarized).
+ */
+type RequestMode = "reply" | "batch" | "estimate";
+const filledTurn = (t: ChatTurn) => !!(t.content || t.attachments?.length);
+async function prepareRequest(payload: ReplyPayload, mode: RequestMode, signal?: AbortSignal, onActivity?: (text: string) => void) {
   const turns = sanitizeTurns(payload?.messages);
   if (!turns.length) throw new Error(mainT().main.noTurns);
   if (!turns.some(m => m.role === "user")) throw new Error(mainT().main.noUserMessage);
@@ -1064,8 +1100,11 @@ async function runReply(event: Electron.IpcMainInvokeEvent, payload: ReplyPayloa
   const [prefs, projects] = await Promise.all([loadPrefs(), loadProjects()]);
   const project = payload.projectId ? projects.find(p => p.id === payload.projectId) ?? null : null;
   const incognito = payload.incognito === true;
-  // Incognito chats neither remember nor look back, as in the Claude apps.
-  const flags: ToolFlags = { ...(payload.tools ?? {}), memory: !incognito && (payload.tools?.memory === true || project?.memory === true), pastChats: !incognito && prefs.searchPastChats };
+  const onThisComputer = mode === "reply";
+  const notices: string[] = [];
+  // Incognito chats neither remember nor look back, as in the Claude apps. Memory and past-chat search run on
+  // this computer, so a batch cannot use them.
+  const flags: ToolFlags = { ...(payload.tools ?? {}), memory: onThisComputer && !incognito && (payload.tools?.memory === true || project?.memory === true), pastChats: onThisComputer && !incognito && prefs.searchPastChats };
   const { tools, skills, unavailable } = buildTools(flags, caps);
   // Custom Skills run in the code execution container, so turning one on brings code execution with it.
   const customSkills = caps.codeExecution ? prefs.enabledSkills : [];
@@ -1073,10 +1112,11 @@ async function runReply(event: Electron.IpcMainInvokeEvent, payload: ReplyPayloa
   const codeOn = tools.some(t => t.type === "code_execution_20250825");
   const chosenConnectors = incognito ? [] : (await loadConnectors()).filter(c => c.enabled && (payload.tools?.connectors ?? []).includes(c.id));
   const activeConnectors = chosenConnectors.filter(c => c.transport !== "local");
-  const localConnectors = chosenConnectors.filter(c => c.transport === "local");
+  const localChosen = chosenConnectors.filter(c => c.transport === "local");
+  const localConnectors = onThisComputer ? localChosen : [];
+  if (mode === "batch" && localChosen.length) notices.push(mainT().batch.noLocal(localChosen.map(c => c.name).join(", ")));
   const mcp = activeConnectors.length ? connectorRequest(activeConnectors) : null;
   const connectorNames = new Map(activeConnectors.map(c => [serverName(c), c.name] as const));
-  const connectorLabel = (server?: string) => (server && connectorNames.get(server)) || server || mainT().main.externalTool;
   const client = new Anthropic({ apiKey: await getApiKey() });
   const store = attachments();
   const loader = {
@@ -1092,9 +1132,10 @@ async function runReply(event: Electron.IpcMainInvokeEvent, payload: ReplyPayloa
   };
   // Text knowledge too large to send whole is searched instead (as the Claude apps do for big projects).
   const knowledge = await projectKnowledge(project, store, info?.maxInputTokens);
-  if (knowledge.index) tools.push(knowledgeTool());
-  const built = await buildMessages(turns, knowledge.inline, loader, { containerUploads: codeOn, caps, maxChars: historyBudget(info?.maxInputTokens) });
-  const messages: MessageParam[] = built.messages;
+  if (knowledge.index) {
+    if (onThisComputer) tools.push(knowledgeTool());
+    else if (mode === "batch") notices.push(mainT().batch.noKnowledgeSearch);
+  }
   // Custom styles are chosen as "custom:<id>"; the bare "custom" of earlier versions maps to id "custom".
   const customId = payload.style === "custom" ? "custom" : payload.style?.startsWith("custom:") ? payload.style.slice(7) : null;
   const customPrompt = customId ? prefs.customStyles.find(st => st.id === customId)?.prompt ?? "" : "";
@@ -1104,11 +1145,101 @@ async function runReply(event: Electron.IpcMainInvokeEvent, payload: ReplyPayloa
     buildSystem(style, customPrompt, project, { ...(prefs.shareName ? { name: prefs.displayName } : {}), preferences: prefs.preferences }, { research }),
     knowledge.index ? mainT().knowledge.systemNote(knowledge.searched.map(name => `- ${name}`).join("\n")) : ""
   ].filter(Boolean).join("\n\n") || undefined;
-  const containerId = typeof payload.containerId === "string" && payload.containerId ? payload.containerId : undefined;
+  // Long chats: the turns that no longer fit are summarized (once, then reused) instead of being dropped.
+  const budget = historyBudget(info?.maxInputTokens);
+  const range = selectHistoryRange(turns, budget);
+  const needsSummary = prefs.compactLongChats && turns.slice(0, range.start).some(filledTurn);
+  let stored = needsSummary ? validSummary(payload.compaction, turns, model) : null;
+  if (stored && stored.upto < range.start) stored = null;
+  let freshSummary: { summary: StoredSummary; costUsd: number } | null = null;
+  if (needsSummary && !stored && mode !== "estimate") {
+    onActivity?.(mainT().compaction.summarizing);
+    freshSummary = await summarizeOlder(client, model, info, system, turns, range.start, validSummary(payload.compaction, turns, model), budget, signal)
+      .catch(error => { if (signal?.aborted) throw error; return null; });
+    stored = freshSummary?.summary ?? null;
+  }
+  // The estimate counts a compaction block as its text (count_tokens is not sent the beta).
+  const summary = stored ? (mode === "estimate" && stored.kind === "api" ? { upto: stored.upto, kind: "text" as const, text: stored.text } : asHistorySummary(stored)) : null;
+  const built = await buildMessages(turns, knowledge.inline, loader, { containerUploads: codeOn && mode !== "estimate", caps, maxChars: budget, summary });
+  if (built.summarized) notices.push(mainT().compaction.noticeSummarized(built.summarized));
+  const betas = [...(mcp ? [MCP_CONNECTOR_BETA] : []), ...(summary?.kind === "api" ? [COMPACTION_BETA] : [])];
+  return { turns, model, info, effort, prefs, project, incognito, flags, tools, skills, customSkills, codeOn, activeConnectors, localConnectors, mcp, connectorNames, client, store, knowledge, system, built, unavailable, research, notices, betas, freshSummary };
+}
 
+/**
+ * Summarizes turns [0, upto): with the API's compaction where the model supports it, otherwise as text written by
+ * the cheapest Haiku. A still-valid earlier summary is extended rather than rewritten, and very long histories go
+ * in parts so each request fits the model.
+ */
+async function summarizeOlder(client: Anthropic, model: string, info: ModelSummary | undefined, system: string | undefined, turns: ChatTurn[], upto: number, previous: StoredSummary | null, budget: number, signal?: AbortSignal): Promise<{ summary: StoredSummary; costUsd: number }> {
+  const t = mainT().compaction;
+  let costUsd = 0;
+  const record = async (usedModel: string, u: any) => {
+    const entry = usageEntry(usedModel, u);
+    await recordUsage(entry).catch(() => {});
+    costUsd += costOf(usedModel, entry) ?? 0;
+  };
+  const done = (kind: "api" | "text", text: string, block?: Record<string, unknown>) => ({ summary: { upto, fingerprint: fingerprint(turns, upto), kind, ...(block ? { block } : {}), text, model, createdAt: new Date().toISOString() }, costUsd });
+  if (supportsCompaction(model)) {
+    try {
+      let block = previous?.kind === "api" ? previous.block : undefined;
+      for (const [a, b] of chunks(turns, block ? previous!.upto : 0, upto, budget)) {
+        const messages = [...(block ? [{ role: "assistant", content: [block] }] : []), ...transcriptMessages(turns.slice(a, b), t.attachments, t.start)];
+        const response: any = await client.beta.messages.create({
+          model, max_tokens: Math.min(info?.maxTokens ?? 16_000, 16_000), ...(system ? { system } : {}),
+          betas: [COMPACTION_BETA], messages, compaction: { type: "summarize" }
+        } as any, { signal });
+        await record(response.model || model, response.usage);
+        const out = Array.isArray(response.content) ? response.content.find((c: any) => c?.type === "compaction") : null;
+        if (response.stop_reason !== "compaction" || !out) throw new Error(`compaction: ${response.stop_reason}`);
+        block = out;
+      }
+      return done("api", typeof block?.content === "string" ? block.content : "", block);
+    } catch (error) {
+      if (signal?.aborted) throw error;
+      // Falls back to a text summary below.
+    }
+  }
+  const pick = cheapestHaiku() ?? info;
+  const pickId = pick?.id ?? model;
+  let text = previous?.text ?? "";
+  const from = text ? previous!.upto : 0;
+  const label = (role: string) => role === "user" ? t.user : t.assistant;
+  for (const [a, b] of chunks(turns, from, upto, Math.min(budget, historyBudget(pick?.maxInputTokens)))) {
+    const transcript = transcriptMessages(turns.slice(a, b), t.attachments, t.start).map(m => `${label(m.role)}: ${m.content}`).join("\n\n");
+    const response = await client.messages.create({
+      model: pickId, max_tokens: lightMaxTokens(pick, 4000), ...lightThinking(pick),
+      system: t.system, messages: [{ role: "user", content: t.request(text, transcript) }]
+    }, { signal });
+    await record(response.model || pickId, response.usage);
+    text = response.content.filter(c => c.type === "text").map(c => c.text).join("").trim();
+    if (!text) throw new Error(mainT().compaction.summarizing);
+  }
+  return done("text", text);
+}
+const cheapestHaiku = () => [...modelCache.values()].filter(m => /haiku/.test(m.id) && priceFor(m.id)).sort((a, b) => priceFor(a.id)!.input - priceFor(b.id)!.input)[0];
+const usageEntry = (model: string, u: any): UsageEntry => ({
+  model, inputTokens: u?.input_tokens ?? 0, outputTokens: u?.output_tokens ?? 0,
+  cacheCreationInputTokens: u?.cache_creation_input_tokens ?? 0, cacheReadInputTokens: u?.cache_read_input_tokens ?? 0,
+  webSearchRequests: u?.server_tool_use?.web_search_requests ?? 0
+});
+
+async function runReply(event: Electron.IpcMainInvokeEvent, payload: ReplyPayload, requestId: string, controller: AbortController) {
   const send = (kind: "text" | "thinking" | "activity", delta: string) => {
     if (!event.sender.isDestroyed()) event.sender.send("claude:stream", { requestId, kind, delta });
   };
+  let prepared: Awaited<ReturnType<typeof prepareRequest>>;
+  try { prepared = await prepareRequest(payload, "reply", controller.signal, text => send("activity", text)); }
+  catch (error) {
+    // Stopped while the older turns were being summarized: nothing was answered yet.
+    if (controller.signal.aborted) return { text: "", thinking: "", aborted: true, usage: { model: payload.model ?? "", inputTokens: 0, outputTokens: 0, cacheCreationInputTokens: 0, cacheReadInputTokens: 0, webSearchRequests: 0 }, costUsd: 0, citations: [], files: [], steps: [], notices: [] };
+    throw error;
+  }
+  const { model, info, effort, tools, skills, customSkills, localConnectors, mcp, connectorNames, client, knowledge, system, built, unavailable, research, notices: prepNotices, betas, freshSummary } = prepared;
+  const connectorLabel = (server?: string) => (server && connectorNames.get(server)) || server || mainT().main.externalTool;
+  const messages: MessageParam[] = built.messages;
+  const containerId = typeof payload.containerId === "string" && payload.containerId ? payload.containerId : undefined;
+
   // Local servers are started (or reused) before the first request so their tools can be offered.
   const localNotices: string[] = [];
   const localLists: { server: LocalServer; tools: Awaited<ReturnType<LocalMcpPool["tools"]>> }[] = [];
@@ -1140,7 +1271,8 @@ async function runReply(event: Electron.IpcMainInvokeEvent, payload: ReplyPayloa
   };
   const totals = { input: 0, output: 0, cacheCreate: 0, cacheRead: 0, searches: 0 };
   const progress = { searches: 0, fetches: 0 };
-  let costUsd: number | null = 0;
+  // A summary written for this reply is part of its cost.
+  let costUsd: number | null = freshSummary?.costUsd ?? 0;
   // Each API request is recorded (and priced) on its own: prices such as Haiku 5.5's long-prompt rate apply per request,
   // and rounds that already finished stay recorded even if a later one fails.
   const addUsage = async (u: any, usedModel: string) => {
@@ -1185,9 +1317,9 @@ async function runReply(event: Electron.IpcMainInvokeEvent, payload: ReplyPayloa
         // Automatic prompt caching: the cache breakpoint moves forward with the conversation.
         cache_control: { type: "ephemeral" }
       };
-      // Connectors need the MCP connector beta; everything else uses the regular endpoint.
-      const stream = (mcp
-        ? client.beta.messages.stream({ ...params, betas: [MCP_CONNECTOR_BETA] } as any, { signal: controller.signal })
+      // Connectors and a compaction block need their betas; everything else uses the regular endpoint.
+      const stream = (betas.length
+        ? client.beta.messages.stream({ ...params, betas } as any, { signal: controller.signal })
         : client.messages.stream(params as any, { signal: controller.signal })) as unknown as MessageStream;
       stream.on("text", delta => send("text", delta));
       stream.on("thinking", delta => { thinking += delta; send("thinking", delta); });
@@ -1299,8 +1431,146 @@ async function runReply(event: Electron.IpcMainInvokeEvent, payload: ReplyPayloa
   }
   // "pause_turn"/"tool_use" here mean the loop limit cut the turn short; the UI offers to continue.
   const steps = extractSteps(turnBlocks, clientResults, Object.fromEntries(connectorNames), Object.fromEntries([...local.refs].map(([name, ref]) => [name, { server: ref.serverName, tool: ref.tool }])));
-  return { text, thinking, aborted, usage, costUsd, citations, files, container, steps, ...(stopReason && stopReason !== "end_turn" && stopReason !== "stop_sequence" && !aborted ? { stopReason } : {}), notices: [...failNotices, ...localNotices, ...(built.omitted ? [mainT().main.noticeOmitted(built.omitted)] : []), ...built.skipped.map(s => mainT().main.noticeSkipped(s)), ...unavailable.map(u => mainT().main.noticeUnavailable(u))] };
+  return { text, thinking, aborted, usage, costUsd, citations, files, container, steps, ...(stopReason && stopReason !== "end_turn" && stopReason !== "stop_sequence" && !aborted ? { stopReason } : {}), ...(freshSummary ? { compaction: freshSummary.summary } : {}), notices: [...failNotices, ...localNotices, ...prepNotices, ...(built.omitted ? [mainT().main.noticeOmitted(built.omitted)] : []), ...built.skipped.map(s => mainT().main.noticeSkipped(s)), ...unavailable.map(u => mainT().main.noticeUnavailable(u))] };
 }
+
+// ---- Cost estimate before sending (count_tokens is free; https://platform.claude.com/docs/en/build-with-claude/token-counting) ----
+ipcMain.handle("estimate:count", async (_event, payload: ReplyPayload) => {
+  const { client, model, info, system, built, tools, mcp } = await prepareRequest(payload, "estimate");
+  // count_tokens does not take server tools, the MCP connector or Files API sources, so the tool definitions are left out.
+  const counted = await client.messages.countTokens({ model, messages: built.messages, ...(system ? { system } : {}) });
+  return { model, inputTokens: counted.input_tokens, maxOutputTokens: info?.maxTokens ?? 8192, withoutTools: tools.length > 0 || !!mcp };
+});
+
+// ---- Replies through the Message Batches API (half price, delivered later) ----
+const batchesFile = () => path.join(dataDir(), "batches.json");
+// Once a minute; the e2e tests shorten it.
+const BATCH_POLL_MS = Number(process.env.CONTINUITY_BATCH_POLL_MS) || 60_000;
+let batchTimer: NodeJS.Timeout | null = null;
+const loadJobs = async () => sanitizeJobs(await readJsonFile<unknown>(batchesFile(), []));
+/** Read-modify-write of batches.json, one at a time. */
+function updateJobs<T>(change: (jobs: BatchJob[]) => Promise<T> | T): Promise<T> {
+  return withFileLock(batchesFile(), async () => {
+    const jobs = await loadJobs();
+    const out = await change(jobs);
+    await writeFileAtomic(batchesFile(), JSON.stringify(jobs));
+    return out;
+  });
+}
+function broadcastJobs(jobs: BatchJob[]) {
+  for (const win of BrowserWindow.getAllWindows()) if (!win.isDestroyed()) win.webContents.send("batch:update", jobs);
+}
+function scheduleBatchPoll(jobs: BatchJob[]) {
+  if (batchTimer) { clearTimeout(batchTimer); batchTimer = null; }
+  if (pendingCount(jobs)) batchTimer = setTimeout(() => void pollBatches().catch(() => {}), BATCH_POLL_MS);
+}
+/** Turns a finished batch message into the same shape as a streamed reply. */
+async function batchReply(client: Anthropic, message: any, job: BatchJob) {
+  const blocks = Array.isArray(message?.content) ? message.content : [];
+  const entry = { ...usageEntry(message?.model || job.model, message?.usage), batch: true };
+  await recordUsage(entry).catch(() => {});
+  const { text, citations } = extractText(blocks);
+  const files = [];
+  for (const fileId of extractFileIds(blocks)) {
+    try { const meta = await client.files.retrieveMetadata(fileId); files.push({ fileId, name: meta.filename, size: meta.size_bytes }); }
+    catch { files.push({ fileId, name: fileId }); }
+  }
+  const stop = message?.stop_reason;
+  return {
+    text, citations, files, thinking: blocks.filter((b: any) => b?.type === "thinking").map((b: any) => b.thinking || "").join(""),
+    steps: extractSteps(blocks, new Map(), job.connectorNames ?? {}), usage: entry, costUsd: costOf(entry.model, entry),
+    ...(message?.container?.id ? { container: { id: message.container.id, expiresAt: message.container.expires_at } } : {}),
+    ...(stop && stop !== "end_turn" && stop !== "stop_sequence" ? { stopReason: stop } : {})
+  };
+}
+// One check at a time: two overlapping checks would each record the same result's usage.
+let polling: Promise<void> | null = null;
+function pollBatches(): Promise<void> {
+  polling ??= checkBatches().finally(() => { polling = null; });
+  return polling;
+}
+async function checkBatches() {
+  const before = await loadJobs();
+  if (!pendingCount(before)) return scheduleBatchPoll(before);
+  const client = new Anthropic({ apiKey: await getApiKey() });
+  const finished = new Map<string, Partial<BatchJob>>();
+  for (const job of before.filter(j => j.status === "pending")) {
+    if (isPastRetention(job, Date.now())) { finished.set(job.id, { status: "expired", error: mainT().batch.tooOld, endedAt: new Date().toISOString() }); continue; }
+    try {
+      const batch = await client.beta.messages.batches.retrieve(job.id);
+      if (batch.processing_status !== "ended") continue;
+      let change: Partial<BatchJob> = { status: "expired", endedAt: batch.ended_at ?? new Date().toISOString() };
+      for await (const item of await client.beta.messages.batches.results(job.id)) {
+        const r: any = item.result;
+        if (r.type === "succeeded") { const result = await batchReply(client, r.message, job); change = { ...change, status: "done", result, ...(result.costUsd != null ? { costUsd: result.costUsd } : {}) }; }
+        else if (r.type === "errored") change = { ...change, status: "errored", error: mainT().batch.errored(String(r.error?.error?.message ?? r.error?.type ?? "error").slice(0, 300)) };
+        else if (r.type === "canceled") change = { ...change, status: "canceled" };
+        else change = { ...change, status: "expired", error: mainT().batch.expired };
+      }
+      finished.set(job.id, change);
+    } catch (error) {
+      if ((error as any)?.status === 404) finished.set(job.id, { status: "errored", error: mainT().batch.notFound, endedAt: new Date().toISOString() });
+    }
+  }
+  const jobs = await updateJobs(list => {
+    for (const job of list) { const change = finished.get(job.id); if (change) Object.assign(job, change, { canceling: undefined }); }
+    return list.map(j => ({ ...j }));
+  });
+  if (finished.size) broadcastJobs(jobs);
+  scheduleBatchPoll(jobs);
+}
+ipcMain.handle("batch:create", async (_event, payload: ReplyPayload & { chatTitle?: string; estimateUsd?: number }) => {
+  const parts = await prepareRequest(payload, "batch");
+  const { client, model, info, effort, tools, skills, customSkills, mcp, system, built, betas, connectorNames, freshSummary } = parts;
+  const containerId = typeof payload.containerId === "string" && payload.containerId ? payload.containerId : undefined;
+  // Batches are not streamed, so the full output budget is fine (there is no HTTP timeout to stay under).
+  const params = {
+    model, max_tokens: info?.maxTokens ?? 8192, messages: built.messages,
+    ...(system ? { system } : {}),
+    ...(tools.length || mcp ? { tools: [...tools, ...(mcp?.tools ?? [])] } : {}),
+    ...(mcp ? { mcp_servers: mcp.mcp_servers } : {}),
+    ...(skills.length || customSkills.length || containerId ? { container: { ...(containerId ? { id: containerId } : {}), ...(skills.length || customSkills.length ? { skills: containerSkills(skills, customSkills) } : {}) } } : {}),
+    ...(info?.adaptiveThinking ? { thinking: { type: "adaptive" as const, display: "summarized" as const } } : {}),
+    ...(effort ? { output_config: { effort } } : {})
+  };
+  const batch = await client.beta.messages.batches.create({ requests: [{ custom_id: "reply", params: params as any }], ...(betas.length ? { betas: betas as any } : {}) });
+  const job: BatchJob = {
+    id: batch.id, chatId: String(payload.chatId ?? "").slice(0, 100), chatTitle: String(payload.chatTitle ?? "").slice(0, 300), model,
+    createdAt: batch.created_at ?? new Date().toISOString(), status: "pending",
+    ...(typeof payload.estimateUsd === "number" && Number.isFinite(payload.estimateUsd) ? { estimateUsd: payload.estimateUsd } : {}),
+    ...(connectorNames.size ? { connectorNames: Object.fromEntries(connectorNames) } : {})
+  };
+  const jobs = await updateJobs(list => { list.push(job); return list.map(j => ({ ...j })); });
+  broadcastJobs(jobs);
+  scheduleBatchPoll(jobs);
+  return { job, notices: [...parts.notices, ...parts.unavailable.map(u => mainT().main.noticeUnavailable(u)), ...built.skipped.map(sk => mainT().main.noticeSkipped(sk))], ...(freshSummary ? { compaction: freshSummary.summary, summaryCostUsd: freshSummary.costUsd } : {}) };
+});
+ipcMain.handle("batch:list", async () => {
+  const jobs = await loadJobs();
+  // Opening the window also checks right away, so results that came in while the app was closed show up.
+  if (pendingCount(jobs)) void pollBatches().catch(() => {});
+  return jobs;
+});
+ipcMain.handle("batch:cancel", async (_event, id: string) => {
+  const client = new Anthropic({ apiKey: await getApiKey() });
+  await client.beta.messages.batches.cancel(String(id));
+  const jobs = await updateJobs(list => { for (const j of list) if (j.id === String(id) && j.status === "pending") j.canceling = true; return list.map(j => ({ ...j })); });
+  broadcastJobs(jobs);
+  // Canceling takes a moment; check again soon rather than in a minute.
+  setTimeout(() => void pollBatches().catch(() => {}), 5000);
+  return jobs;
+});
+/** The window has put the result into its chat: the stored copy is no longer needed. */
+ipcMain.handle("batch:ack", async (_event, id: string) => {
+  const jobs = await updateJobs(list => { for (const j of list) if (j.id === String(id)) delete j.result; return list.map(j => ({ ...j })); });
+  return jobs;
+});
+/** Removes finished jobs from the list (pending ones stay). */
+ipcMain.handle("batch:clear", async () => {
+  const jobs = await updateJobs(list => { const keep = list.filter(j => j.status === "pending" || j.result !== undefined); list.splice(0, list.length, ...keep); return list.map(j => ({ ...j })); });
+  broadcastJobs(jobs);
+  return jobs;
+});
 
 // ---- Hand off to the Claude apps (claude://claude.ai/new?q=…, prefilled, never auto-sent) ----
 ipcMain.handle("handoff:summarize", async (_event, payload: { model: string; title: string; transcript: string }) => {

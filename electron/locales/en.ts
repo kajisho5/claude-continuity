@@ -130,6 +130,26 @@ export const en: typeof Ja = {
     readyTitle: "Update ready",
     readyBody: (version: string) => `Relaunch to update to version ${version}.`
   },
+  compaction: {
+    summarizing: "Summarizing earlier messages…",
+    attachments: (names: string) => `[Attached: ${names}]`,
+    start: "(Start of the conversation)",
+    system: "You keep the record of a conversation. Summarize the conversation you are given (and the earlier summary, if any) so that nothing the rest of the conversation needs is lost: the goal, what was decided, numbers and names, the user's preferences and instructions, and open questions. Use English headings and bullet points. No preamble.",
+    request: (previous: string, transcript: string) => `${previous ? `<previous_summary>\n${previous}\n</previous_summary>\n\n` : ""}<conversation>\n${transcript}\n</conversation>\n\nWrite a summary of ${previous ? "the earlier summary together with this continuation of the conversation" : "this conversation"}.`,
+    user: "User",
+    assistant: "Assistant",
+    noticeSummarized: (n: number) => `${n} earlier messages were sent as a summary`
+  },
+  batch: {
+    noLocal: (names: string) => `Left out tools that run on this computer, which Batch can't use: ${names}`,
+    noKnowledgeSearch: "Batch can't search project knowledge, so the large knowledge files were not sent",
+    notFound: "This batch was not found.",
+    expired: "Not processed within 24 hours (not billed)",
+    canceled: "Canceled",
+    errored: (message: string) => `Couldn't be processed: ${message}`,
+    notifyTitle: "A batch reply arrived",
+    tooOld: "Past the 29-day result retention"
+  },
   main: {
     shortcutTaken: (keys: string) => `${keys} is already used by another app. Choose a different combination.`,
     captureFailed: "Couldn't capture the screen. On macOS, allow this app under System Settings > Privacy & Security > Screen Recording.",

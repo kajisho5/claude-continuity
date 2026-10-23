@@ -32,6 +32,7 @@ contextBridge.exposeInMainWorld("continuity", {
   deleteSkill: (id: string) => ipcRenderer.invoke("skills:delete", id),
   importDesktopConnectors: () => ipcRenderer.invoke("connectors:importDesktop"),
   resetAllowedTools: (id: string) => ipcRenderer.invoke("connectors:resetAllowed", id),
+  setConnectorEnabled: (id: string, enabled: boolean) => ipcRenderer.invoke("connectors:setEnabled", id, enabled),
   answerApproval: (approvalId: string, decision: string) => ipcRenderer.invoke("claude:approve", approvalId, decision),
   onApproval: (listener: (approval: unknown) => void) => {
     const handler = (_event: IpcRendererEvent, payload: unknown) => listener(payload);
@@ -68,6 +69,17 @@ contextBridge.exposeInMainWorld("continuity", {
   pickMcpFolders: () => ipcRenderer.invoke("mcp:pickFolder"),
   listModels: () => ipcRenderer.invoke("claude:models"),
   reply: (payload: unknown) => ipcRenderer.invoke("claude:reply", payload),
+  estimate: (payload: unknown) => ipcRenderer.invoke("estimate:count", payload),
+  createBatch: (payload: unknown) => ipcRenderer.invoke("batch:create", payload),
+  listBatches: () => ipcRenderer.invoke("batch:list"),
+  cancelBatch: (id: string) => ipcRenderer.invoke("batch:cancel", id),
+  ackBatch: (id: string) => ipcRenderer.invoke("batch:ack", id),
+  clearBatches: () => ipcRenderer.invoke("batch:clear"),
+  onBatchUpdate: (listener: (jobs: unknown) => void) => {
+    const handler = (_event: IpcRendererEvent, jobs: unknown) => listener(jobs);
+    ipcRenderer.on("batch:update", handler);
+    return () => { ipcRenderer.removeListener("batch:update", handler); };
+  },
   generateTitle: (user: string, assistant: string) => ipcRenderer.invoke("claude:title", { user, assistant }),
   abortReply: (requestId: string) => ipcRenderer.invoke("claude:abort", requestId),
   onStream: (listener: (event: StreamEvent) => void) => {

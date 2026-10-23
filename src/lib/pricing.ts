@@ -9,6 +9,8 @@ export type UsageTokens = {
   cacheCreationInputTokens?: number;
   cacheReadInputTokens?: number;
   webSearchRequests?: number;
+  /** Sent through the Message Batches API: tokens are billed at half price. */
+  batch?: boolean;
 };
 
 export const PRICING_AS_OF = "2026-10";
@@ -51,6 +53,8 @@ const TABLE: Record<string, Price> = {
 
 // Web search is billed per search on top of tokens: $10 per 1,000 searches.
 export const WEB_SEARCH_USD = 0.01;
+// Message Batches bill tokens at 50% of the standard price (https://platform.claude.com/docs/en/build-with-claude/batch-processing).
+export const BATCH_DISCOUNT = 0.5;
 // Claude Haiku 5.5 charges higher rates when the whole prompt (including cache reads/writes) exceeds 100k tokens.
 const HAIKU_55_LONG_PROMPT = 100_000;
 
@@ -71,8 +75,9 @@ export function costOf(modelId: string, usage: UsageTokens): number | null {
   const cacheRead = usage.cacheReadInputTokens ?? 0;
   const price = priceFor(modelId, usage.inputTokens + cacheWrite + cacheRead);
   if (!price) return null;
-  return (usage.inputTokens * price.input + cacheWrite * price.cacheWrite + cacheRead * price.cacheHit +
-    usage.outputTokens * price.output) / 1_000_000 + (usage.webSearchRequests ?? 0) * WEB_SEARCH_USD;
+  const tokens = (usage.inputTokens * price.input + cacheWrite * price.cacheWrite + cacheRead * price.cacheHit +
+    usage.outputTokens * price.output) / 1_000_000;
+  return tokens * (usage.batch ? BATCH_DISCOUNT : 1) + (usage.webSearchRequests ?? 0) * WEB_SEARCH_USD;
 }
 
 export function formatUsd(value: number, digits = 2): string {

@@ -201,6 +201,8 @@ export const settings: typeof Ja = {
     envCount: (n: number) => ` · ${n} environment ${n === 1 ? "variable" : "variables"}`,
     allowedCount: (n: number) => `${n} ${n === 1 ? "tool" : "tools"} always allowed`,
     resetAllowed: "Reset permissions",
+    enabledLabel: (name: string) => `Use ${name} (when off, it is not offered in the tools menu or sent)`,
+    disabledBadge: "Off",
     importDesktop: "Import from Claude Desktop",
     imported: (added: number, found: number) => found === 0 ? "No local MCP servers found to import." : added === 0 ? (found === 1 ? "That server is already added." : `All ${found} servers are already added.`) : `Added ${added} local MCP ${added === 1 ? "server" : "servers"}.`
   }

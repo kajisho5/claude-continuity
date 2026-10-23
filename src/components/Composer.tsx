@@ -55,7 +55,7 @@ const Composer = forwardRef<ComposerHandle, Props>(function Composer(p, ref) {
       <button className="round-btn tip" data-tip={t.composer.attachFiles} aria-label={t.composer.attachFiles} onClick={p.onPickFiles} disabled={p.busy}><Plus size={17} /></button>
       <button className="round-btn screenshot tip" data-tip={t.composer.screenshot} aria-label={t.composer.screenshot} onClick={p.onScreenshot} disabled={p.busy}><Camera size={16} /></button>
       <ToolsMenu tools={p.tools} onChange={p.onTools} disabled={p.busy} projectMemory={p.projectMemory}
-        style={p.style} styles={p.styles} onStyle={p.onStyle} placement={p.placement} connectors={p.connectors} onManageConnectors={p.onManageConnectors} />
+        style={p.style} styles={p.styles} onStyle={p.onStyle} placement={p.placement} connectors={p.connectors} onManageConnectors={p.onManageConnectors} noBatch={p.incognito} />
       <span className="spacer flex-1" />
       <ModelMenu model={p.model} models={p.models} onModel={p.onModel} modelsLoading={p.modelsLoading} onRefresh={p.onRefreshModels}
         effort={p.effort} efforts={p.efforts} onEffort={p.onEffort} disabled={p.busy} placement={p.placement} />

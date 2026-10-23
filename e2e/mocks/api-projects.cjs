@@ -23,6 +23,7 @@ function start(port = 8787) {
     if (req.method === "POST" && req.url.startsWith("/v1/files")) { log.push("upload " + (raw.toString("latin1").match(/filename="([^"]+)"/) || [])[1]); return json({ id: "file_up" + log.length, type: "file", filename: "x", mime_type: "text/csv", size_bytes: raw.length, created_at: "2026-10-23T00:00:00Z" }); }
     if (req.url.startsWith("/v1/files/file_abc/content")) { res.setHeader("content-type", "application/octet-stream"); return res.end(Buffer.from("PK-fake-xlsx")); }
     if (req.url.startsWith("/v1/files/file_abc")) return json({ id: "file_abc", type: "file", filename: "q3-summary.xlsx", mime_type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", size_bytes: 48000, created_at: "2026-10-23T00:00:00Z", downloadable: true });
+    if (req.url.startsWith("/v1/messages/count_tokens")) return json({ input_tokens: Math.ceil(raw.length / 2) });
     if (!req.url.startsWith("/v1/messages")) { res.statusCode = 404; return res.end("{}"); }
     const b = JSON.parse(raw.toString("utf8"));
     const last = b.messages[b.messages.length - 1];

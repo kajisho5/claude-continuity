@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import type { ApprovalDecision, ConnectorView, ToolApproval } from "./lib/connectors";
 import ToolApprovalCard from "./components/ToolApprovalCard";
-import { ArrowDown, ArrowUpRight, Ghost, Plus, Shapes, FileUp, FolderOpen, MessagesSquare, PanelLeftClose, PanelLeftOpen, Search } from "lucide-react";
+import { ArrowDown, ArrowUpRight, Ghost, Plus, Shapes, FileUp, FolderOpen, MessagesSquare, PanelLeftClose, PanelLeftOpen, Search, Timer } from "lucide-react";
 import CreditCard from "./components/CreditCard";
 import LogoMark, { LogoGlyph } from "./components/LogoMark";
 import OnboardingWizard from "./components/OnboardingWizard";
@@ -22,6 +22,11 @@ import type { UpdateStatus } from "./lib/update";
 import HandoffDialog from "./components/HandoffDialog";
 import ArtifactPanel from "./components/ArtifactPanel";
 import ChatMenu from "./components/ChatMenu";
+import CostEstimate from "./components/CostEstimate";
+import CostConfirmDialog, { type CostConfirm } from "./components/CostConfirmDialog";
+import CompactionDivider from "./components/CompactionDivider";
+import BatchJobsPage from "./components/BatchJobsPage";
+import { checkLimits, estimateCost, hasLimits, pastChatsDocument, shouldSuggest, spentToday, cycleKey, TYPICAL_OUTPUT_TOKENS } from "./lib/spend";
 import AccountMenu from "./components/AccountMenu";
 import { ConfirmDialog, RenameDialog } from "./components/Dialog";
 import { PLAN_LABELS, summarizeCredit, type CreditSettings, type UsageRow } from "./lib/credit";
@@ -35,7 +40,13 @@ import { plainPreview } from "./lib/time";
 import { editUserMessage, selectUserVersion } from "./lib/versions";
 
 type Attachment = NonNullable<Msg["attachments"]>[number];
-type Chat = { id: string; title: string; messages: Msg[]; source?: string; projectId?: string; starred?: boolean; updatedAt?: string; incognito?: boolean; style?: string; tools?: Tools; container?: { id: string; expiresAt?: string } };
+type Summary = NonNullable<Awaited<ReturnType<typeof window.continuity.reply>>["compaction"]>;
+type BatchJob = Awaited<ReturnType<typeof window.continuity.listBatches>>[number];
+type Chat = { id: string; title: string; messages: Msg[]; source?: string; projectId?: string; starred?: boolean; updatedAt?: string; incognito?: boolean; style?: string; tools?: Tools; container?: { id: string; expiresAt?: string };
+  /** Summary of the turns before `upto`, sent in their place once the chat outgrows the model's input. */
+  compaction?: Summary };
+// The newest messages sent with a request (main trims further to the model's input budget).
+const SENT_MAX = 2000;
 type Model = { id: string; displayName: string; createdAt?: string; maxTokens?: number; effortLevels: string[]; adaptiveThinking: boolean; imageInput: boolean; pdfInput: boolean };
 type Pending = { chatId: string; requestId: string; text: string; thinking: string; activity: string; startedAt: number; firstTextAt?: number; approval?: ToolApproval };
 type Reply = Omit<Msg, "role" | "attachments" | "alternates" | "altIndex">;
@@ -68,7 +79,7 @@ function toUsageRows(rows: Awaited<ReturnType<typeof window.continuity.loadUsage
   return rows.filter(row => row && typeof row.model === "string" && typeof row.createdAt === "string").map(row => ({
     model: row.model, createdAt: row.createdAt, inputTokens: Number(row.inputTokens) || 0, outputTokens: Number(row.outputTokens) || 0,
     cacheCreationInputTokens: Number(row.cacheCreationInputTokens) || 0, cacheReadInputTokens: Number(row.cacheReadInputTokens) || 0,
-    webSearchRequests: Number(row.webSearchRequests) || 0, ...(row.source==="mcp"?{source:"mcp"}:{})
+    webSearchRequests: Number(row.webSearchRequests) || 0, ...(row.source==="mcp"?{source:"mcp"}:{}), ...(row.batch===true?{batch:true}:{})
   }));
 }
 function snapshot(m: Msg): Reply {
@@ -105,7 +116,12 @@ export default function App() {
  const [modelsLoading,setModelsLoading]=useState(false);
  const [configured,setConfigured]=useState(false);
  const [settings,setSettings]=useState<SettingsTab|null>(null);
- const [view,setView]=useState<"chat"|"chats"|"projects"|"project"|"artifacts">("chat");
+ const [view,setView]=useState<"chat"|"chats"|"projects"|"project"|"artifacts"|"batches">("chat");
+ const [batchJobs,setBatchJobs]=useState<BatchJob[]>([]);
+ // Cost of sending the current draft (count_tokens), keyed by what it was computed for.
+ const [estimate,setEstimate]=useState<{key:string;model:string;inputTokens:number;maxOutputTokens:number;withoutTools:boolean}|null>(null);
+ const [estimating,setEstimating]=useState(false);
+ const [costConfirm,setCostConfirm]=useState<(CostConfirm&{viaBatch:boolean})|null>(null);
  const [openProject,setOpenProject]=useState<string|null>(null);
  const [shortcuts,setShortcuts]=useState(false);
  const [toasts,setToasts]=useState<Toast[]>([]);
@@ -177,7 +193,10 @@ export default function App() {
    // A window opened again (macOS) learns an update that was found while it was closed.
    window.continuity.updateStatus().then(setUpdate).catch(()=>{});
    window.continuity.listConnectors().then(setConnectors).catch(()=>{});
-   return ()=>{window.clearInterval(timer);unsubscribe();offQuick();offApproval();offUpdate();};
+   // Batch replies: the list (results that came in while the app was closed included), then updates as they finish.
+   window.continuity.listBatches().then(setBatchJobs).catch(()=>{});
+   const offBatch=window.continuity.onBatchUpdate(setBatchJobs);
+   return ()=>{window.clearInterval(timer);unsubscribe();offQuick();offApproval();offUpdate();offBatch();};
  },[]);
  function answerApproval(decision:ApprovalDecision){
    const current=pendingRef.current;
@@ -266,6 +285,58 @@ export default function App() {
    return ()=>window.removeEventListener("keydown",onKey);
  });
 
+ // The estimate follows the draft: counted (free, rate-limited) once typing pauses.
+ // The draft counts by length in steps (100 characters, or 2,000 when large files go along, since each count sends them all).
+ const heavyAttachments=useMemo(()=>[...chat.messages.flatMap(m=>m.attachments??[]),...pendingAttachments].reduce((n,a)=>n+a.size,0)>4*1024*1024,[chat.messages,pendingAttachments]);
+ const draftStep=heavyAttachments?2000:100;
+ const estimateKey=JSON.stringify([chat.id,Math.ceil(draft.trim().length/draftStep),!!draft.trim(),pendingAttachments.map(a=>a.id),model,chat.tools,chat.style,chat.projectId,chat.messages.length,!!chat.compaction]);
+ const estimateSeq=useRef(0);
+ useEffect(()=>{
+   const seq=++estimateSeq.current;
+   if(!configured||view!=="chat"||busy||(!draft.trim()&&!pendingAttachments.length)){setEstimating(false);return;}
+   setEstimating(true);
+   const key=estimateKey;
+   const history:Msg[]=[...chat.messages,{role:"user",content:draft.trim(),...(pendingAttachments.length?{attachments:pendingAttachments}:{})}];
+   const timer=window.setTimeout(()=>{
+     window.continuity.estimate(payloadFor(chat,history,"estimate").payload)
+       .then(r=>{if(seq===estimateSeq.current){setEstimate({key,...r});setEstimating(false);}})
+       .catch(()=>{if(seq===estimateSeq.current){setEstimate(null);setEstimating(false);}});
+   },600);
+   return ()=>window.clearTimeout(timer);
+ // eslint-disable-next-line react-hooks/exhaustive-deps
+ },[estimateKey,configured,view,busy]);
+ // Batch results go into their chats (in place of the waiting card); the stored copy is then released.
+ const chatsRef=useRef(chats);
+ chatsRef.current=chats;
+ const appliedBatches=useRef(new Set<string>());
+ useEffect(()=>{
+   if(!loaded)return;
+   for(const job of batchJobs){
+     if(job.status==="pending")continue;
+     const mark=`${job.id}:${job.status}:${job.result?"r":""}`;
+     if(appliedBatches.current.has(mark))continue;
+     appliedBatches.current.add(mark);
+     const target=chatsRef.current.find(c=>c.messages.some(m=>m.batch?.id===job.id&&m.batch.status!=="done"));
+     if(!target){if(job.result)void window.continuity.ackBatch(job.id).catch(()=>{});continue;}
+     if(job.status==="done"&&job.result){
+       const r=job.result;
+       const reply:Msg={role:"assistant",content:r.text,model:r.usage.model,batch:{id:job.id,status:"done"},...(r.thinking?{thinking:r.thinking}:{}),...(r.costUsd!=null?{costUsd:r.costUsd}:{}),
+         ...(r.citations?.length?{citations:r.citations}:{}),...(r.files?.length?{files:r.files}:{}),...(r.steps?.length?{steps:r.steps}:{}),...(r.stopReason?{stopReason:r.stopReason}:{})};
+       patchChat(target.id,c=>({...c,messages:c.messages.map(m=>m.batch?.id===job.id?reply:m),updatedAt:new Date().toISOString(),...(r.container?{container:r.container}:{})}));
+       reloadUsage();
+       toast(t.spend.batch.notifyTitle);
+       if(prefs.notifyOnReply&&!document.hasFocus()&&typeof Notification!=="undefined"){
+         const note=new Notification(t.spend.batch.notifyTitle,{body:`${target.title}: ${plainPreview(r.text,100)}`});
+         note.onclick=()=>{void window.continuity.focusWindow();setActive(target.id);setView("chat");};
+       }
+       void window.continuity.ackBatch(job.id).catch(()=>{});
+     }else if(job.status!=="done"){
+       patchChat(target.id,c=>({...c,messages:c.messages.map(m=>m.batch?.id===job.id?{...m,batch:{id:job.id,status:job.status,...(job.error?{note:job.error}:{})}}:m)}));
+     }
+   }
+ // eslint-disable-next-line react-hooks/exhaustive-deps
+ },[batchJobs,loaded]);
+
  // Main records every API call in the ledger; the card reads it back rather than adding rows of its own.
  function reloadUsage(){ window.continuity.loadUsage().then(rows=>setUsageRows(toUsageRows(rows))).catch(()=>{}); }
  function patchChat(id:string,patch:(c:Chat)=>Chat){ setChats(cs=>cs.map(c=>c.id===id?patch(c):c)); }
@@ -329,6 +400,15 @@ export default function App() {
    if(files.length) addAttachments(await window.continuity.addAttachmentFiles(files));
  }
 
+ /** The request for `history`: the newest SENT_MAX messages, with the chat's summary re-indexed to them. */
+ function payloadFor(target:Chat,history:Msg[],requestId:string){
+   const sent=history.slice(-SENT_MAX);
+   const offset=history.length-sent.length;
+   const summary=target.compaction&&target.compaction.upto-offset>0?{...target.compaction,upto:target.compaction.upto-offset}:undefined;
+   const payload={requestId,model,effort:effort||undefined,style:target.style,projectId:target.projectId,tools:target.incognito?{...target.tools,memory:false,batch:false}:target.tools,containerId:target.container?.id,chatId:target.id,incognito:!!target.incognito,
+     messages:sent.map(m=>({role:m.role,content:m.content,...(m.attachments?.length?{attachments:m.attachments}:{})})),...(summary?{compaction:summary}:{})};
+   return {payload,offset};
+ }
  /** Sends `history` (ending with a user turn) and appends or replaces the reply. */
  async function runReply(target:Chat,history:Msg[],mode:{kind:"append";retitle?:boolean}|{kind:"regenerate";previous:Msg}|{kind:"continue";previous:Msg}){
    if(!configured){setSettings("api");setStatus(t.app.status.setKeyFirst);return;}
@@ -337,10 +417,9 @@ export default function App() {
    pendingRef.current=start;setPending(start);setStatus(t.app.status.asking);
    // Sent even after its short rolling expires_at: the API can resume a container for 30 days, and main retries
    // without it if it is gone.
-   const container=target.container?.id;
+   const {payload,offset}=payloadFor(target,history,requestId);
    try{
-     const response=await window.continuity.reply({requestId,model,effort:effort||undefined,style:target.style,projectId:target.projectId,tools:target.incognito?{...target.tools,memory:false}:target.tools,containerId:container,chatId:target.id,incognito:!!target.incognito,
-       messages:history.slice(-2000).map(m=>({role:m.role,content:m.content,...(m.attachments?.length?{attachments:m.attachments}:{})}))});
+     const response=await window.continuity.reply(payload);
      // Main prices each API request of the turn on its own (per-request rates such as Haiku 5.5's long-prompt price).
      const cost=response.costUsd!==undefined?response.costUsd:costOf(response.usage.model,response.usage);
      const thoughtUntil=pendingRef.current?.firstTextAt??Date.now();
@@ -355,7 +434,9 @@ export default function App() {
        const versions=mode.previous.alternates?.length?mode.previous.alternates:[snapshot(mode.previous)];
        next={...next,alternates:[...versions,reply],altIndex:versions.length};
      }
-     patchChat(target.id,c=>({...c,messages:[...kept,next],updatedAt:new Date().toISOString(),...(response.container?{container:response.container}:{})}));
+     patchChat(target.id,c=>({...c,messages:[...kept,next],updatedAt:new Date().toISOString(),...(response.container?{container:response.container}:{}),
+       // A summary written for this reply is kept (and reused) unless the chat is incognito.
+       ...(response.compaction&&!target.incognito?{compaction:{...response.compaction,upto:response.compaction.upto+offset}}:{})}));
      setAtBottom(true);
      if(response.usage.inputTokens||response.usage.outputTokens){
        // Main records each API request of the turn as its own row; read them back so the card matches the ledger.
@@ -396,15 +477,79 @@ export default function App() {
  }
  // Checked before a chat is changed, so a missing key never drops a reply or leaves an unanswered turn.
  function needKey(){ if(configured)return false; setSettings("api");setStatus(t.app.status.setKeyFirst);return true; }
- async function send(){
-   const text=draft.trim();if((!text&&!pendingAttachments.length)||busy||needKey())return;
+ // While a send is being checked against the limits (an estimate may be fetched), a second Enter does nothing.
+ const sendingRef=useRef(false);
+ /** Sends the draft: normally, or with Batch when the chat has it on (or the limit dialog chose it). */
+ async function send(opts:{checked?:boolean;viaBatch?:boolean}={}){
+   const text=draft.trim();if((!text&&!pendingAttachments.length)||busy||sendingRef.current||needKey())return;
    const current=chat;
    const userMsg:Msg={role:"user",content:text,...(pendingAttachments.length?{attachments:pendingAttachments}:{})};
    const history=[...current.messages,userMsg];
+   const viaBatch=(opts.viaBatch||!!current.tools?.batch)&&!current.incognito;
+   if(!opts.checked&&hasLimits(prefsRef.current)){
+     sendingRef.current=true;
+     try{
+       const verdict=await limitVerdict(current,history,viaBatch);
+       if(verdict==="blocked")return;
+       if(verdict){setCostConfirm({...verdict,viaBatch});return;}
+     }finally{sendingRef.current=false;}
+   }
    const provisional=DEFAULT_TITLES.has(current.title);
    const title=provisional?Array.from(text||pendingAttachments[0]?.name||t.app.newChat).slice(0,48).join(""):current.title;
    patchChat(current.id,c=>({...c,messages:history,title,updatedAt:new Date().toISOString()}));setDraft("");setPendingAttachments([]);
-   await runReply({...current,title},history,{kind:"append",retitle:provisional});
+   if(viaBatch) await sendBatch({...current,title},history);
+   else await runReply({...current,title},history,{kind:"append",retitle:provisional});
+ }
+ /** Input tokens for sending `history`: the estimate already shown when it is for this draft, else counted now. */
+ async function countFor(target:Chat,history:Msg[]){
+   if(estimate&&estimate.key===estimateKey) return estimate;
+   try{return await window.continuity.estimate(payloadFor(target,history,"estimate").payload);}catch{return null;}
+ }
+ /** null when the message fits the limits (or cannot be estimated); "blocked" when it was not sent; else what to confirm. */
+ async function limitVerdict(target:Chat,history:Msg[],viaBatch:boolean):Promise<CostConfirm|"blocked"|null>{
+   const counted=await countFor(target,history);
+   const cost=counted&&estimateCost(counted.model,counted.inputTokens,counted.maxOutputTokens,viaBatch);
+   if(!counted||!cost)return null;
+   const limits=prefsRef.current;
+   const today=spentToday(usageRows,new Date());
+   const over=checkLimits(limits,cost.typicalUsd,today);
+   if(!over.perMessage&&!over.daily)return null;
+   if(limits.limitMode==="block"){
+     const reason=over.perMessage?t.spend.confirm.reasonPerMessage:t.spend.confirm.reasonDaily;
+     setStatus(t.spend.confirm.blocked(reason));toast(t.spend.confirm.blocked(reason),"error");
+     return "blocked";
+   }
+   // Amounts under a cent keep their digits, so a small limit is not shown as $0.00.
+   const usd=(v:number)=>formatUsd(v,v>0&&v<0.01?4:2);
+   return {inputTokens:counted.inputTokens.toLocaleString(intlLocale()),inputUsd:usd(cost.inputUsd),outputTokens:TYPICAL_OUTPUT_TOKENS.toLocaleString(intlLocale()),outputUsd:usd(cost.outputUsd),worstUsd:usd(cost.worstUsd),
+     perMessage:limits.limitPerMessageUsd!=null?{limit:usd(limits.limitPerMessageUsd),over:over.perMessage}:null,
+     today:usd(today),daily:limits.limitDailyUsd!=null?usd(limits.limitDailyUsd):null,dailyOver:over.daily,canBatch:!viaBatch&&!target.incognito};
+ }
+ /** Sends `history` with the Batch API; a card stands in for the reply until it arrives. */
+ async function sendBatch(target:Chat,history:Msg[]){
+   const {payload,offset}=payloadFor(target,history,crypto.randomUUID());
+   setStatus(t.spend.batch.creating);
+   const counted=estimate&&estimate.key===estimateKey?estimate:null;
+   const estimateUsd=counted?estimateCost(counted.model,counted.inputTokens,counted.maxOutputTokens,true)?.typicalUsd:undefined;
+   try{
+     const result=await window.continuity.createBatch({...payload,chatTitle:target.title,...(estimateUsd!=null?{estimateUsd}:{})});
+     const placeholder:Msg={role:"assistant",content:"",model,batch:{id:result.job.id,status:"pending"}};
+     patchChat(target.id,c=>({...c,messages:[...history,placeholder],updatedAt:new Date().toISOString(),
+       ...(result.compaction&&!target.incognito?{compaction:{...result.compaction,upto:result.compaction.upto+offset}}:{})}));
+     if(result.summaryCostUsd) reloadUsage();
+     setStatus(t.spend.batch.created+(result.notices.length?` · ${result.notices.join(" / ")}`:""));
+   }catch(e){
+     patchChat(target.id,c=>({...c,messages:[...history,{role:"assistant",content:t.app.error.prefix+err(e)+"\n\n"+t.app.error.checkConsole}]}));
+     setStatus(t.spend.batch.failed+err(e));
+   }
+ }
+ function cancelBatch(id:string){ void window.continuity.cancelBatch(id).then(setBatchJobs).catch(e=>toast(err(e),"error")); }
+ /** A Batch that ended without a reply: send the same turn again the normal way. */
+ function resendBatch(index:number){
+   if(busy||needKey())return;
+   const history=chat.messages.slice(0,index);
+   patchChat(chat.id,c=>({...c,messages:history}));
+   void runReply(chat,history,{kind:"append"});
  }
  function continueReply(index:number){
    const previous=chat.messages[index];
@@ -474,6 +619,12 @@ export default function App() {
    else{const id="chat-"+Date.now();setChats(cs=>[{id,title:t.app.newChat,messages:[],...(projectId?{projectId}:{})},...cs]);setActive(id);}
    setArtifact(null);setView("chat");setTimeout(()=>composerRef.current?.focus(),0);
  }
+ /** A new chat with these tools on and the draft filled in (used by the before-expiry suggestions). */
+ function startChat(tools:Tools,text:string){
+   const id="chat-"+Date.now();
+   setChats(cs=>[{id,title:t.app.newChat,messages:[],tools},...cs]);setActive(id);
+   setArtifact(null);setView("chat");setDraft(text);setPendingAttachments([]);setTimeout(()=>composerRef.current?.focus(),0);
+ }
  function newProject(){setProjectModal({project:{id:crypto.randomUUID(),name:"",instructions:"",knowledge:[],memory:false},isNew:true});}
  async function upsertProject(project:Project){
    const exists=projects.some(p=>p.id===project.id);
@@ -510,6 +661,22 @@ export default function App() {
  const fresh=chat.messages.length===0&&!showPending;
  // A tool approval asked in another chat would otherwise be invisible while the reply waits on it.
  const approvalElsewhere=pending?.approval&&pending.chatId!==chat.id?pending:null;
+ const todayUsd=useMemo(()=>spentToday(usageRows,new Date(now)),[usageRows,now]);
+ const draftViaBatch=!!chat.tools?.batch&&!chat.incognito;
+ const estimateCostNow=estimate&&estimate.key===estimateKey?estimateCost(estimate.model,estimate.inputTokens,estimate.maxOutputTokens,draftViaBatch):null;
+ const estimateView=estimate&&estimate.key===estimateKey&&estimateCostNow?{tokens:estimate.inputTokens.toLocaleString(intlLocale()),usd:formatUsd(estimateCostNow.inputUsd,3),batch:draftViaBatch,withoutTools:estimate.withoutTools}:null;
+ const limitsLine=hasLimits(prefs)?t.spend.estimate.limits(formatUsd(todayUsd),prefs.limitDailyUsd!=null?formatUsd(prefs.limitDailyUsd):null,prefs.limitPerMessageUsd!=null?formatUsd(prefs.limitPerMessageUsd):null):"";
+ const pendingBatches=batchJobs.filter(j=>j.status==="pending").length;
+ const suggestions=summary&&shouldSuggest(summary,prefs.suggestDismissedCycle)?{
+   onBatchSummary:()=>{
+     const doc=pastChatsDocument(chats.filter(c=>c.id!=="welcome"),150_000,{user:t.spend.suggest.user,assistant:t.spend.suggest.assistant});
+     startChat({batch:true},t.spend.suggest.batchPrompt);
+     if(doc) void window.continuity.addAttachmentData(t.spend.suggest.pastChatsFile,new TextEncoder().encode(doc)).then(addAttachments).catch(e=>setStatus(t.app.status.attachFailed+err(e)));
+   },
+   onResearch:()=>startChat({research:true},""),
+   onDelegate:()=>setSettings("mcp"),
+   onDismiss:()=>void savePrefs(cur=>({...cur,suggestDismissedCycle:cycleKey(summary)}))
+ }:null;
  const composer=(variant:"welcome"|"footer")=><>{loadFailed&&<div role="alert" className="load-failed mx-auto mb-[8px] w-full max-w-[760px] rounded-[10px] border border-danger px-[12px] py-[8px] text-[12.5px] text-danger">{t.app.status.loadFailedNoSave.replace(/[:：]\s*$/,"")}</div>}
   {approvalElsewhere&&<div className="approval-elsewhere mx-auto mb-[8px] flex w-full max-w-[760px] items-center gap-[10px] rounded-[10px] border border-line-strong bg-surface-2 px-[12px] py-[8px] text-[12.5px] text-ink-3">
    <span className="min-w-0 flex-1">{t.app.approvalElsewhere(chats.find(c=>c.id===approvalElsewhere.chatId)?.title??"")}</span>
@@ -522,7 +689,8 @@ export default function App() {
    model={model} models={availableModels.length?availableModels.map(m=>({value:m.id,label:m.displayName})):[{value:model,label:modelsLoading?t.app.modelsLoading:model}]} onModel={pickModel} modelsLoading={modelsLoading} onRefreshModels={()=>void refreshModels(true)}
    effort={effort} efforts={currentModel?.effortLevels.length?[{value:"",label:t.app.effortDefault},...currentModel.effortLevels.map(l=>({value:l,label:t.app.effort(t.app.effortLevels[l]??l)}))]:[]} onEffort={pickEffort}
    connectors={chat.incognito?[]:connectors.filter(c=>c.enabled).map(c=>({id:c.id,name:c.name}))} onManageConnectors={()=>setSettings("connectors")}
-   placeholder={chat.incognito?t.app.placeholder.incognito:fresh?t.app.placeholder.fresh:t.app.placeholder.reply} placement={fresh?"down":"up"}/></>;
+   placeholder={chat.incognito?t.app.placeholder.incognito:fresh?t.app.placeholder.fresh:t.app.placeholder.reply} placement={fresh?"down":"up"}/>
+  <CostEstimate estimate={estimateView} counting={estimating&&!estimateView} limits={limitsLine}/></>;
  return <ArtifactContext.Provider value={setArtifact}><div className={"shell chatfont-"+prefs.chatFont+(sidebarOpen?"":" sidebar-closed")+" flex h-screen min-h-[600px]"+(prefs.chatFont==="sans"?" [--chat-font:var(--sans)]":prefs.chatFont==="system"?' [--chat-font:system-ui,-apple-system,"Segoe_UI","Hiragino_Sans","Yu_Gothic_UI",sans-serif]':"")}>
   <aside aria-hidden={!sidebarOpen} inert={!sidebarOpen} className={"flex min-h-0 shrink-0 flex-col overflow-hidden border-r bg-sidebar py-[22px] transition-[width,padding] duration-[220ms] ease-claude "+(sidebarOpen?"w-[264px] border-line px-[14px] max-[1000px]:w-[220px]":"w-0 border-transparent px-0")}>
    <div className="brand flex items-center gap-[10px] pt-0 pr-[2px] pb-[18px] pl-[6px]"><span className="mark grid size-[30px] shrink-0 place-items-center"><LogoMark size={30} title="Claude Continuity"/></span><b className="flex-1 whitespace-nowrap font-serif text-[15px] font-semibold text-ink-2">Claude Continuity</b>
@@ -532,13 +700,15 @@ export default function App() {
    <button className={"side-nav mt-[2px] flex w-full items-center gap-[10px] rounded-[9px] border-0 px-[10px] py-[8px] text-left text-[13px] hover:bg-line hover:text-ink [&_svg]:text-muted"+(view==="chats"?" active bg-line text-ink":" bg-transparent text-ink-4")} onClick={()=>{setView("chats");setArtifact(null);}}><MessagesSquare size={16}/>{t.app.nav.chats}</button>
    <button className={"side-nav mt-[2px] flex w-full items-center gap-[10px] rounded-[9px] border-0 px-[10px] py-[8px] text-left text-[13px] hover:bg-line hover:text-ink [&_svg]:text-muted"+(view==="artifacts"?" active bg-line text-ink":" bg-transparent text-ink-4")} onClick={()=>{setView("artifacts");setArtifact(null);}}><Shapes size={16}/>{t.app.nav.artifacts}</button>
    <button className={"side-nav mt-[2px] flex w-full items-center gap-[10px] rounded-[9px] border-0 px-[10px] py-[8px] text-left text-[13px] hover:bg-line hover:text-ink [&_svg]:text-muted"+(view==="projects"||view==="project"?" active bg-line text-ink":" bg-transparent text-ink-4")} onClick={()=>{setView("projects");setArtifact(null);}}><FolderOpen size={16}/>{t.app.nav.projects}</button>
+   {batchJobs.length>0&&<button className={"side-nav nav-batch mt-[2px] flex w-full items-center gap-[10px] rounded-[9px] border-0 px-[10px] py-[8px] text-left text-[13px] hover:bg-line hover:text-ink [&_svg]:text-muted"+(view==="batches"?" active bg-line text-ink":" bg-transparent text-ink-4")} onClick={()=>{setView("batches");setArtifact(null);}}><Timer size={16}/>{t.spend.batch.nav}
+    {pendingBatches>0&&<span className="batch-count ml-auto rounded-[9px] bg-accent/25 px-[7px] py-px text-[10.5px] font-semibold text-link">{pendingBatches}</span>}</button>}
    <div className="side-scroll mx-[-6px] mt-[4px] mb-0 min-h-0 flex-1 overflow-x-hidden overflow-y-auto px-[6px]">
     {starredChats.length>0&&<><div className="label mx-[10px] mt-[18px] mb-[6px] text-[10.5px] font-medium tracking-[.4px] text-subtle">{t.app.starred}</div>
      <div className="chatlist flex min-h-0 flex-none flex-col gap-px overflow-visible">{starredChats.map(c=>chatRow(c))}</div></>}
     <div className="label mx-[10px] mt-[18px] mb-[6px] text-[10.5px] font-medium tracking-[.4px] text-subtle">{t.app.recents}</div>
     <div className="chatlist flex min-h-0 flex-none flex-col gap-px overflow-visible">{recentChats.map(c=>chatRow(c))}{recentChats.length===0&&<p className="hint tight mx-[9px] mt-[2px] mb-[4px] text-[9.5px]">{search?t.app.noMatches:t.app.noChats}</p>}</div>
    </div>
-   <CreditCard summary={summary} totals={usageTotal} onConfigure={()=>setOnboarding(true)}/>
+   <CreditCard summary={summary} totals={usageTotal} onConfigure={()=>setOnboarding(true)} suggestions={suggestions}/>
    <AccountMenu name={prefs.displayName} plan={credit?.plan?t.app.planName(PLAN_LABELS[credit.plan]):t.app.noPlan} configured={configured}
     onSettings={()=>setSettings("general")} onShortcuts={()=>setShortcuts(true)} onImport={()=>void importExport()} onOnboarding={()=>setOnboarding(true)}/>
   </aside>
@@ -562,6 +732,8 @@ export default function App() {
     view==="projects"?<div className="workspace flex min-h-0 flex-1"><ProjectsPage projects={projects} chats={chatRows} now={now} onCreate={newProject} onOpen={id=>{setOpenProject(id);setView("project");}}/></div>:
     view==="project"&&openProjectData?<div className="workspace flex min-h-0 flex-1"><ProjectPage project={openProjectData} chats={chatRows} now={now} onBack={()=>setView("projects")}
       onEdit={()=>setProjectModal({project:openProjectData,isNew:false})} onStart={()=>newChat(openProjectData.id)} onOpenChat={id=>{setActive(id);setView("chat");}}/></div>:
+   view==="batches"?<div className="workspace flex min-h-0 flex-1"><BatchJobsPage jobs={batchJobs} now={now} models={Object.fromEntries(availableModels.map(m=>[m.id,m.displayName]))}
+     onOpen={id=>{if(chats.some(c=>c.id===id)){setActive(id);setView("chat");}}} onCancel={cancelBatch} onClear={()=>void window.continuity.clearBatches().then(setBatchJobs)}/></div>:
    view==="chats"?<div className="workspace flex min-h-0 flex-1"><ChatsPage now={now} onNew={()=>newChat()} onDelete={ids=>setConfirmBulk(ids)} onOpen={id=>{setActive(id);setView("chat");}}
      searchIn={(id,q)=>{const c=chats.find(x=>x.id===id);return !!c&&searchTextOf(c.messages).includes(q);}}
      chats={chatRows.map(c=>({...c,projectName:projects.find(p=>p.id===c.projectId)?.name}))}/></div>:
@@ -580,8 +752,11 @@ export default function App() {
       : <>
        <section className="messages flex-1 overflow-auto scroll-auto px-[24px] pt-[12px] pb-[24px] max-[1000px]:px-[22px]" ref={messagesRef} onScroll={e=>{const el=e.currentTarget;setAtBottom(el.scrollHeight-el.scrollTop-el.clientHeight<120);}}>
         <div className="thread mx-auto my-0 max-w-[760px] pt-[20px]">
-         {chat.messages.map((m,i)=><MessageItem key={`${chat.id}-${i}`} message={m} isLast={i===lastAssistant&&!showPending} busy={busy}
-           onRegenerate={()=>regenerate(i)} onEdit={text=>editAndResend(i,text)} onSelectAlternate={alt=>selectAlternate(i,alt)} onSaveFile={(id,name)=>void saveFile(id,name)} onContinue={()=>continueReply(i)} onSelectVersion={v=>selectVersion(i,v)}/>)}
+         {chat.messages.map((m,i)=><Fragment key={`${chat.id}-${i}`}>
+          {chat.compaction&&i===chat.compaction.upto&&<CompactionDivider count={chat.messages.slice(0,i).filter(x=>x.content||x.attachments?.length).length} text={chat.compaction.text}/>}
+          <MessageItem message={m} isLast={i===lastAssistant&&!showPending} busy={busy}
+           onRegenerate={()=>regenerate(i)} onEdit={text=>editAndResend(i,text)} onSelectAlternate={alt=>selectAlternate(i,alt)} onSaveFile={(id,name)=>void saveFile(id,name)} onContinue={()=>continueReply(i)} onSelectVersion={v=>selectVersion(i,v)}
+           batchJob={m.batch?batchJobs.find(j=>j.id===m.batch!.id):undefined} onCancelBatch={()=>m.batch&&cancelBatch(m.batch.id)} onResendBatch={()=>resendBatch(i)}/></Fragment>)}
          {showPending&&<article className="message assistant pending mt-0 mb-[22px] block animate-fade-up text-[13px] leading-[1.85]">
            {(pending.thinking||!pending.text)&&<ThinkingBlock text={pending.thinking} live={!pending.text} seconds={pending.firstTextAt?(pending.firstTextAt-pending.startedAt)/1000:undefined}/>}
            {pending.activity&&<p className="activity my-[6px] text-[12.5px] text-muted before:mr-[7px] before:inline-block before:size-[7px] before:animate-pulse-dot before:rounded-full before:bg-accent before:content-['']">{pending.activity}</p>}
@@ -615,6 +790,8 @@ export default function App() {
   {handoff&&<HandoffDialog title={chat.title} turns={chat.messages.map(m=>({role:m.role,content:m.content}))} model={model} modelLabel={currentModel?.displayName??model} configured={configured}
     onUsage={reloadUsage} onNotice={toast} onClose={()=>setHandoff(false)}/>}
   {shortcuts&&<ShortcutsDialog onClose={()=>setShortcuts(false)}/>}
+  {costConfirm&&<CostConfirmDialog info={costConfirm} onCancel={()=>setCostConfirm(null)}
+    onBatch={()=>{setCostConfirm(null);void send({checked:true,viaBatch:true});}} onSend={()=>{const viaBatch=costConfirm.viaBatch;setCostConfirm(null);void send({checked:true,viaBatch});}}/>}
   <Toaster toasts={toasts} onDismiss={id=>setToasts(list=>list.filter(t=>t.id!==id))}/>
   {renaming&&<RenameDialog initial={chats.find(c=>c.id===renaming)?.title??""} onSave={title=>patchChat(renaming,c=>({...c,title}))} onClose={()=>setRenaming(null)}/>}
   {confirmDelete&&<ConfirmDialog title={t.app.confirmDelete.title} body={t.app.confirmDelete.body(chats.find(c=>c.id===confirmDelete)?.title??"")} confirm={t.common.delete}

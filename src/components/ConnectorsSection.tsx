@@ -62,11 +62,14 @@ export default function ConnectorsSection({ onChange }: { onChange: (list: Conne
       {list.map(c => <li key={c.id} className={CONNECTOR_ROW + " items-center bg-inset"}>
         {c.transport === "local" ? <SquareTerminal size={16} className="shrink-0 text-muted" /> : <Plug size={16} className="shrink-0 text-muted" />}
         <span className="connector-text flex min-w-0 flex-1 flex-col gap-[2px]">
-          <b className="flex items-center gap-[6px] text-[13px] text-ink-2">{c.name}{c.transport === "local" && <span className="local-badge rounded-[5px] bg-line px-[5px] py-[1px] text-[10px] font-medium text-muted">{cx.localBadge}</span>}</b>
+          <b className="flex items-center gap-[6px] text-[13px] text-ink-2">{c.name}{c.transport === "local" && <span className="local-badge rounded-[5px] bg-line px-[5px] py-[1px] text-[10px] font-medium text-muted">{cx.localBadge}</span>}
+            {!c.enabled && <span className="off-badge rounded-[5px] border border-line-strong px-[5px] py-[1px] text-[10px] font-medium text-subtle">{cx.disabledBadge}</span>}</b>
           <small className={CONNECTOR_SMALL} title={detail(c)}>{detail(c)}</small>
           {!!c.allowedTools?.length && <small className={CONNECTOR_SMALL + " allowed inline-flex items-center gap-[6px]"}>{cx.allowedCount(c.allowedTools.length)}<button className="link-btn border-0 bg-transparent p-0 text-[11px] text-link underline" onClick={() => void window.continuity.resetAllowedTools(c.id).then(update)}>{cx.resetAllowed}</button></small>}
           {test[c.id] && <small className={CONNECTOR_SMALL + (test[c.id].ok ? " ok inline-flex items-center gap-[4px] text-ok" : " whitespace-pre-wrap")}>{test[c.id].ok && <CircleCheck size={11} />} {test[c.id].text}</small>}
         </span>
+        <input type="checkbox" className="switch connector-enabled tip" data-tip={cx.enabledLabel(c.name)} aria-label={cx.enabledLabel(c.name)} checked={c.enabled}
+          onChange={e => void window.continuity.setConnectorEnabled(c.id, e.target.checked).then(update)} />
         <button className="btn-secondary small" onClick={() => void runTest(c.id)}><RefreshCw size={12} />{cx.test}</button>
         <button className="btn-text" onClick={() => edit(c)}>{t.common.edit}</button>
         <button className="icon-btn" aria-label={cx.remove(c.name)} onClick={() => { if (window.confirm(cx.confirmDelete(c.name))) void window.continuity.deleteConnector(c.id).then(update); }}><Trash2 size={14} /></button>
