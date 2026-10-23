@@ -80,34 +80,12 @@ jobs:
           node-version: 22
       - run: npm install
       - run: npm test
-      # Windows signing is optional. Either Azure Artifact Signing (formerly Trusted Signing): secrets AZURE_TENANT_ID,
-      # AZURE_CLIENT_ID, AZURE_CLIENT_SECRET and variables AZURE_SIGNING_ENDPOINT, AZURE_SIGNING_ACCOUNT,
-      # AZURE_CERT_PROFILE; or a code signing certificate: secrets WIN_CSC_LINK (base64 .pfx) and WIN_CSC_KEY_PASSWORD.
       - name: Build installer (update feed points at the target repository)
         shell: bash
-        env:
-          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
-          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
-          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
-          AZURE_SIGNING_ENDPOINT: ${{ vars.AZURE_SIGNING_ENDPOINT }}
-          AZURE_SIGNING_ACCOUNT: ${{ vars.AZURE_SIGNING_ACCOUNT }}
-          AZURE_CERT_PROFILE: ${{ vars.AZURE_CERT_PROFILE }}
-          WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
-          WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
         run: |
           owner="${TARGET_REPO%%/*}"; repo="${TARGET_REPO#*/}"
-          sign=()
-          if [ -n "$AZURE_CLIENT_SECRET" ] && [ -n "$AZURE_SIGNING_ENDPOINT" ] && [ -n "$AZURE_SIGNING_ACCOUNT" ] && [ -n "$AZURE_CERT_PROFILE" ]; then
-            sign=("-c.win.azureSignOptions.endpoint=$AZURE_SIGNING_ENDPOINT" "-c.win.azureSignOptions.codeSigningAccountName=$AZURE_SIGNING_ACCOUNT" "-c.win.azureSignOptions.certificateProfileName=$AZURE_CERT_PROFILE")
-            echo "Signing with Azure Artifact Signing"
-          elif [ -n "$WIN_CSC_LINK" ]; then
-            echo "Signing with the code signing certificate"
-          else
-            unset WIN_CSC_LINK WIN_CSC_KEY_PASSWORD
-            echo "::notice::No Windows signing configured; the installer is unsigned"
-          fi
           npm run build
-          npx electron-builder --win nsis --publish never -c.publish.provider=github "-c.publish.owner=$owner" "-c.publish.repo=$repo" "${sign[@]}"
+          npx electron-builder --win nsis --publish never -c.publish.provider=github "-c.publish.owner=$owner" "-c.publish.repo=$repo"
       - name: Upload to the release
         shell: bash
         run: gh release upload "$TAG" release/*.exe release/*.exe.blockmap release/latest.yml --repo "$TARGET_REPO" --clobber

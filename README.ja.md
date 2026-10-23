@@ -191,7 +191,5 @@ npm start        # ビルド済みのアプリを起動
 | または `APPLE_ID` / `APPLE_APP_SPECIFIC_PASSWORD` | Apple ID と App 用パスワード |
 | `APPLE_TEAM_ID` | チーム ID |
 
-**Windows の署名（任意）**：Azure Artifact Signing（旧 Trusted Signing。secret `AZURE_TENANT_ID`・`AZURE_CLIENT_ID`・`AZURE_CLIENT_SECRET` と、変数 `AZURE_SIGNING_ENDPOINT`・`AZURE_SIGNING_ACCOUNT`・`AZURE_CERT_PROFILE`）か、コード署名証明書（secret `WIN_CSC_LINK` に .pfx を base64 にしたもの、`WIN_CSC_KEY_PASSWORD`）を設定すると署名します。どちらもなければ署名なしです。
-
 自動更新は Releases を認証なしで読みます。そのため、配布先のリポジトリは公開されている必要があります。配布専用のリポジトリを使う場合は、Actions の変数 `RELEASES_REPO` と secret `RELEASES_TOKEN` を設定してください。
 

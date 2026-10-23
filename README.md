@@ -190,6 +190,4 @@ Layout:
 | or `APPLE_ID` / `APPLE_APP_SPECIFIC_PASSWORD` | Apple ID and an app-specific password |
 | `APPLE_TEAM_ID` | Team ID |
 
-**Windows signing (optional)**: either Azure Artifact Signing (formerly Trusted Signing; secrets `AZURE_TENANT_ID`, `AZURE_CLIENT_ID`, `AZURE_CLIENT_SECRET` and variables `AZURE_SIGNING_ENDPOINT`, `AZURE_SIGNING_ACCOUNT`, `AZURE_CERT_PROFILE`) or a code signing certificate (secrets `WIN_CSC_LINK`, a base64 .pfx, and `WIN_CSC_KEY_PASSWORD`). Without them the installer is unsigned.
-
 Updates read Releases without authentication, so the repository that hosts them must be public. To publish to a separate repository, set the Actions variable `RELEASES_REPO` and the secret `RELEASES_TOKEN`.
