@@ -42,7 +42,9 @@ server.registerTool("delegate_task", {
     max_result_chars: z.number().int().min(500).max(30_000).optional().describe(t.params.maxResultChars),
     save_full_result: z.boolean().optional().describe(t.params.saveFullResult)
   },
-  annotations: { readOnlyHint: true, openWorldHint: true }
+  // It spends API credit and can write result files, so clients must not treat it as a read-only tool they may
+  // run without asking.
+  annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true }
 }, async (input) => {
   const apiKey = env.ANTHROPIC_API_KEY;
   if (!apiKey) return { content: [{ type: "text", text: t.noApiKey }], isError: true };
@@ -55,9 +57,11 @@ server.registerTool("delegate_task", {
       outcome.read.length ? t.read(outcome.read.map(f => `${f.path} (${Math.ceil(f.bytes / 1024)}KB)`).join(", ")) : "",
       outcome.skipped.length ? t.skipped(outcome.skipped.join(" / ")) : "",
       outcome.truncated ? t.truncated(input.max_result_chars ?? 6000, !!outcome.savedTo) : "",
+      outcome.stop === "max_tokens" ? t.outputLimit : "",
       outcome.savedTo ? t.fullText(outcome.savedTo) : "",
       await creditLine()
     ].filter(Boolean).join("\n");
+    if (outcome.stop === "refusal") return { content: [{ type: "text", text: `${t.refused}\n\n${footer}` }], isError: true };
     return { content: [{ type: "text", text: `${outcome.text}\n\n${footer}` }] };
   } catch (e) {
     return { content: [{ type: "text", text: t.failed(e instanceof Error ? e.message : String(e)) }], isError: true };

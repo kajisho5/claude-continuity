@@ -23,6 +23,9 @@ export function resolveMemoryPath(root: string, virtualPath: unknown): string | 
   try { decoded = decodeURIComponent(virtualPath); } catch { /* a literal % */ }
   if (virtualPath !== VIRTUAL_ROOT && !virtualPath.startsWith(VIRTUAL_ROOT + "/")) return null;
   if ([virtualPath, decoded].some(p => p.split(/[\\/]/).some(part => part === ".." || part === "."))) return null;
+  // Names that Windows cannot store (":" would even create a hidden stream) are refused everywhere, so memory
+  // and its backups stay portable.
+  if (virtualPath.slice(VIRTUAL_ROOT.length).split("/").some(part => /[<>:"|?*\x00-\x1f]/.test(part) || /^(con|prn|aux|nul|com\d|lpt\d)(\..*)?$/i.test(part))) return null;
   const relative = virtualPath.slice(VIRTUAL_ROOT.length).replace(/^\/+/, "");
   const resolved = path.resolve(root, relative);
   const rootResolved = path.resolve(root);

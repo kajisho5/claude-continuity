@@ -134,6 +134,7 @@ export const settings: typeof Ja = {
   },
   mcp: {
     keyPlaceholder: "sk-ant-... (a key just for this)",
+    unstablePath: "The app is running from the dmg or a temporary location, so the config below stops working once the app quits. Move the app to Applications, open it again, and copy the config from there.",
     heading: "MCP integration (hand work from a chat to the API)",
     introBefore: "Call ",
     introAfter: " from Claude Code or Claude Desktop to process heavy documents and long reasoning with your monthly API credits; only a summary comes back to the chat. What you use is added to the credit balance above.",

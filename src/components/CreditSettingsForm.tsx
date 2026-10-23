@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { PLAN_PRESETS, cycleRange, formatShortDate, type CreditSettings, type PlanId } from "../lib/credit";
+import { PLAN_PRESETS, cycleRange, formatShortDate, type CreditSettings, type PlanId, parseAmount } from "../lib/credit";
 import { formatUsd } from "../lib/pricing";
 import { intlLocale, useT, type Messages } from "../i18n";
 
@@ -19,13 +19,13 @@ export default function CreditSettingsForm({ value, onSave }: Props) {
   const [message, setMessage] = useState("");
 
   const preset = plan === "max5x" || plan === "max20x" || plan === "none";
-  const amount = preset ? PLAN_PRESETS[plan as "max5x" | "max20x" | "none"] : Number(customAmount);
+  const amount = preset ? PLAN_PRESETS[plan as "max5x" | "max20x" | "none"] : parseAmount(customAmount);
   const amountInvalid = !preset && !(amount > 0 && amount <= 10000);
   const { start, end } = cycleRange(resetDay, new Date());
   const calibrationActive = calibration && new Date(calibration.observedAt) >= start;
 
   function recordBalance() {
-    const parsed = Number(balance);
+    const parsed = parseAmount(balance);
     if (!(Number.isFinite(parsed) && parsed >= 0) || balance.trim() === "") { setMessage(f.balanceInvalid); return; }
     setCalibration({ balanceUsd: parsed, observedAt: new Date().toISOString() });
     setBalance("");

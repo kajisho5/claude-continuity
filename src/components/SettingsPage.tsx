@@ -51,7 +51,7 @@ const languageLabel = (t: Messages, id: LanguagePref) => id === "system" ? t.com
 
 type Props = {
   initialTab?: SettingsTab;
-  prefs: Prefs; onSavePrefs: (next: Prefs) => Promise<void>;
+  prefs: Prefs; onSavePrefs: (next: Prefs | ((current: Prefs) => Prefs)) => Promise<void>;
   configured: boolean; onSaveKey: (key: string) => Promise<void>;
   credit: CreditSettings | null; onSaveCredit: (next: CreditSettings) => Promise<void>; onRestartOnboarding: () => void;
   onClose: () => void; onNotice: (text: string, kind?: "ok" | "error") => void;
@@ -73,7 +73,7 @@ export default function SettingsPage(p: Props) {
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
   }, [p.onClose]);
-  const update = (patch: Partial<Prefs>) => void p.onSavePrefs({ ...p.prefs, ...patch });
+  const update = (patch: Partial<Prefs>) => void p.onSavePrefs(current => ({ ...current, ...patch }));
   // Registration happens in the main process after saving; another app may already own the keys.
   const [shortcutError, setShortcutError] = useState("");
   useEffect(() => { void window.continuity.shortcutStatus().then(setShortcutError).catch(() => {}); }, [p.prefs.quickShortcut]);

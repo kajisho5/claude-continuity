@@ -8,9 +8,11 @@ import { getLocale } from "../i18n";
 // The preview runs in an opaque-origin sandbox: scripts may run, but there is no access to the app,
 // its storage, or the network.
 const CSP = "default-src 'none'; img-src data: blob:; style-src 'unsafe-inline'; script-src 'unsafe-inline'; font-src data:";
+// CSP does not cover WebRTC (STUN/TURN lookups can carry data out), so previews lose it before any of their code runs.
+const NO_RTC = "<script>for(const k of ['RTCPeerConnection','webkitRTCPeerConnection','RTCDataChannel','RTCSessionDescription','RTCIceCandidate'])try{Object.defineProperty(window,k,{value:undefined,configurable:false})}catch(e){}</script>";
 
 export function previewDocument(artifact: { language: "html" | "svg"; code: string }): string {
-  const meta = `<meta http-equiv="Content-Security-Policy" content="${CSP}">`;
+  const meta = `<meta http-equiv="Content-Security-Policy" content="${CSP}">${NO_RTC}`;
   if (artifact.language === "svg") {
     return `<!doctype html><html><head>${meta}<style>html,body{margin:0;height:100%;display:grid;place-items:center;background:#fff}svg{max-width:100%;max-height:100%}</style></head><body>${artifact.code}</body></html>`;
   }
@@ -59,7 +61,7 @@ export async function reactDocument(code: string): Promise<string> {
     import("@tailwindcss/browser?raw")
   ]);
   const source = JSON.stringify(code).replace(/</g, "\\u003c");
-  return `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${REACT_CSP}">`
+  return `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${REACT_CSP}">${NO_RTC}`
     + `<style>html,body{margin:0;background:#fff;color:#111;font-family:system-ui,-apple-system,"Hiragino Sans","Yu Gothic UI",sans-serif}</style>`
     + `<script>${inlineScript(tailwind)}</script><script>${inlineScript(runtime)}</script></head>`
     + `<body><div id="root"></div><script>window.__runArtifact(${source},${JSON.stringify(getLocale())})</script></body></html>`;

@@ -9,7 +9,8 @@ export type Attachment = { id: string; name: string; mediaType: string; size: nu
 
 // Limits from https://platform.claude.com/docs/en/build-with-claude/vision and .../pdf-support (request-wide PDF cap is 32MB).
 export const MAX_ATTACHMENT_BYTES = 32 * 1024 * 1024;
-const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
+// The API's 10 MB per image is measured base64-encoded (4/3 of the file).
+const MAX_IMAGE_BYTES = Math.floor(10 * 1024 * 1024 * 3 / 4);
 const MAX_TEXT_BYTES = 2 * 1024 * 1024;
 
 const IMAGE_TYPES: Record<string, string> = { ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".gif": "image/gif", ".webp": "image/webp" };

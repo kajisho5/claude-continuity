@@ -38,6 +38,8 @@ export const ja = {
     read: (list: string) => `読み込み: ${list}`,
     skipped: (list: string) => `スキップ: ${list}`,
     truncated: (chars: number, saved: boolean) => `（結果を ${chars} 文字で切り詰めました${saved ? "" : "。全文が必要なら save_full_result を指定してください"}）`,
+    outputLimit: "出力の上限に達したため、回答が途中で切れているか空の可能性があります（思考もこの上限に含まれます）。effort を下げるか、作業を絞ってください。",
+    refused: "Claude がこの作業への回答を控えたため、結果はありません。",
     fullText: (p: string) => `全文: ${p}`,
     failed: (message: string) => `実行できませんでした: ${message}`,
     creditTitle: "月間クレジットの残額",

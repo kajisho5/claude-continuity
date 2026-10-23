@@ -16,6 +16,11 @@ export function withFileLock<T>(file: string, fn: () => Promise<T>): Promise<T> 
   return run;
 }
 
+/** Resolves once every write queued so far has finished (used before quitting). */
+export function drainFileWrites(): Promise<void> {
+  return Promise.all([...queues.values()]).then(() => undefined);
+}
+
 let tmpCounter = 0;
 export async function writeFileAtomic(file: string, data: string | Uint8Array): Promise<void> {
   const tmp = `${file}.${process.pid}.${++tmpCounter}.tmp`;

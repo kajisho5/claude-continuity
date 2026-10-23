@@ -86,6 +86,8 @@ const SYSTEM = (maxChars: number) => mcpT().delegate.system(maxChars);
 export type DelegateOutcome = {
   text: string;
   usage: { model: string; inputTokens: number; outputTokens: number; cacheCreationInputTokens: number; cacheReadInputTokens: number };
+  /** Why the reply ended early, when it did: the output limit (thinking counts toward it) or a refusal. */
+  stop: "max_tokens" | "refusal" | null;
   costUsd: number | null;
   read: ReadFile[];
   skipped: string[];
@@ -126,5 +128,7 @@ export async function delegate(client: Anthropic, input: DelegateInput, config: 
     await fs.writeFile(savedTo, full, "utf8");
   }
   const { text, truncated } = truncateResult(full, maxChars);
-  return { text, usage, costUsd: costOf(usage.model, usage), read: files.read, skipped: files.skipped, savedTo, truncated };
+  // max_tokens covers thinking too; a reply that ran out, or a refusal, is reported rather than passed off as a result.
+  const stop = final.stop_reason === "max_tokens" ? "max_tokens" as const : final.stop_reason === "refusal" ? "refusal" as const : null;
+  return { text, usage, costUsd: costOf(usage.model, usage), read: files.read, skipped: files.skipped, savedTo, truncated, stop };
 }

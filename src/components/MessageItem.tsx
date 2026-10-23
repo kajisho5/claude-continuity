@@ -22,12 +22,26 @@ export function formatBytes(bytes: number): string {
   return `${bytes}B`;
 }
 
+// Thumbnails only (a few KB each); the oldest entries go once the cache is large.
 const previewCache = new Map<string, string | null>();
+const PREVIEW_CACHE_MAX = 300;
+function rememberPreview(id: string, url: string | null) {
+  previewCache.set(id, url);
+  if (previewCache.size > PREVIEW_CACHE_MAX) previewCache.delete(previewCache.keys().next().value!);
+}
 
 /** Full-size view of an attachment: images and text open in the app, PDFs in the OS viewer. */
 function AttachmentViewer({ attachment, image, onClose }: { attachment: Attachment; image: string | null; onClose: () => void }) {
   const t = useT();
   const [text, setText] = useState<{ text: string; truncated: boolean } | null>(null);
+  // The chip holds only a thumbnail; the full image is loaded while the viewer is open.
+  const [full, setFull] = useState<string | null>(null);
+  useEffect(() => {
+    if (attachment.kind !== "image") return;
+    let alive = true;
+    window.continuity.attachmentPreview(attachment.id, true).then(url => { if (alive) setFull(url); }).catch(() => {});
+    return () => { alive = false; };
+  }, [attachment.id, attachment.kind]);
   // onClose is a new function on every parent render (each streamed token); keep it in a ref so the file is
   // read once and the listener is not re-added per render.
   const closeRef = useRef(onClose);
@@ -44,7 +58,7 @@ function AttachmentViewer({ attachment, image, onClose }: { attachment: Attachme
     <div className={"viewer-box kind-" + attachment.kind + " flex max-h-[92vh] max-w-[min(1100px,94vw)] animate-[popIn_.18s_var(--ease)_both] flex-col overflow-hidden rounded-[14px] border border-line-strong bg-modal" + (attachment.kind === "text" ? " w-[min(900px,94vw)]" : "")} role="dialog" aria-modal="true" aria-label={attachment.name} onMouseDown={e => e.stopPropagation()}>
       <div className="viewer-head flex items-center gap-[10px] border-b border-line py-[10px] pr-[10px] pl-[16px]"><b className="truncate text-[13px] text-ink">{attachment.name}</b><small className="flex-1 text-[11px] whitespace-nowrap text-subtle">{t.message.attachmentKind[attachment.kind]} · {formatBytes(attachment.size)}</small>
         <button className="ghost-btn" onClick={onClose} aria-label={t.common.close}><X size={18} /></button></div>
-      {attachment.kind === "image" && image && <img className="m-auto block max-h-[calc(92vh-52px)] max-w-full bg-[image:repeating-conic-gradient(#0000_0_25%,#8881_0_50%)] bg-size-[16px_16px] object-contain" src={image} alt={attachment.name} />}
+      {attachment.kind === "image" && (full ?? image) && <img className="m-auto block max-h-[calc(92vh-52px)] max-w-full bg-[image:repeating-conic-gradient(#0000_0_25%,#8881_0_50%)] bg-size-[16px_16px] object-contain" src={full ?? image ?? undefined} alt={attachment.name} />}
       {attachment.kind === "text" && <pre className="viewer-text m-0 overflow-auto px-[16px] py-[14px] font-mono text-[12.5px] leading-[1.7] [word-break:break-word] whitespace-pre-wrap text-ink-3">{text ? text.text + (text.truncated ? t.message.truncatedLong : "") : t.common.loading}</pre>}
     </div>
   </div>;
@@ -57,7 +71,7 @@ export function AttachmentChip({ attachment, onRemove }: { attachment: Attachmen
   useEffect(() => {
     if (attachment.kind !== "image" || previewCache.has(attachment.id)) return;
     let alive = true;
-    window.continuity.attachmentPreview(attachment.id).then(url => { previewCache.set(attachment.id, url); if (alive) setThumb(url); }).catch(() => previewCache.set(attachment.id, null));
+    window.continuity.attachmentPreview(attachment.id).then(url => { rememberPreview(attachment.id, url); if (alive) setThumb(url); }).catch(() => rememberPreview(attachment.id, null));
     return () => { alive = false; };
   }, [attachment.id, attachment.kind]);
   const viewable = attachment.kind === "image" || attachment.kind === "text" || attachment.kind === "pdf";
@@ -122,7 +136,7 @@ export default function MessageItem({ message: m, isLast, busy, onRegenerate, on
       {editing
         ? <div className="edit-box mt-[8px] w-full rounded-[10px] border-[1.5px] border-accent bg-surface-2 p-[10px]">
           <textarea className="min-h-[70px] w-full resize-y border-0 bg-transparent font-sans text-[13px] leading-[1.7] text-ink outline-0 focus-visible:outline-none" value={draft} onChange={e => setDraft(e.target.value)} autoFocus aria-label={t.message.editMessage}
-            onKeyDown={e => { if (e.key === "Escape" && !e.nativeEvent.isComposing && e.keyCode !== 229) { setEditing(false); setDraft(m.content); } }} />
+            onKeyDown={e => { if (e.key === "Escape" && !e.nativeEvent.isComposing && e.keyCode !== 229) { e.stopPropagation(); setEditing(false); setDraft(m.content); } }} />
           <div className="edit-actions flex items-center justify-end gap-[8px]"><span className="flex-1 text-[9.5px] text-muted">{t.message.editHint}</span>
             <button className="btn-secondary small" onClick={() => { setEditing(false); setDraft(m.content); }}>{t.common.cancel}</button>
             <button className="btn-primary small" disabled={!draft.trim() || busy} onClick={() => { setEditing(false); onEdit(draft.trim()); }}>{t.message.saveAndSend}</button></div>

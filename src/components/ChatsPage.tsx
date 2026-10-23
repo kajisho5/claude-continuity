@@ -41,7 +41,7 @@ export default function ChatsPage({ chats, onOpen, onNew, onDelete, now }: { cha
       {selecting
         ? <>
           <button className="btn-text" onClick={() => setSelected(selected.size === rows.length ? new Set() : new Set(rows.map(r => r.id)))}>{selected.size === rows.length && rows.length ? s.deselectAll : s.selectAll}</button>
-          <button className="btn-danger small" disabled={!selected.size} onClick={() => { onDelete([...selected]); setSelected(new Set()); setSelecting(false); }}><Trash2 size={13} />{s.deleteSelected(selected.size)}</button>
+          <button className="btn-danger small" disabled={!selected.size} onClick={() => { const shown = new Set(rows.map(r => r.id)); onDelete([...selected].filter(id => shown.has(id))); setSelected(new Set()); setSelecting(false); }}><Trash2 size={13} />{s.deleteSelected(selected.size)}</button>
           <button className="btn-secondary small" onClick={() => { setSelecting(false); setSelected(new Set()); }}>{t.common.cancel}</button>
         </>
         : rows.length > 0 && <button className="btn-secondary small" onClick={() => setSelecting(true)}><CheckSquare size={13} />{s.select}</button>}

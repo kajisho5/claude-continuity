@@ -28,6 +28,7 @@ export const en: typeof Ja = {
     connectFailed: (message: string) => `Could not connect: ${message}`
   },
   localMcp: {
+    inputCut: (n: number) => `(${n.toLocaleString("en-US")} more characters not shown)`,
     commandRequired: "Enter a command.",
     badEnv: (key: string) => `Invalid environment variable name: ${key}`,
     truncated: "\n…(truncated)",
@@ -168,6 +169,7 @@ export const en: typeof Ja = {
     externalTool: "external tool",
     usingConnector: (name: string) => `Using connector (${name})…`,
     noticeOmitted: (n: number) => `${n} older ${n === 1 ? "message was" : "messages were"} not sent because of the model's limit`,
+    noticeRoundFailed: (msg: string) => `The reply stopped partway because a request failed (${msg}); continue to pick it up`,
     noticeSkipped: (detail: string) => `Skipped attachment: ${detail}`,
     noticeUnavailable: (feature: string) => `${feature} is not available with this model`,
     handoffSystem: `You write handoff notes for conversations. Read the conversation record you are given and summarize it in English under the following headings, in this order, so that another Claude can continue the work from this note alone.

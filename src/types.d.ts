@@ -81,12 +81,12 @@ declare global {
       pickAttachments: () => Promise<AttachResult>;
       addAttachmentFiles: (files: File[]) => Promise<AttachResult>;
       addAttachmentData: (name: string, data: Uint8Array) => Promise<AttachResult>;
-      attachmentPreview: (id: string) => Promise<string | null>;
+      attachmentPreview: (id: string, full?: boolean) => Promise<string | null>;
       listMemory: () => Promise<{ path: string; size: number; content: string }[]>;
       deleteMemory: (path: string) => Promise<boolean>;
       writeMemory: (path: string, text: string) => Promise<boolean>;
       saveGeneratedFile: (fileId: string, name: string) => Promise<{ canceled: boolean; filePath?: string }>;
-      mcpInfo: () => Promise<{ serverPath: string; runtimePath: string; dataDir: string; platform: string }>;
+      mcpInfo: () => Promise<{ serverPath: string; runtimePath: string; dataDir: string; platform: string; unstable?: boolean }>;
       pickMcpFolders: () => Promise<string[]>;
       listModels: () => Promise<ContinuityModel[]>;
       reply: (payload: {

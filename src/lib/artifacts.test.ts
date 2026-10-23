@@ -51,3 +51,11 @@ describe("artifact labels in English", async () => {
     expect(KIND_LABEL.markdown).toBe("文書");
   });
 });
+
+describe("extractArtifacts on hostile input", () => {
+  it("is linear with many unclosed fences", () => {
+    const t0 = Date.now();
+    extractArtifacts("```a\n".repeat(50_000));
+    expect(Date.now() - t0).toBeLessThan(500);
+  });
+});

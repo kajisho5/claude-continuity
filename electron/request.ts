@@ -28,30 +28,51 @@ export function buildSystem(style: StyleId | undefined, customStyle: string, pro
   return parts.length ? parts.join("\n\n") : undefined;
 }
 
-// An image costs at most about 1,600 tokens (https://platform.claude.com/docs/en/build-with-claude/vision).
-const IMAGE_COST = 1_600;
+// An image costs up to 4,784 tokens on current models (https://platform.claude.com/docs/en/build-with-claude/vision).
+const IMAGE_COST = 4_800;
 /** Rough share of the character budget an attachment takes (text files by size; PDFs are not counted). */
 export function attachmentCost(turn: ChatTurn): number {
   return (turn.attachments ?? []).reduce((sum, a) => sum + (a.kind === "text" ? a.size : a.kind === "image" ? IMAGE_COST : 0), 0);
 }
+// Request limits (vision and errors docs): more than 20 images in one request brings a stricter size limit,
+// and a request over 32 MB is refused. Files sent inline are base64 (4/3 of their size).
+const MAX_IMAGES = 20;
+const MAX_INLINE_BYTES = 24 * 1024 * 1024;
+const inlineBytes = (turn: ChatTurn) => (turn.attachments ?? []).reduce((sum, a) => sum + (a.kind === "text" ? a.size : a.kind === "image" || a.kind === "pdf" ? Math.ceil(a.size * 4 / 3) : 0), 0);
+const imageCount = (turn: ChatTurn) => (turn.attachments ?? []).filter(a => a.kind === "image").length;
+// Once history is trimmed, its start moves in steps of this many turns rather than one exchange per turn, so the
+// cached prompt prefix stays the same for many turns (otherwise every turn of a long chat is a full cache write).
+const TRIM_STEP = 20;
 
 /**
- * Keeps a recent contiguous suffix within a character budget that starts with a user turn. Text and image
- * attachments count toward the budget, so a large file in an old turn drops out instead of being resent
- * (and overflowing the context) with every later request.
+ * Keeps a recent contiguous suffix that starts with a user turn and fits the character budget and the request
+ * limits. Text and image attachments count toward the budget, so a large file in an old turn drops out instead of
+ * being resent (and overflowing the context) with every later request.
  */
 export function selectHistory(turns: ChatTurn[], maxChars = 120_000): ChatTurn[] {
-  const picked: ChatTurn[] = [];
-  let remaining = maxChars;
-  for (let i = turns.length - 1; i >= 0 && remaining > 0; i--) {
+  const filled = (t: ChatTurn) => !!(t.content || t.attachments?.length);
+  let remaining = maxChars, images = 0, bytes = 0;
+  let start = turns.length;
+  let cut: ChatTurn | null = null;
+  for (let i = turns.length - 1; i >= 0; i--) {
     const turn = turns[i];
-    if (!turn.content && !turn.attachments?.length) continue;
+    if (!filled(turn)) continue;
     const cost = turn.content.length + attachmentCost(turn);
-    if (cost <= remaining) { picked.push(turn); remaining -= cost; }
-    else if (picked.length === 0) { picked.push({ ...turn, content: turn.content.slice(-remaining) }); remaining = 0; }
-    else break;
+    if (cost <= remaining && images + imageCount(turn) <= MAX_IMAGES && bytes + inlineBytes(turn) <= MAX_INLINE_BYTES) {
+      start = i; remaining -= cost; images += imageCount(turn); bytes += inlineBytes(turn);
+    } else {
+      // The newest turn alone is too long: keep its end.
+      if (start === turns.length) { cut = { ...turn, content: turn.content.slice(-Math.max(remaining, 0)) }; start = i; }
+      break;
+    }
   }
-  const ordered = picked.reverse();
+  const trimmed = turns.slice(0, start).some(filled);
+  if (trimmed && !cut) {
+    const lastUser = turns.map(t => t.role).lastIndexOf("user");
+    const stepped = Math.ceil(start / TRIM_STEP) * TRIM_STEP;
+    if (stepped <= lastUser - TRIM_STEP / 2) start = stepped;
+  }
+  const ordered = turns.slice(start).filter(filled).map(t => (cut && t === turns[start] ? cut : t));
   while (ordered.length && ordered[0].role !== "user") ordered.shift();
   return ordered;
 }

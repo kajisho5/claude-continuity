@@ -76,6 +76,14 @@ function snapshot(m: Msg): Reply {
   return reply;
 }
 
+// Sidebar preview per message list, computed once per list (lists are replaced, not mutated, on change).
+const previews=new WeakMap<object,string>();
+function previewOf(messages:Msg[]):string{
+  let p=previews.get(messages);
+  if(p===undefined){p=plainPreview([...messages].reverse().find(m=>m.role==="assistant")?.content??messages[0]?.content??"",140);previews.set(messages,p);}
+  return p;
+}
+
 export default function App() {
  const t=useT();
  const [chats,setChats]=useState<Chat[]>(()=>[welcomeChat(t)]);
@@ -141,11 +149,14 @@ export default function App() {
     .catch(e=>{setLoadFailed(true);setStatus(t.app.status.loadFailedNoSave+err(e));});
    // Re-evaluate the credit cycle as time passes (day boundaries, expiry).
    const timer=window.setInterval(()=>setNow(Date.now()),60_000);
+   let frame=0;
    const unsubscribe=window.continuity.onStream(event=>{
      const current=pendingRef.current;
      if(!current||current.requestId!==event.requestId)return;
      const next=event.kind==="activity"?{...current,activity:event.delta}:{...current,[event.kind]:current[event.kind]+event.delta,...(event.kind==="text"?{activity:"",firstTextAt:current.firstTextAt??Date.now()}:{})};
-     pendingRef.current=next;setPending(next);
+     // Deltas are applied to the ref at once and rendered at most once per frame (each render re-parses the reply).
+     pendingRef.current=next;
+     if(!frame) frame=window.requestAnimationFrame(()=>{frame=0;setPending(pendingRef.current);});
    });
    // The global shortcut brings the window forward; start a fresh chat ready for typing.
    const offQuick=window.continuity.onQuick(()=>quickRef.current());
@@ -155,6 +166,8 @@ export default function App() {
      const next={...current,approval};pendingRef.current=next;setPending(next);
    });
    const offUpdate=window.continuity.onUpdateStatus(setUpdate);
+   // A window opened again (macOS) learns an update that was found while it was closed.
+   window.continuity.updateStatus().then(setUpdate).catch(()=>{});
    window.continuity.listConnectors().then(setConnectors).catch(()=>{});
    return ()=>{window.clearInterval(timer);unsubscribe();offQuick();offApproval();offUpdate();};
  },[]);
@@ -205,8 +218,12 @@ export default function App() {
  useEffect(()=>{ if(effort&&currentModel&&!currentModel.effortLevels.includes(effort)) setEffort(""); },[currentModel,effort]);
  useEffect(()=>{
    if(!loaded)return;
-   const timer=window.setTimeout(()=>{window.continuity.saveChats(chats.filter(c=>!c.incognito)).catch(e=>setStatus(t.app.status.saveError+err(e)));},350);
-   return ()=>window.clearTimeout(timer);
+   const save=()=>{window.continuity.saveChats(chats.filter(c=>!c.incognito)).catch(e=>setStatus(t.app.status.saveError+err(e)));};
+   const timer=window.setTimeout(()=>{window.removeEventListener("pagehide",flush);save();},350);
+   // Closing or quitting within the debounce still saves the last change (main waits for writes before exiting).
+   const flush=()=>{window.clearTimeout(timer);save();};
+   window.addEventListener("pagehide",flush);
+   return ()=>{window.clearTimeout(timer);window.removeEventListener("pagehide",flush);};
  },[chats,loaded]);
  useEffect(()=>{ const el=messagesRef.current; if(el&&atBottom) el.scrollTop=el.scrollHeight; },[chat.messages.length,pending?.text,pending?.thinking]);
  useEffect(()=>{ const el=messagesRef.current; if(el){el.scrollTop=el.scrollHeight;setAtBottom(true);} composerRef.current?.focus(); },[active]);
@@ -237,6 +254,8 @@ export default function App() {
    return ()=>window.removeEventListener("keydown",onKey);
  });
 
+ // Main records every API call in the ledger; the card reads it back rather than adding rows of its own.
+ function reloadUsage(){ window.continuity.loadUsage().then(rows=>setUsageRows(toUsageRows(rows))).catch(()=>{}); }
  function patchChat(id:string,patch:(c:Chat)=>Chat){ setChats(cs=>cs.map(c=>c.id===id?patch(c):c)); }
  async function importExport(){
    try{
@@ -255,7 +274,20 @@ export default function App() {
  // While loading has failed, the defaults in memory must not be written over the files on disk.
  const savingBlocked=()=>!loaded;
  async function saveCredit(next:CreditSettings){ if(savingBlocked())return; setCredit(await window.continuity.saveCredit(next)); }
- async function savePrefs(next:Prefs){ if(savingBlocked())return; setPrefs(await window.continuity.savePrefs(next)); }
+ // Two quick changes (a name, then a theme) are both kept: the screen updates at once and saves go out in order.
+ const prefsRef=useRef(prefs);
+ prefsRef.current=prefs;
+ const prefsQueue=useRef<Promise<unknown>>(Promise.resolve());
+ async function savePrefs(next:Prefs|((current:Prefs)=>Prefs)){
+   if(savingBlocked())return;
+   // A function applies its change to the latest settings, not to the copy the caller rendered with.
+   const merged=typeof next==="function"?next(prefsRef.current):next;
+   prefsRef.current=merged;setPrefs(merged);
+   const run=prefsQueue.current.catch(()=>{}).then(()=>window.continuity.savePrefs(merged));
+   prefsQueue.current=run;
+   const saved=await run;
+   if(prefsRef.current===merged){prefsRef.current=saved;setPrefs(saved);}
+ }
  async function saveProjects(next:Project[]){ if(savingBlocked())return; setProjects(await window.continuity.saveProjects(next)); }
  async function finishOnboarding(next:CreditSettings,apiKey?:string){
    if(apiKey){await window.continuity.saveApiKey(apiKey);setConfigured(true);}
@@ -274,7 +306,8 @@ export default function App() {
  }
  async function onPaste(e:React.ClipboardEvent){
    const files=Array.from(e.clipboardData.files);
-   if(!files.length)return;
+   // Office apps put both the text and a picture of the cells on the clipboard; the text is what was meant.
+   if(!files.length||e.clipboardData.getData("text/plain"))return;
    e.preventDefault();
    for(const file of files) addAttachments(await window.continuity.addAttachmentData(file.name||`pasted-${Date.now()}.png`,new Uint8Array(await file.arrayBuffer())));
  }
@@ -290,7 +323,9 @@ export default function App() {
    const requestId=crypto.randomUUID();
    const start:Pending={chatId:target.id,requestId,text:"",thinking:"",activity:"",startedAt:Date.now()};
    pendingRef.current=start;setPending(start);setStatus(t.app.status.asking);
-   const container=target.container&&(!target.container.expiresAt||Date.parse(target.container.expiresAt)>Date.now())?target.container.id:undefined;
+   // Sent even after its short rolling expires_at: the API can resume a container for 30 days, and main retries
+   // without it if it is gone.
+   const container=target.container?.id;
    try{
      const response=await window.continuity.reply({requestId,model,effort:effort||undefined,style:target.style,projectId:target.projectId,tools:target.incognito?{...target.tools,memory:false}:target.tools,containerId:container,chatId:target.id,incognito:!!target.incognito,
        messages:history.slice(-2000).map(m=>({role:m.role,content:m.content,...(m.attachments?.length?{attachments:m.attachments}:{})}))});
@@ -312,7 +347,7 @@ export default function App() {
      setAtBottom(true);
      if(response.usage.inputTokens||response.usage.outputTokens){
        // Main records each API request of the turn as its own row; read them back so the card matches the ledger.
-       window.continuity.loadUsage().then(rows=>setUsageRows(toUsageRows(rows))).catch(()=>{});
+       reloadUsage();
        setLastUsage({inputTokens:response.usage.inputTokens,outputTokens:response.usage.outputTokens,costUsd:cost});
      }
      const costText=cost!=null?t.app.status.cost(formatUsd(cost,4)):"";
@@ -327,7 +362,7 @@ export default function App() {
      if(mode.kind==="append"&&mode.retitle&&prefs.autoTitle&&!target.incognito&&response.text&&!response.aborted) void autoTitle(target.id,history[history.length-1].content,response.text,target.title);
    }catch(e){
      // Rounds that finished before the failure were still recorded.
-     window.continuity.loadUsage().then(rows=>setUsageRows(toUsageRows(rows))).catch(()=>{});
+     reloadUsage();
      // A failed regeneration keeps the previous answer; a failed new turn shows the error in place of a reply.
      const tooLong=/prompt is too long|too many (input )?tokens|context (window|length)/i.test(err(e));
      const hint=tooLong?t.app.error.tooLong:t.app.error.checkConsole;
@@ -344,7 +379,7 @@ export default function App() {
      if(!result)return;
      // A rename made while the title was being generated wins.
      if(result.title) patchChat(chatId,c=>c.title===provisional?{...c,title:result.title!}:c);
-     setUsageRows(rows=>[...rows,{...result.usage,cacheCreationInputTokens:0,cacheReadInputTokens:0,createdAt:new Date().toISOString()}]);
+     reloadUsage();
    }catch{/* Titles are a convenience; keep the provisional title on failure. */}
  }
  // Checked before a chat is changed, so a missing key never drops a reply or leaves an unanswered turn.
@@ -355,7 +390,7 @@ export default function App() {
    const userMsg:Msg={role:"user",content:text,...(pendingAttachments.length?{attachments:pendingAttachments}:{})};
    const history=[...current.messages,userMsg];
    const provisional=DEFAULT_TITLES.has(current.title);
-   const title=provisional?(text||pendingAttachments[0]?.name||t.app.newChat).slice(0,48):current.title;
+   const title=provisional?Array.from(text||pendingAttachments[0]?.name||t.app.newChat).slice(0,48).join(""):current.title;
    patchChat(current.id,c=>({...c,messages:history,title,updatedAt:new Date().toISOString()}));setDraft("");setPendingAttachments([]);
    await runReply({...current,title},history,{kind:"append",retitle:provisional});
  }
@@ -439,9 +474,10 @@ export default function App() {
  const showPending=pending&&pending.chatId===chat.id;
  const query=search.toLowerCase();
  // Untouched new chats stay out of the lists until the first message, as in the Claude apps.
- const visibleChats=chats.filter(c=>c.messages.length>0&&!c.incognito&&(c.title.toLowerCase().includes(query)||c.messages.some(m=>m.content.toLowerCase().includes(query))));
- const chatRows=chats.filter(c=>c.messages.length>0&&!c.incognito).map(c=>({id:c.id,title:c.title,projectId:c.projectId,updatedAt:c.updatedAt,starred:c.starred,
-   preview:plainPreview([...c.messages].reverse().find(m=>m.role==="assistant")?.content??c.messages[0]?.content??"",140)}));
+ // Recomputed only when the chats or the query change, not on every keystroke or streamed token.
+ const visibleChats=useMemo(()=>chats.filter(c=>c.messages.length>0&&!c.incognito&&(c.title.toLowerCase().includes(query)||c.messages.some(m=>m.content.toLowerCase().includes(query)))),[chats,query]);
+ const chatRows=useMemo(()=>chats.filter(c=>c.messages.length>0&&!c.incognito).map(c=>({id:c.id,title:c.title,projectId:c.projectId,updatedAt:c.updatedAt,starred:c.starred,
+   preview:previewOf(c.messages)})),[chats]);
  const artifactEntries:ArtifactEntry[]=view!=="artifacts"?[]:chats.filter(c=>!c.incognito).flatMap(c=>{
    const groups=new Map<string,ArtifactEntry>();
    for(const a of c.messages.filter(m=>m.role==="assistant").flatMap(m=>extractArtifacts(m.content))){
@@ -476,7 +512,7 @@ export default function App() {
    connectors={chat.incognito?[]:connectors.filter(c=>c.enabled).map(c=>({id:c.id,name:c.name}))} onManageConnectors={()=>setSettings("connectors")}
    placeholder={chat.incognito?t.app.placeholder.incognito:fresh?t.app.placeholder.fresh:t.app.placeholder.reply} placement={fresh?"down":"up"}/></>;
  return <ArtifactContext.Provider value={setArtifact}><div className={"shell chatfont-"+prefs.chatFont+(sidebarOpen?"":" sidebar-closed")+" flex h-screen min-h-[600px]"+(prefs.chatFont==="sans"?" [--chat-font:var(--sans)]":prefs.chatFont==="system"?' [--chat-font:system-ui,-apple-system,"Segoe_UI","Hiragino_Sans","Yu_Gothic_UI",sans-serif]':"")}>
-  <aside aria-hidden={!sidebarOpen} className={"flex min-h-0 shrink-0 flex-col overflow-hidden border-r bg-sidebar py-[22px] transition-[width,padding] duration-[220ms] ease-claude "+(sidebarOpen?"w-[264px] border-line px-[14px] max-[1000px]:w-[220px]":"w-0 border-transparent px-0")}>
+  <aside aria-hidden={!sidebarOpen} inert={!sidebarOpen} className={"flex min-h-0 shrink-0 flex-col overflow-hidden border-r bg-sidebar py-[22px] transition-[width,padding] duration-[220ms] ease-claude "+(sidebarOpen?"w-[264px] border-line px-[14px] max-[1000px]:w-[220px]":"w-0 border-transparent px-0")}>
    <div className="brand flex items-center gap-[10px] pt-0 pr-[2px] pb-[18px] pl-[6px]"><span className="mark grid size-[30px] shrink-0 place-items-center"><LogoMark size={30} title="Claude Continuity"/></span><b className="flex-1 whitespace-nowrap font-serif text-[15px] font-semibold text-ink-2">Claude Continuity</b>
     <button className="ghost-btn tip tip-below" data-tip={t.app.closeSidebar} aria-label={t.app.closeSidebar} onClick={()=>setSidebarOpen(false)}><PanelLeftClose size={17}/></button></div>
    <button className="new-chat group/new flex w-full items-center gap-[10px] rounded-[9px] border-0 bg-transparent px-[8px] py-[7px] text-left text-[13px] font-semibold text-ink-2 hover:bg-line" onClick={()=>newChat()}><span className="plus-dot grid size-[24px] shrink-0 place-items-center rounded-full bg-accent text-on-accent transition-transform duration-200 ease-claude group-hover/new:rotate-90 group-hover/new:scale-[1.05] group-active/new:rotate-0 group-active/new:scale-[.92]"><Plus size={15} strokeWidth={2.6}/></span>{t.app.newChat}<kbd className="ml-auto opacity-0 transition-opacity duration-150 ease-[ease] group-hover/new:opacity-100">{KEYS.newChat}</kbd></button>
@@ -562,9 +598,9 @@ export default function App() {
   </main>
   {settings&&<SettingsPage initialTab={settings} prefs={prefs} onSavePrefs={savePrefs} configured={configured} onSaveKey={saveKey}
     credit={credit} onSaveCredit={saveCredit} onRestartOnboarding={()=>{setSettings(null);setOnboarding(true);}} onClose={()=>setSettings(null)} onNotice={toast} onConnectors={setConnectors}
-    model={model} onUsage={usage=>setUsageRows(rows=>[...rows,{...usage,createdAt:new Date().toISOString()}])}/>}
+    model={model} onUsage={reloadUsage}/>}
   {handoff&&<HandoffDialog title={chat.title} turns={chat.messages.map(m=>({role:m.role,content:m.content}))} model={model} modelLabel={currentModel?.displayName??model} configured={configured}
-    onUsage={usage=>setUsageRows(rows=>[...rows,{...usage,createdAt:new Date().toISOString()}])} onNotice={toast} onClose={()=>setHandoff(false)}/>}
+    onUsage={reloadUsage} onNotice={toast} onClose={()=>setHandoff(false)}/>}
   {shortcuts&&<ShortcutsDialog onClose={()=>setShortcuts(false)}/>}
   <Toaster toasts={toasts} onDismiss={id=>setToasts(list=>list.filter(t=>t.id!==id))}/>
   {renaming&&<RenameDialog initial={chats.find(c=>c.id===renaming)?.title??""} onSave={title=>patchChat(renaming,c=>({...c,title}))} onClose={()=>setRenaming(null)}/>}

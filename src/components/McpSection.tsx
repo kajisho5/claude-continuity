@@ -3,7 +3,7 @@ import { FolderPlus, X } from "lucide-react";
 import { CopyButton } from "./MessageContent";
 import { getLocale, t as messages, useT, type Locale } from "../i18n";
 
-type Info = { serverPath: string; runtimePath: string; dataDir: string; platform: string };
+type Info = { serverPath: string; runtimePath: string; dataDir: string; platform: string; unstable?: boolean }
 
 /** Builds registration snippets for Claude Code and Claude Desktop. The API key is never filled in automatically; CONTINUITY_MCP_LANG makes the server answer in the UI language. */
 export function mcpSnippets(info: Info, roots: string[], model: string, locale: Locale = getLocale()) {
@@ -16,7 +16,8 @@ export function mcpSnippets(info: Info, roots: string[], model: string, locale: 
     ...(model.trim() ? { CONTINUITY_MCP_MODEL: model.trim() } : {}),
     CONTINUITY_MCP_LANG: locale
   };
-  const q = (v: string) => `"${v.replace(/"/g, '\\"')}"`;
+  // Single quotes, so a folder name such as "proj-$(cmd)" is not expanded when the command is pasted.
+  const q = (v: string) => info.platform === "win32" ? `'${v.replace(/'/g, "''")}'` : `'${v.replace(/'/g, `'\\''`)}'`;
   const claudeCode = ["claude mcp add --transport stdio",
     ...Object.entries(env).map(([k, v]) => `  --env ${k}=${q(v)}`),
     `  --scope user continuity -- ${q(info.runtimePath)} ${q(info.serverPath)}`].join(info.platform === "win32" ? " `\n" : " \\\n");
@@ -49,6 +50,7 @@ export default function McpSection() {
     <label className="field"><span>{m.model}</span><input className="text-input" value={model} onChange={e => setModel(e.target.value)} /></label>
     <div className={SNIPPET}><div className={SNIPPET_HEAD}><b>{m.claudeCode}</b><CopyButton text={claudeCode} /></div><pre className={SNIPPET_PRE}>{claudeCode}</pre></div>
     <div className={SNIPPET}><div className={SNIPPET_HEAD}><b>{m.desktop}</b><CopyButton text={desktop} /></div><pre className={SNIPPET_PRE}>{desktop}</pre></div>
+    {info.unstable && <p className="form-message error text-danger">{m.unstablePath}</p>}
     <p className="hint">{m.hint}</p>
   </section>;
 }

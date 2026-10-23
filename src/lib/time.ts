@@ -20,11 +20,13 @@ export function relativeTime(iso: string | undefined, now = Date.now()): string 
 
 /** One-line plain-text preview of a Markdown reply (code blocks, table pipes, emphasis and citation markers removed). */
 export function plainPreview(markdown: string, max: number): string {
-  return markdown
+  // Only the start matters for a one-line preview; a bounded input also bounds the regex work.
+  return markdown.slice(0, Math.max(max * 20, 4000))
     .replace(/```[\s\S]*?(```|$)/g, " ")
     .replace(/\[(\d+)\]/g, "")
     .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
-    .replace(/^\s*\|?[-:| ]+\|?\s*$/gm, " ")
+    // Table separator rows; one character class, so long runs of spaces cannot backtrack.
+    .replace(/^(?=[ \t|:-]*-)[ \t|:-]+$/gm, " ")
     .replace(/[#>*`|_~]/g, "")
     .replace(/\s+/g, " ")
     .trim()

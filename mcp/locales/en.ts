@@ -39,6 +39,8 @@ export const en: typeof Ja = {
     read: (list: string) => `Read: ${list}`,
     skipped: (list: string) => `Skipped: ${list}`,
     truncated: (chars: number, saved: boolean) => `(Result truncated to ${chars} characters${saved ? "" : ". Set save_full_result if you need the full text"})`,
+    outputLimit: "The answer hit the output limit and may be cut short or empty (thinking counts toward it). Try a lower effort or a narrower task.",
+    refused: "Claude declined this task, so there is no result.",
     fullText: (p: string) => `Full text: ${p}`,
     failed: (message: string) => `Could not run: ${message}`,
     creditTitle: "Monthly credit balance",

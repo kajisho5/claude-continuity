@@ -47,6 +47,19 @@ describe("selectHistory", () => {
     expect(selectHistory(turns, 60_000).map(t => t.content)).toEqual(["old", "ok", "new"]);
     expect(selectHistory([{ role: "user", content: "x", attachments: [att("image", "a.png")] }], 1_000)).toHaveLength(1);
   });
+  it("keeps at most 20 images in a request", () => {
+    const turns = Array.from({ length: 25 }, (_, i) => [{ role: "user" as const, content: `q${i}`, attachments: [att("image", `${i}.png`)] }, { role: "assistant" as const, content: "ok" }]).flat();
+    const kept = selectHistory(turns, 10_000_000);
+    expect(kept.filter(t => t.attachments?.length).length).toBeLessThanOrEqual(20);
+    expect(kept[kept.length - 2].content).toBe("q24");
+  });
+  it("moves the start of a trimmed history in steps, so the cached prefix stays the same between turns", () => {
+    const chat = (n: number) => Array.from({ length: n }, (_, i) => ({ role: (i % 2 ? "assistant" : "user") as "user" | "assistant", content: "x".repeat(100) }));
+    // The plain cut would start at turn 104, then 106; both round up to 120.
+    const startOf = (n: number) => n - selectHistory(chat(n), 10_000).length;
+    expect(startOf(204)).toBe(120);
+    expect(startOf(206)).toBe(120);
+  });
 });
 
 describe("buildMessages", () => {
