@@ -43,6 +43,14 @@ export const ja = {
     usingTool: (server: string, tool: string) => `${server} の ${tool} を使っています…`,
     waitingApproval: (server: string, tool: string) => `${server} の ${tool} の実行許可を待っています…`
   },
+  skills: {
+    pickTitle: "スキルを選ぶ（SKILL.md のあるフォルダ、または .zip）",
+    unsupported: "スキルのフォルダ、SKILL.md、または .zip / .skill ファイルを選んでください。",
+    noSkillMd: "SKILL.md が見つかりません。スキルのフォルダの一番上に SKILL.md が必要です。",
+    tooLarge: "スキルが大きすぎます（合計 30MB まで）。",
+    tooManyFiles: "ファイルが多すぎます（500 個まで）。",
+    badArchive: "この .zip は安全に読み込めません（フォルダの外を指すパスが含まれています）。"
+  },
   memory: {
     viewTruncated: "\n…（長いため省略。view_range で続きを表示してください）"
   },

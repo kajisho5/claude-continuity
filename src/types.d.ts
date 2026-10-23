@@ -55,6 +55,9 @@ declare global {
       onQuick: (listener: () => void) => () => void;
       listConnectors: () => Promise<ContinuityConnector[]>;
       saveConnector: (input: { id?: string; name: string; enabled?: boolean; transport?: "remote" | "local"; url?: string; token?: string | null; command?: string; args?: string; env?: string | null }) => Promise<ContinuityConnector[]>;
+      listSkills: () => Promise<{ id: string; name: string; updatedAt: string }[]>;
+      uploadSkill: (kind: "folder" | "file") => Promise<{ id: string; name: string; updatedAt: string } | null>;
+      deleteSkill: (id: string) => Promise<boolean>;
       importDesktopConnectors: () => Promise<{ list: ContinuityConnector[]; added: number; found: number; file: string }>;
       resetAllowedTools: (id: string) => Promise<ContinuityConnector[]>;
       answerApproval: (approvalId: string, decision: import("./lib/connectors").ApprovalDecision) => Promise<boolean>;

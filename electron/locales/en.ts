@@ -44,6 +44,14 @@ export const en: typeof Ja = {
     usingTool: (server: string, tool: string) => `Using ${tool} from ${server}…`,
     waitingApproval: (server: string, tool: string) => `Waiting for permission to run ${tool} from ${server}…`
   },
+  skills: {
+    pickTitle: "Choose a skill (a folder with SKILL.md, or a .zip)",
+    unsupported: "Choose a skill folder, a SKILL.md, or a .zip / .skill file.",
+    noSkillMd: "No SKILL.md found. A skill needs SKILL.md at the top of its folder.",
+    tooLarge: "The skill is too large (30 MB in total at most).",
+    tooManyFiles: "Too many files (500 at most).",
+    badArchive: "This .zip can't be read safely (it has paths pointing outside its folder)."
+  },
   memory: {
     viewTruncated: "\n…(truncated because it is long; use view_range to see the rest)"
   },

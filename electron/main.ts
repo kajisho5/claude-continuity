@@ -13,6 +13,7 @@ import { formatHits, searchPastChats } from "./pastChats";
 import { setupUpdater } from "./updater";
 import { getMainLocale, mainT, resolveMainLocale, setMainLocale } from "./i18n";
 import { connectorRequest, MCP_CONNECTOR_BETA, serverName, validateConnector, type Connector, type ConnectorView } from "./connectors";
+import { containerSkills, readSkillSource } from "./skills";
 import { desktopConfigPath, LocalMcpPool, parseDesktopConfig, parseEnv, toolDefinitions, toToolResult, validateLocal, type LocalServer, type LocalToolRef } from "./localMcp";
 import { HANDOFF_PREFIX, fitsHandoff } from "../src/lib/handoff";
 import { activityLabel, buildMessages, historyBudget, buildSystem, buildTools, extractFileIds, extractSteps, extractText, type ChatTurn, type Project, type StyleId, type ToolFlags } from "./request";
@@ -344,6 +345,44 @@ ipcMain.handle("mcp:info", () => {
   const base = app.isPackaged ? appPath.replace(/app\.asar$/, "app.asar.unpacked") : appPath;
   return { serverPath: path.join(base, "dist-mcp", "server.js"), runtimePath: process.execPath, dataDir: dataDir(), platform: process.platform };
 });
+// ---- Custom Skills (Skills API; uploaded to the API organization, used through code execution) ----
+const skillsClient = async () => new Anthropic({ apiKey: await getApiKey() });
+ipcMain.handle("skills:list", async () => {
+  const client = await skillsClient();
+  const out: { id: string; name: string; updatedAt: string }[] = [];
+  for await (const skill of client.beta.skills.list({ source: "custom" })) {
+    out.push({ id: skill.id, name: skill.display_name, updatedAt: skill.updated_at });
+    if (out.length >= 100) break;
+  }
+  return out;
+});
+/** Picks a skill folder, SKILL.md or .zip/.skill archive and uploads it; the new skill is turned on. */
+ipcMain.handle("skills:upload", async (_event, kind: "folder" | "file") => {
+  const result = await dialog.showOpenDialog(kind === "folder"
+    ? { title: mainT().skills.pickTitle, properties: ["openDirectory"] }
+    : { title: mainT().skills.pickTitle, properties: ["openFile"], filters: [{ name: "Skill", extensions: ["zip", "skill", "md"] }] });
+  if (result.canceled || !result.filePaths[0]) return null;
+  const files = await readSkillSource(result.filePaths[0]);
+  const client = await skillsClient();
+  const { toFile } = await import("@anthropic-ai/sdk");
+  const skill = await client.beta.skills.create({ files: await Promise.all(files.map(f => toFile(f.data, f.name))) });
+  const prefs = await loadPrefs();
+  await fs.writeFile(prefsFile(), JSON.stringify(sanitizePrefs({ ...prefs, enabledSkills: [...prefs.enabledSkills, skill.id] })), "utf8");
+  return { id: skill.id, name: skill.display_name, updatedAt: skill.updated_at };
+});
+/** A skill can only be deleted once its versions are gone. */
+ipcMain.handle("skills:delete", async (_event, id: string) => {
+  const client = await skillsClient();
+  const skillId = String(id);
+  const versions: string[] = [];
+  for await (const v of client.beta.skills.versions.list(skillId)) versions.push(v.id);
+  for (const version of versions) await client.beta.skills.versions.delete(version, { skill_id: skillId });
+  await client.beta.skills.delete(skillId);
+  const prefs = await loadPrefs();
+  await fs.writeFile(prefsFile(), JSON.stringify(sanitizePrefs({ ...prefs, enabledSkills: prefs.enabledSkills.filter(s => s !== skillId) })), "utf8");
+  return true;
+});
+
 ipcMain.handle("mcp:pickFolder", async () => {
   const result = await dialog.showOpenDialog({ title: mainT().main.mcpFolderTitle, properties: ["openDirectory", "multiSelections"] });
   return result.canceled ? [] : result.filePaths;
@@ -447,7 +486,7 @@ const prefsFile = () => path.join(dataDir(), "prefs.json");
 type Theme = "system" | "light" | "dark";
 type ChatFont = "serif" | "sans" | "system";
 type CustomStyle = { id: string; name: string; prompt: string };
-type Prefs = { autoTitle: boolean; customStyle: string; customStyles: CustomStyle[]; displayName: string; theme: Theme; chatFont: ChatFont; shareName: boolean; preferences: string; searchPastChats: boolean; notifyOnReply: boolean; checkUpdates: boolean; language: Language; quickShortcut: QuickShortcut };
+type Prefs = { autoTitle: boolean; customStyle: string; customStyles: CustomStyle[]; displayName: string; theme: Theme; chatFont: ChatFont; shareName: boolean; preferences: string; searchPastChats: boolean; notifyOnReply: boolean; checkUpdates: boolean; language: Language; quickShortcut: QuickShortcut; enabledSkills: string[] };
 type Language = "system" | "ja" | "en";
 /** Global shortcut that brings the app forward with a new chat ("" = off). */
 type QuickShortcut = "" | "CommandOrControl+Alt+Space" | "CommandOrControl+Shift+Space" | "Alt+Space";
@@ -481,7 +520,8 @@ function sanitizePrefs(raw: any): Prefs {
     notifyOnReply: raw?.notifyOnReply !== false,
     checkUpdates: raw?.checkUpdates !== false,
     language: LANGUAGES.includes(raw?.language) ? raw.language : "system",
-    quickShortcut: QUICK_SHORTCUTS.includes(raw?.quickShortcut) ? raw.quickShortcut : "CommandOrControl+Alt+Space"
+    quickShortcut: QUICK_SHORTCUTS.includes(raw?.quickShortcut) ? raw.quickShortcut : "CommandOrControl+Alt+Space",
+    enabledSkills: Array.isArray(raw?.enabledSkills) ? [...new Set(raw.enabledSkills.filter((s: unknown) => typeof s === "string" && /^[\w-]{1,100}$/.test(s)) as string[])].slice(0, 16) : []
   };
 }
 async function loadPrefs(): Promise<Prefs> {
@@ -797,6 +837,9 @@ ipcMain.handle("claude:reply", async (event, payload: ReplyPayload) => {
   // Incognito chats neither remember nor look back, as in the Claude apps.
   const flags: ToolFlags = { ...(payload.tools ?? {}), memory: !incognito && (payload.tools?.memory === true || project?.memory === true), pastChats: !incognito && prefs.searchPastChats };
   const { tools, skills, unavailable } = buildTools(flags, caps);
+  // Custom Skills run in the code execution container, so turning one on brings code execution with it.
+  const customSkills = caps.codeExecution ? prefs.enabledSkills : [];
+  if (customSkills.length && !tools.some(t => t.type === "code_execution_20250825")) tools.push({ type: "code_execution_20250825", name: "code_execution" });
   const codeOn = tools.some(t => t.type === "code_execution_20250825");
   const chosenConnectors = incognito ? [] : (await loadConnectors()).filter(c => c.enabled && (payload.tools?.connectors ?? []).includes(c.id));
   const activeConnectors = chosenConnectors.filter(c => c.transport !== "local");
@@ -884,7 +927,7 @@ ipcMain.handle("claude:reply", async (event, payload: ReplyPayload) => {
         ...(system ? { system } : {}),
         ...(tools.length || mcp || local.tools.length ? { tools: [...tools, ...local.tools, ...(mcp?.tools ?? [])] } : {}),
         ...(mcp ? { mcp_servers: mcp.mcp_servers } : {}),
-        ...(skills.length || container ? { container: { ...(container ? { id: container.id } : {}), ...(skills.length ? { skills: skills.map(skill_id => ({ type: "anthropic" as const, skill_id, version: "latest" })) } : {}) } } : {}),
+        ...(skills.length || customSkills.length || container ? { container: { ...(container ? { id: container.id } : {}), ...(skills.length || customSkills.length ? { skills: containerSkills(skills, customSkills) } : {}) } } : {}),
         // Newer models default to display "omitted" (empty thinking text); ask for the readable summary instead.
         ...(info?.adaptiveThinking ? { thinking: { type: "adaptive" as const, display: "summarized" as const } } : {}),
         ...(effort ? { output_config: { effort: effort as "high" } } : {}),

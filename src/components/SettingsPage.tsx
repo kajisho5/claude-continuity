@@ -1,12 +1,13 @@
 import { useEffect, useState } from "react";
 import type { ConnectorView } from "../lib/connectors";
-import { Cable, CreditCard as CreditIcon, HardDrive, ExternalLink, Info, KeyRound, MessageSquareText, Plug, ShieldCheck, UserRound, X } from "lucide-react";
+import { Cable, Sparkles, CreditCard as CreditIcon, HardDrive, ExternalLink, Info, KeyRound, MessageSquareText, Plug, ShieldCheck, UserRound, X } from "lucide-react";
 import CreditSettingsForm from "./CreditSettingsForm";
 import PreferencesSection from "./PreferencesSection";
 import McpSection from "./McpSection";
 import DataSection from "./DataSection";
 import UpdateSection from "./UpdateSection";
 import ConnectorsSection from "./ConnectorsSection";
+import SkillsSection from "./SkillsSection";
 import type { CreditSettings } from "../lib/credit";
 import { QUICK_SHORTCUTS, type Prefs, type QuickShortcut } from "../lib/prefs";
 import { useT, type LanguagePref, type Messages } from "../i18n";
@@ -17,12 +18,13 @@ const shortcutLabel = (accelerator: string) => IS_MAC
   ? accelerator.replace("CommandOrControl", "⌘").replace("Shift", "⇧").replace("Alt", "⌥").split("+").join(" ")
   : accelerator.replace("CommandOrControl", "Ctrl").split("+").join(" + ");
 
-export type SettingsTab = "general" | "api" | "credit" | "responses" | "connectors" | "data" | "mcp" | "about";
+export type SettingsTab = "general" | "api" | "credit" | "responses" | "skills" | "connectors" | "data" | "mcp" | "about";
 const TABS: { id: SettingsTab; icon: typeof KeyRound }[] = [
   { id: "general", icon: UserRound },
   { id: "api", icon: KeyRound },
   { id: "credit", icon: CreditIcon },
   { id: "responses", icon: MessageSquareText },
+  { id: "skills", icon: Sparkles },
   { id: "connectors", icon: Cable },
   { id: "data", icon: HardDrive },
   { id: "mcp", icon: Plug },
@@ -150,6 +152,7 @@ export default function SettingsPage(p: Props) {
             <button className="link p-0 text-[10px]" onClick={p.onRestartOnboarding}>{t.settings.creditGuide.restartOnboarding}</button></div>
         </>}
         {tab === "responses" && <PreferencesSection prefs={p.prefs} onSave={p.onSavePrefs} model={p.model} onUsage={p.onUsage} />}
+        {tab === "skills" && <SkillsSection prefs={p.prefs} configured={p.configured} onSavePrefs={next => void p.onSavePrefs(next)} onReloadPrefs={() => void window.continuity.loadPrefs().then(p.onSavePrefs)} />}
         {tab === "connectors" && <ConnectorsSection onChange={p.onConnectors} />}
         {tab === "data" && <DataSection onNotice={p.onNotice} />}
         {tab === "mcp" && <McpSection />}

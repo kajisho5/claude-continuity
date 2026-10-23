@@ -5,6 +5,7 @@ export const settings = {
     api: "API キー",
     credit: "クレジット",
     responses: "スタイルとメモリ",
+    skills: "スキル",
     connectors: "コネクタ",
     data: "データとバックアップ",
     mcp: "Claude Code 連携",
@@ -141,6 +142,24 @@ export const settings = {
     claudeCode: "Claude Code に登録",
     desktop: "Claude Desktop（claude_desktop_config.json）",
     hint: "キーは設定ファイルに平文で残るため、この用途専用のキーを作り、期限と支出上限のあるワークスペースに紐づけてください。1回あたりの費用上限は CONTINUITY_MCP_MAX_USD_PER_CALL（既定 $2）で変えられます。"
+  },
+  skills: {
+    heading: "スキル",
+    intro: "自作のスキル（SKILL.md と関連ファイルのフォルダ）をアップロードすると、オンにしたものを Claude が会話で使えます。スキルはコード実行の環境で動くので、オンにするとコード実行も一緒に使われます。",
+    notes: [
+      "スキルは API の組織（ワークスペース）にアップロードされ、同じ組織の API キーから使えます。",
+      "SKILL.md の先頭に name（小文字・数字・ハイフン、64 文字まで）と description が必要です。合計 30MB まで。",
+      "1 回の会話で使えるのは、文書作成用の 4 つと合わせて 20 個までです。"
+    ],
+    needKey: "API キーを設定すると使えます。",
+    empty: "まだスキルはありません。",
+    updated: (when: string) => `更新 ${when}`,
+    use: (name: string) => `${name} を使う`,
+    remove: (name: string) => `${name} を削除`,
+    confirmDelete: (name: string) => `スキル「${name}」を API から削除しますか？（すべてのバージョンが消えます）`,
+    uploadFolder: "フォルダをアップロード",
+    uploadFile: ".zip / SKILL.md を選ぶ",
+    uploaded: (name: string) => `「${name}」をアップロードして、オンにしました。`
   },
   connectors: {
     testing: "確認しています…",

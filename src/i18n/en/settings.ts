@@ -7,6 +7,7 @@ export const settings: typeof Ja = {
     api: "API key",
     credit: "Credits",
     responses: "Styles & memory",
+    skills: "Skills",
     connectors: "Connectors",
     data: "Data & backup",
     mcp: "Claude Code integration",
@@ -143,6 +144,24 @@ export const settings: typeof Ja = {
     claudeCode: "Register with Claude Code",
     desktop: "Claude Desktop (claude_desktop_config.json)",
     hint: "The key stays in the config file in plain text, so create a key just for this and tie it to a workspace with an expiry and a spend limit. The cost cap per call can be changed with CONTINUITY_MCP_MAX_USD_PER_CALL (default $2)."
+  },
+  skills: {
+    heading: "Skills",
+    intro: "Upload your own skills (a folder with SKILL.md and its files) and Claude can use the ones you turn on. Skills run in the code execution environment, so turning one on also turns on code execution.",
+    notes: [
+      "Skills are uploaded to your API organization (workspace) and can be used with any API key in it.",
+      "SKILL.md needs a name (lowercase letters, numbers and hyphens, up to 64 characters) and a description in its frontmatter. Up to 30 MB in total.",
+      "A chat can use up to 20 skills, including the 4 for creating documents."
+    ],
+    needKey: "Set an API key to use skills.",
+    empty: "No skills yet.",
+    updated: (when: string) => `Updated ${when}`,
+    use: (name: string) => `Use ${name}`,
+    remove: (name: string) => `Delete ${name}`,
+    confirmDelete: (name: string) => `Delete the skill "${name}" from the API? All of its versions will be removed.`,
+    uploadFolder: "Upload a folder",
+    uploadFile: "Choose a .zip / SKILL.md",
+    uploaded: (name: string) => `Uploaded "${name}" and turned it on.`
   },
   connectors: {
     testing: "Checking…",
