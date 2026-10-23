@@ -75,12 +75,8 @@ API キーは [Anthropic Console](https://console.anthropic.com/) で発行し�
    - Apple シリコン（M1 以降）：`Claude-Continuity-<version>-arm64.dmg`
    - Intel：`Claude-Continuity-<version>-x64.dmg`
 2. dmg を開き、アプリを「アプリケーション」フォルダにドラッグします。
-3. 今の配布版は Apple の Developer ID で署名していません（アドホック署名のみ）。初回は次のどちらかで開いてください。
-   - 開こうとして警告が出たら、システム設定 →「プライバシーとセキュリティ」→「このまま開く」を押す。
-   - それでも「壊れている」と表示される場合は、ターミナルで `xattr -cr "/Applications/Claude Continuity.app"` を実行する。
-4. 署名がないため、Mac 版は自動では更新できません。新しい版が出ると「ダウンロードページを開く」が表示されるので、そこから入れ直してください。
-
-> Developer ID の証明書を用意すれば、署名・公証付きで配布でき、自動更新も使えるようになります（[リリース](#リリースメンテナー向け)の節を参照）。
+3. v0.1.5 以降の Mac 版は Developer ID で署名し、Apple の公証を通しています。そのまま開けて、アプリ内のアップデートも使えます。
+   - v0.1.4 以前の Mac 版（アドホック署名）は自動更新できないので、一度だけ手動で入れ替えてください。
 
 ## コネクタ（MCP サーバー）
 
@@ -137,7 +133,7 @@ API キーは [Anthropic Console](https://console.anthropic.com/) で発行し�
 - **音声入力**：アプリ独自の機能はありません。OS の音声入力がそのまま使えます（Windows は `Win + H`、macOS は「音声入力」のショートカット）。
 - **ナレッジの検索**：意味の近さではなくキーワードで探します。PDF のナレッジは検索の対象外で、これまでどおり全文を送ります。
 - **API ではできないこと**：claude.ai との履歴の同期、claude.ai アカウント側のメモリの利用。
-- Windows のインストーラーには署名がありません。Mac 版はアドホック署名のみで、公証もしていません。
+- Windows のインストーラーには署名がありません。
 
 ## 開発
 
@@ -208,8 +204,7 @@ Claude Continuity is an unofficial desktop app (Electron + React) for continuing
 **Get it:**
 - Download the Windows installer or the macOS dmg (arm64 or x64) from [Releases](https://github.com/kajisho5/claude-continuity/releases).
 - The Windows installer is unsigned.
-- The Mac app is signed ad hoc only. Allow it in System Settings → Privacy & Security on first launch; it updates by opening the download page.
-- Developer ID signing and notarization turn on when the secrets described in the release section are set.
+- The Mac app (v0.1.5 and later) is signed with a Developer ID and notarized, so it opens normally and updates itself.
 
 **Develop:** `npm install`, then `npm run dev`. `npm test` runs the unit tests, and `npm run build` type-checks and builds the app.
 
