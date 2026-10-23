@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, safeStorage } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, safeStorage, shell } from "electron";
 import path from "node:path";
 import fs from "node:fs/promises";
 import { randomUUID } from "node:crypto";
@@ -16,8 +16,16 @@ async function ensureDataDir() { await fs.mkdir(dataDir(), { recursive: true });
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1440, height: 920, minWidth: 900, minHeight: 620,
-    backgroundColor: "#111214", title: "Claude Continuity",
+    backgroundColor: "#262522", title: "Claude Continuity",
     webPreferences: { preload: path.join(__dirname, "preload.js"), contextIsolation: true, nodeIntegration: false, sandbox: true }
+  });
+  // Links in replies and guides open in the system browser; the app window never navigates away.
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    if (/^https?:\/\//i.test(url)) void shell.openExternal(url);
+    return { action: "deny" };
+  });
+  mainWindow.webContents.on("will-navigate", (event, url) => {
+    if (url !== mainWindow?.webContents.getURL()) event.preventDefault();
   });
   if (isDev) void mainWindow.loadURL("http://127.0.0.1:5173");
   else void mainWindow.loadFile(path.join(__dirname, "../dist/index.html"));
@@ -147,7 +155,11 @@ ipcMain.handle("chats:save", async (_event, chats: unknown[]) => {
     source: typeof chat.source === "string" ? chat.source.slice(0, 1000) : undefined,
     messages: Array.isArray(chat.messages) ? chat.messages.slice(-5000).map((m: any) => ({
       role: m.role === "assistant" ? "assistant" : "user",
-      content: String(m.content ?? "").slice(0, 2_000_000)
+      content: String(m.content ?? "").slice(0, 2_000_000),
+      ...(typeof m.thinking === "string" && m.thinking ? { thinking: m.thinking.slice(0, 500_000) } : {}),
+      ...(typeof m.model === "string" ? { model: m.model.slice(0, 200) } : {}),
+      ...(typeof m.costUsd === "number" && Number.isFinite(m.costUsd) ? { costUsd: m.costUsd } : {}),
+      ...(m.aborted === true ? { aborted: true } : {})
     })) : []
   }));
   await fs.writeFile(chatsFile(), JSON.stringify(safeChats), "utf8");
@@ -162,7 +174,8 @@ ipcMain.handle("usage:load", async () => {
     return Array.isArray(data) ? data : [];
   } catch { return []; }
 });
-async function recordUsage(entry: { model: string; inputTokens: number; outputTokens: number }) {
+type UsageEntry = { model: string; inputTokens: number; outputTokens: number; cacheCreationInputTokens: number; cacheReadInputTokens: number };
+async function recordUsage(entry: UsageEntry) {
   let rows: any[] = [];
   try { const raw = JSON.parse(await fs.readFile(usageFile(), "utf8")); if (Array.isArray(raw)) rows = raw; } catch {}
   rows.push({ ...entry, sessionId, createdAt: new Date().toISOString() });
@@ -214,34 +227,133 @@ async function getApiKey() {
   if (!safeStorage.isEncryptionAvailable()) throw new Error("安全なキー保存が利用できません。");
   return safeStorage.decryptString(await fs.readFile(keyFile()));
 }
-ipcMain.handle("claude:models", async () => {
+type ModelSummary = {
+  id: string; displayName: string; createdAt?: string;
+  maxTokens?: number; maxInputTokens?: number; effortLevels: string[]; adaptiveThinking: boolean;
+};
+const EFFORT_LEVELS = ["low", "medium", "high", "xhigh", "max"];
+// Capability fields are newer than SDK 0.68's ModelInfo type, so read them defensively.
+function summarizeModel(model: any): ModelSummary {
+  const caps = model?.capabilities ?? {};
+  return {
+    id: String(model.id),
+    displayName: model.display_name || String(model.id),
+    createdAt: model.created_at,
+    maxTokens: typeof model.max_tokens === "number" && model.max_tokens > 0 ? model.max_tokens : undefined,
+    maxInputTokens: typeof model.max_input_tokens === "number" && model.max_input_tokens > 0 ? model.max_input_tokens : undefined,
+    effortLevels: caps.effort?.supported ? EFFORT_LEVELS.filter(level => caps.effort?.[level]?.supported) : [],
+    adaptiveThinking: caps.thinking?.types?.adaptive?.supported === true
+  };
+}
+const modelCache = new Map<string, ModelSummary>();
+async function listModels(apiKey: string): Promise<ModelSummary[]> {
   // Follow every page so the selector shows all models the key can access.
-  const client = new Anthropic({ apiKey: await getApiKey() });
-  const models: { id: string; displayName: string; createdAt?: string }[] = [];
-  for await (const model of client.models.list({ limit: 1000 })) {
-    models.push({ id: model.id, displayName: model.display_name || model.id, createdAt: model.created_at });
-  }
+  const client = new Anthropic({ apiKey });
+  const models: ModelSummary[] = [];
+  for await (const model of client.models.list({ limit: 1000 })) models.push(summarizeModel(model));
+  return models;
+}
+ipcMain.handle("claude:models", async () => {
+  const models = await listModels(await getApiKey());
+  modelCache.clear();
+  for (const model of models) modelCache.set(model.id, model);
   return models;
 });
-ipcMain.handle("claude:reply", async (_event, payload: { messages: NormalizedMessage[]; model?: string }) => {
+ipcMain.handle("key:test", async (_event, apiKey: string) => {
+  if (!apiKey || !apiKey.startsWith("sk-ant-")) throw new Error("Anthropic APIキーの形式を確認してください（sk-ant- で始まります）。");
+  const models = await listModels(apiKey);
+  return { ok: true, modelCount: models.length };
+});
+
+const creditFile = () => path.join(dataDir(), "credit.json");
+const PLANS = ["max5x", "max20x", "team", "custom", "none"];
+ipcMain.handle("credit:load", async () => {
+  try { return JSON.parse(await fs.readFile(creditFile(), "utf8")); } catch { return null; }
+});
+ipcMain.handle("credit:save", async (_event, value: any) => {
+  if (!value || typeof value !== "object") throw new Error("クレジット設定の形式が正しくありません。");
+  const plan = value.plan == null ? null : String(value.plan);
+  if (plan !== null && !PLANS.includes(plan)) throw new Error("プランの値が正しくありません。");
+  const amount = Number(value.monthlyAmountUsd ?? 0);
+  if (!Number.isFinite(amount) || amount < 0 || amount > 10000) throw new Error("月間付与額は 0〜10,000 USD で入力してください。");
+  const resetDay = Math.round(Number(value.resetDay ?? 1));
+  if (!(resetDay >= 1 && resetDay <= 31)) throw new Error("付与日は 1〜31 で入力してください。");
+  let calibration: { balanceUsd: number; observedAt: string } | undefined;
+  if (value.calibration) {
+    const balanceUsd = Number(value.calibration.balanceUsd);
+    const observedAt = new Date(String(value.calibration.observedAt));
+    if (!Number.isFinite(balanceUsd) || balanceUsd < 0 || Number.isNaN(observedAt.getTime())) throw new Error("補正値が正しくありません。");
+    calibration = { balanceUsd, observedAt: observedAt.toISOString() };
+  }
+  const saved = { plan, monthlyAmountUsd: amount, resetDay, onboardingDone: value.onboardingDone === true, ...(calibration ? { calibration } : {}) };
+  await fs.writeFile(creditFile(), JSON.stringify(saved), "utf8");
+  return saved;
+});
+
+type ReplyPayload = { requestId: string; messages: NormalizedMessage[]; model?: string; effort?: string };
+const activeReplies = new Map<string, AbortController>();
+ipcMain.handle("claude:abort", (_event, requestId: string) => {
+  activeReplies.get(String(requestId))?.abort();
+  return true;
+});
+ipcMain.handle("claude:reply", async (event, payload: ReplyPayload) => {
   if (!payload || !Array.isArray(payload.messages) || payload.messages.length === 0) {
     throw new Error("送信する会話がありません。");
   }
+  const requestId = String(payload.requestId ?? randomUUID());
   const safeMessages = payload.messages
     .filter(m => m && (m.role === "user" || m.role === "assistant") && typeof m.content === "string")
     .map(m => ({ role: m.role, content: m.content.slice(0, 2_000_000) }));
   if (!safeMessages.some(m => m.role === "user")) throw new Error("ユーザーのメッセージがありません。");
   const bounded = fitContext(safeMessages);
+  const model = payload.model || "claude-sonnet-4-5";
+  const info = modelCache.get(model);
+  const effort = payload.effort && info?.effortLevels.includes(payload.effort) ? payload.effort : undefined;
   const client = new Anthropic({ apiKey: await getApiKey() });
-  const response = await client.messages.create({
-    model: payload.model || "claude-sonnet-4-5", max_tokens: 4096,
-    messages: bounded.map(m => ({ role: m.role, content: m.content }))
-  });
-  const usage = { inputTokens: response.usage.input_tokens, outputTokens: response.usage.output_tokens, model: response.model };
-  await recordUsage(usage);
+  // Thinking counts toward max_tokens, so allow the model's full output budget; streaming keeps long replies within SDK limits.
+  const params: Record<string, unknown> = {
+    model, max_tokens: info?.maxTokens ?? 8192,
+    messages: bounded.map(m => ({ role: m.role, content: m.content })),
+    // Newer models default to display "omitted" (empty thinking text); ask for the readable summary instead.
+    ...(info?.adaptiveThinking ? { thinking: { type: "adaptive", display: "summarized" } } : {}),
+    ...(effort ? { output_config: { effort } } : {})
+  };
+  const controller = new AbortController();
+  activeReplies.set(requestId, controller);
+  const send = (kind: "text" | "thinking", delta: string) => {
+    if (!event.sender.isDestroyed()) event.sender.send("claude:stream", { requestId, kind, delta });
+  };
+  let text = "";
+  let thinking = "";
+  let snapshotUsage: any = null;
+  let aborted = false;
+  let finalModel = model;
+  try {
+    // output_config and adaptive thinking are newer than SDK 0.68's request types; the SDK forwards them unchanged.
+    const stream = client.messages.stream(params as any, { signal: controller.signal });
+    stream.on("text", delta => { text += delta; send("text", delta); });
+    stream.on("thinking", delta => { thinking += delta; send("thinking", delta); });
+    stream.on("streamEvent", (_e, snapshot) => { snapshotUsage = snapshot.usage; finalModel = snapshot.model || model; });
+    const final = await stream.finalMessage();
+    snapshotUsage = final.usage;
+    finalModel = final.model || model;
+  } catch (error) {
+    if (!controller.signal.aborted) throw error;
+    aborted = true;
+  } finally {
+    activeReplies.delete(requestId);
+  }
+  const usage = {
+    model: finalModel,
+    inputTokens: snapshotUsage?.input_tokens ?? 0,
+    outputTokens: snapshotUsage?.output_tokens ?? 0,
+    cacheCreationInputTokens: snapshotUsage?.cache_creation_input_tokens ?? 0,
+    cacheReadInputTokens: snapshotUsage?.cache_read_input_tokens ?? 0
+  };
+  // A stopped reply still consumed tokens; record what the stream reported so far.
+  if (snapshotUsage) await recordUsage(usage);
   return {
-    text: response.content.filter(p => p.type === "text").map(p => p.text).join("\n"),
-    usage,
+    text, thinking, aborted, usage,
     contextMessages: bounded.length,
     contextCharacters: bounded.reduce((total, m) => total + m.content.length, 0)
   };

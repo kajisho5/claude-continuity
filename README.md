@@ -14,7 +14,9 @@ A local-first Electron desktop app for importing Claude conversation exports and
 - Electron + React + TypeScript desktop application
 - Import Claude conversation exports in JSON or ZIP format (best-effort parser for common export layouts)
 - Continue imported conversations through the Anthropic API
-- Choose between configured Claude models in the composer
+- Choose between configured Claude models in the composer, plus the thinking depth (`effort`) each model supports
+- Streamed replies with Markdown rendering (tables, highlighted code with copy buttons), a summarized-thinking panel, and a stop button
+- Monthly API credit tracker for Max/Team plans: first-run setup (plan → grant day → API key with connection test), estimated remaining credit, expiry countdown, daily budget, and pace warnings; optional calibration from the Console balance
 - Store conversation history and API usage records locally
 - Search conversations by title and message text
 - Export an individual conversation to JSON and delete conversations
@@ -53,6 +55,12 @@ A local-first Electron desktop app for importing Claude conversation exports and
 ```bash
 npm install
 npm run dev
+```
+
+## Tests
+
+```bash
+npm test
 ```
 
 ## Type-check and production build
