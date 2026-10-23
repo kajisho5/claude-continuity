@@ -21,6 +21,7 @@ import { ConfirmDialog, RenameDialog } from "./components/Dialog";
 import { PLAN_LABELS, summarizeCredit, type CreditSettings, type UsageRow } from "./lib/credit";
 import { costOf, formatUsd, priceHint } from "./lib/pricing";
 import { DEFAULT_PREFS, type Prefs } from "./lib/prefs";
+import { CONTINUE_PROMPT, mergeContinuation } from "./lib/continue";
 
 type Attachment = NonNullable<Msg["attachments"]>[number];
 type Chat = { id: string; title: string; messages: Msg[]; source?: string; projectId?: string; starred?: boolean; updatedAt?: string; style?: string; tools?: Tools; container?: { id: string; expiresAt?: string } };
@@ -222,7 +223,7 @@ export default function App() {
  }
 
  /** Sends `history` (ending with a user turn) and appends or replaces the reply. */
- async function runReply(target:Chat,history:Msg[],mode:{kind:"append";retitle?:boolean}|{kind:"regenerate";previous:Msg}){
+ async function runReply(target:Chat,history:Msg[],mode:{kind:"append";retitle?:boolean}|{kind:"regenerate";previous:Msg}|{kind:"continue";previous:Msg}){
    if(!configured){setSettings("api");setStatus("先にAnthropic APIキーを設定してください");return;}
    const requestId=crypto.randomUUID();
    const start:Pending={chatId:target.id,requestId,text:"",thinking:"",activity:"",startedAt:Date.now()};
@@ -234,13 +235,17 @@ export default function App() {
      const cost=costOf(response.usage.model,response.usage);
      const thoughtUntil=pendingRef.current?.firstTextAt??Date.now();
      const reply:Reply={content:response.text,model:response.usage.model,...(response.thinking?{thinking:response.thinking,thinkingSeconds:(thoughtUntil-start.startedAt)/1000}:{}),...(cost!=null?{costUsd:cost}:{}),...(response.aborted?{aborted:true}:{}),
-       ...(response.citations.length?{citations:response.citations}:{}),...(response.files.length?{files:response.files}:{})};
+       ...(response.citations.length?{citations:response.citations}:{}),...(response.files.length?{files:response.files}:{}),
+       ...(response.steps.length?{steps:response.steps}:{}),...(response.stopReason?{stopReason:response.stopReason}:{})};
      let next:Msg={role:"assistant",...reply};
+     // history = [..., partial reply, synthetic "continue" turn]; the continuation is merged into the partial reply.
+     const kept=mode.kind==="continue"?history.slice(0,-2):history;
+     if(mode.kind==="continue") next=mergeContinuation(mode.previous,reply);
      if(mode.kind==="regenerate"){
        const versions=mode.previous.alternates?.length?mode.previous.alternates:[snapshot(mode.previous)];
        next={...next,alternates:[...versions,reply],altIndex:versions.length};
      }
-     patchChat(target.id,c=>({...c,messages:[...history,next],updatedAt:new Date().toISOString(),...(response.container?{container:response.container}:{})}));
+     patchChat(target.id,c=>({...c,messages:[...kept,next],updatedAt:new Date().toISOString(),...(response.container?{container:response.container}:{})}));
      setAtBottom(true);
      if(response.usage.inputTokens||response.usage.outputTokens){
        setUsageRows(rows=>[...rows,{...response.usage,createdAt:new Date().toISOString()}]);
@@ -253,9 +258,10 @@ export default function App() {
      if(mode.kind==="append"&&mode.retitle&&prefs.autoTitle&&response.text&&!response.aborted) void autoTitle(target.id,history[history.length-1].content,response.text);
    }catch(e){
      // A failed regeneration keeps the previous answer; a failed new turn shows the error in place of a reply.
-     const fallback:Msg=mode.kind==="regenerate"?mode.previous:{role:"assistant",content:"APIエラー: "+err(e)+"\n\nConsoleのクレジット残高、APIキー、利用可能モデルを確認してください。"};
-     patchChat(target.id,c=>({...c,messages:[...history,fallback]}));
-     setStatus(mode.kind==="regenerate"?"再生成に失敗しました: "+err(e):"APIリクエストに失敗しました");
+     const fallback:Msg=mode.kind==="append"?{role:"assistant",content:"APIエラー: "+err(e)+"\n\nConsoleのクレジット残高、APIキー、利用可能モデルを確認してください。"}:mode.previous;
+     patchChat(target.id,c=>({...c,messages:[...(mode.kind==="continue"?history.slice(0,-2):history),fallback]}));
+     setStatus(mode.kind==="regenerate"?"再生成に失敗しました: "+err(e):mode.kind==="continue"?"続きの生成に失敗しました: "+err(e):"APIリクエストに失敗しました");
+     if(mode.kind!=="append") toast((mode.kind==="regenerate"?"再生成":"続きの生成")+"に失敗しました: "+err(e),"error");
    }
    finally{pendingRef.current=null;setPending(null);}
  }
@@ -276,6 +282,12 @@ export default function App() {
    const title=provisional?(text||pendingAttachments[0]?.name||"新しい会話").slice(0,48):current.title;
    patchChat(current.id,c=>({...c,messages:history,title,updatedAt:new Date().toISOString()}));setDraft("");setPendingAttachments([]);
    await runReply({...current,title},history,{kind:"append",retitle:provisional});
+ }
+ function continueReply(index:number){
+   const previous=chat.messages[index];
+   if(busy||previous?.role!=="assistant")return;
+   const history:Msg[]=[...chat.messages.slice(0,index+1),{role:"user",content:CONTINUE_PROMPT}];
+   void runReply(chat,history,{kind:"continue",previous});
  }
  function regenerate(index:number){
    const previous=chat.messages[index];
@@ -399,7 +411,7 @@ export default function App() {
        <section className="messages" ref={messagesRef} onScroll={e=>{const el=e.currentTarget;setAtBottom(el.scrollHeight-el.scrollTop-el.clientHeight<120);}}>
         <div className="thread">
          {chat.messages.map((m,i)=><MessageItem key={`${chat.id}-${i}`} message={m} isLast={i===lastAssistant&&!showPending} busy={busy}
-           onRegenerate={()=>regenerate(i)} onEdit={text=>editAndResend(i,text)} onSelectAlternate={alt=>selectAlternate(i,alt)} onSaveFile={(id,name)=>void saveFile(id,name)}/>)}
+           onRegenerate={()=>regenerate(i)} onEdit={text=>editAndResend(i,text)} onSelectAlternate={alt=>selectAlternate(i,alt)} onSaveFile={(id,name)=>void saveFile(id,name)} onContinue={()=>continueReply(i)}/>)}
          {showPending&&<article className="message assistant pending">
            {(pending.thinking||!pending.text)&&<ThinkingBlock text={pending.thinking} live={!pending.text} seconds={pending.firstTextAt?(pending.firstTextAt-pending.startedAt)/1000:undefined}/>}
            {pending.activity&&<p className="activity">{pending.activity}</p>}

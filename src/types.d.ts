@@ -4,8 +4,9 @@ type ContinuityCitation = { url: string; title: string; citedText?: string };
 type ContinuityFile = { fileId: string; name: string; size?: number };
 type ContinuityReply = {
   content: string; thinking?: string; model?: string; costUsd?: number; aborted?: boolean;
-  citations?: ContinuityCitation[]; files?: ContinuityFile[];
+  citations?: ContinuityCitation[]; files?: ContinuityFile[]; steps?: ContinuityStep[]; stopReason?: string;
 };
+type ContinuityStep = import("./lib/steps").ToolStep;
 type ContinuityMessage = ContinuityReply & {
   role: "user" | "assistant";
   attachments?: ContinuityAttachment[];
@@ -66,7 +67,7 @@ declare global {
         model?: string; effort?: string; style?: string; projectId?: string; tools?: ContinuityTools; containerId?: string;
       }) => Promise<{
         text: string; thinking: string; aborted: boolean; usage: ContinuityUsage; citations: ContinuityCitation[]; files: ContinuityFile[];
-        container?: { id: string; expiresAt?: string }; notices: string[];
+        container?: { id: string; expiresAt?: string }; notices: string[]; steps: ContinuityStep[]; stopReason?: string;
       }>;
       generateTitle: (user: string, assistant: string) => Promise<{ title: string | null; usage: { model: string; inputTokens: number; outputTokens: number } } | null>;
       abortReply: (requestId: string) => Promise<boolean>;

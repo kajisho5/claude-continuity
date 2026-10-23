@@ -1,13 +1,16 @@
 import { useEffect, useState } from "react";
-import { ChevronLeft, ChevronRight, Download, FileText, Image as ImageIcon, Pencil, RefreshCw } from "lucide-react";
+import { ChevronLeft, ChevronRight, Download, FileText, Image as ImageIcon, Pencil, RefreshCw, StepForward } from "lucide-react";
 import { CopyButton, Markdown, ThinkingBlock, linkCitations } from "./MessageContent";
 import { LogoGlyph } from "./LogoMark";
+import StepsBlock from "./StepsBlock";
+import { stopNotice, type ToolStep } from "../lib/steps";
 import { formatUsd } from "../lib/pricing";
 
 type Attachment = { id: string; name: string; mediaType: string; size: number; kind: "image" | "pdf" | "text" | "file" };
 type Reply = {
   content: string; thinking?: string; thinkingSeconds?: number; model?: string; costUsd?: number; aborted?: boolean;
   citations?: { url: string; title: string }[]; files?: { fileId: string; name: string; size?: number }[];
+  steps?: ToolStep[]; stopReason?: string;
 };
 export type Msg = Reply & { role: "user" | "assistant"; attachments?: Attachment[]; alternates?: Reply[]; altIndex?: number };
 
@@ -51,9 +54,10 @@ type Props = {
   onEdit: (text: string) => void;
   onSelectAlternate: (index: number) => void;
   onSaveFile: (fileId: string, name: string) => void;
+  onContinue: () => void;
 };
 
-export default function MessageItem({ message: m, isLast, busy, onRegenerate, onEdit, onSelectAlternate, onSaveFile }: Props) {
+export default function MessageItem({ message: m, isLast, busy, onRegenerate, onEdit, onSelectAlternate, onSaveFile, onContinue }: Props) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(m.content);
   const alternates = m.alternates?.length ?? 0;
@@ -76,10 +80,14 @@ export default function MessageItem({ message: m, isLast, busy, onRegenerate, on
       </div>}
     </article>;
   }
+  const notice = stopNotice(m.stopReason);
   return <article className={"message assistant" + (isLast ? " last" : "")}>
     {(m.thinking || m.thinkingSeconds) && <ThinkingBlock text={m.thinking ?? ""} seconds={m.thinkingSeconds} />}
+    {!!m.steps?.length && <StepsBlock steps={m.steps} />}
     <Markdown text={linkCitations(m.content, m.citations)} />
     {m.aborted && <p className="msg-note">応答を途中で停止しました</p>}
+    {notice && <div className={"stop-notice" + (m.stopReason === "refusal" ? " refusal" : "")}><span>{notice.text}</span>
+      {notice.canContinue && isLast && <button className="btn-secondary small" disabled={busy} onClick={onContinue}><StepForward size={13} />続ける</button>}</div>}
     {!!m.files?.length && <div className="file-cards">{m.files.map(f => {
       const badge = fileBadge(f.name);
       return <div key={f.fileId} className="file-card">

@@ -780,3 +780,34 @@ html[data-theme="light"] .artifact-code,html[data-theme="light"] .snippet pre{co
 .shortcuts dt{font-size:13px;color:var(--text-3)}
 .shortcuts dd{margin:0;display:flex;gap:4px}
 .shortcuts kbd{opacity:1;margin:0;font-size:11px;padding:4px 7px;color:var(--text-4);background:var(--input)}
+
+/* Tool steps and stop notices */
+.steps{margin:0 0 12px;font-family:var(--sans)}
+.steps>summary{display:inline-flex;align-items:center;gap:7px;padding:5px 10px 5px 9px;border:1px solid var(--border-strong);border-radius:9px;font-size:12.5px;color:var(--muted);cursor:pointer;list-style:none;user-select:none}
+.steps>summary::-webkit-details-marker,.step summary::-webkit-details-marker{display:none}
+.steps>summary:hover{color:var(--text-2);border-color:var(--border-input)}
+.steps>summary em{font-style:normal;font-size:11px;color:var(--warn)}
+.steps .chev{transition:transform .2s var(--ease)}
+.steps[open]>summary .chev,.step details[open]>summary .chev{transform:rotate(180deg)}
+.steps-list{list-style:none;margin:8px 0 0;padding:0 0 0 12px;border-left:2px solid var(--border-strong);display:flex;flex-direction:column;gap:2px;animation:fadeIn .2s ease}
+.step summary,.step-head{display:flex;align-items:center;gap:8px;padding:5px 8px;border-radius:7px;font-size:12.5px;color:var(--text-4);cursor:pointer;list-style:none}
+.step-head{cursor:default}
+.step summary:hover{background:var(--surface)}
+.step svg{flex-shrink:0;color:var(--muted)}
+.step-label{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.step-error{font-style:normal;font-size:10.5px;color:var(--danger);border:1px solid color-mix(in srgb,var(--danger) 50%,transparent);border-radius:6px;padding:0 6px}
+.step-body{margin:4px 0 8px 30px;display:flex;flex-direction:column;gap:6px}
+.step-code,.step-output{margin:0;max-height:260px;overflow:auto;padding:9px 11px;border-radius:9px;font:11.5px/1.6 var(--mono);white-space:pre-wrap;word-break:break-word}
+.step-code{background:var(--code-bg);color:#DAD6CC;border:1px solid var(--border)}
+.step-output{background:var(--input);color:var(--text-4);border:1px solid var(--border)}
+.step-output.error{color:var(--danger)}
+.step-sources{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:3px}
+.step-sources li{display:flex;gap:8px;align-items:baseline;font-size:12px;min-width:0}
+.step-sources a{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-decoration:none}
+.step-sources a:hover{text-decoration:underline}
+.step-sources small{color:var(--subtle);font-size:10.5px;flex-shrink:0}
+.stop-notice{display:flex;align-items:center;gap:12px;margin:10px 0 0;padding:9px 10px 9px 14px;border:1px solid color-mix(in srgb,var(--warn) 45%,transparent);background:color-mix(in srgb,var(--warn) 9%,transparent);border-radius:10px;font:12.5px/1.6 var(--sans);color:var(--text-3)}
+.stop-notice span{flex:1}
+.stop-notice.refusal{border-color:color-mix(in srgb,var(--danger) 45%,transparent);background:color-mix(in srgb,var(--danger) 8%,transparent)}
+.markdown .katex{font-size:1.08em}
+.markdown .katex-display{margin:.9em 0;overflow-x:auto;overflow-y:hidden;padding:2px 0}

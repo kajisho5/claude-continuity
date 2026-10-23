@@ -9,7 +9,7 @@ import { AttachmentStore, type Attachment } from "./attachments";
 import { listMemoryFiles, runMemoryCommand } from "./memory";
 import { createBackup, readBackup, restoreEntries } from "./backup";
 import { HANDOFF_PREFIX, fitsHandoff } from "../src/lib/handoff";
-import { activityLabel, buildMessages, buildSystem, buildTools, extractFileIds, extractText, type ChatTurn, type Project, type StyleId, type ToolFlags } from "./request";
+import { activityLabel, buildMessages, buildSystem, buildTools, extractFileIds, extractSteps, extractText, type ChatTurn, type Project, type StyleId, type ToolFlags } from "./request";
 
 // Only `npm run dev` passes --dev; `npm start` after a build must load the bundled renderer.
 const isDev = !app.isPackaged && process.argv.includes("--dev");
@@ -176,6 +176,12 @@ function sanitizeReply(m: any) {
     ...(typeof m.model === "string" ? { model: m.model.slice(0, 200) } : {}),
     ...(typeof m.costUsd === "number" && Number.isFinite(m.costUsd) ? { costUsd: m.costUsd } : {}),
     ...(m.aborted === true ? { aborted: true } : {}),
+    ...(typeof m.stopReason === "string" ? { stopReason: m.stopReason.slice(0, 40) } : {}),
+    ...(Array.isArray(m.steps) ? { steps: m.steps.slice(0, 100).map((st: any) => ({
+      kind: ["search", "fetch", "code", "file", "memory", "other"].includes(st?.kind) ? st.kind : "other", label: str(st?.label, 500) ?? "",
+      ...(st?.detail ? { detail: str(st.detail, 5000) } : {}), ...(st?.output ? { output: str(st.output, 5000) } : {}), ...(st?.error === true ? { error: true } : {}),
+      ...(Array.isArray(st?.sources) ? { sources: st.sources.slice(0, 20).map((c: any) => ({ url: str(c?.url, 2000) ?? "", title: str(c?.title, 500) ?? "" })) } : {})
+    })) } : {}),
     ...(Array.isArray(m.citations) ? { citations: m.citations.slice(0, 100).map((c: any) => ({ url: str(c?.url, 2000) ?? "", title: str(c?.title, 500) ?? "", ...(c?.citedText ? { citedText: str(c.citedText, 1000) } : {}) })) } : {}),
     ...(Array.isArray(m.files) ? { files: m.files.slice(0, 50).map((f: any) => ({ fileId: str(f?.fileId, 200) ?? "", name: str(f?.name, 300) ?? "file", ...(typeof f?.size === "number" ? { size: f.size } : {}) })) } : {})
   };
@@ -521,6 +527,8 @@ ipcMain.handle("claude:reply", async (event, payload: ReplyPayload) => {
   let finalModel = model;
   let container: { id: string; expiresAt?: string } | undefined = containerId ? { id: containerId } : undefined;
   let pendingUsage: any = null;
+  let stopReason: string | null = null;
+  const clientResults = new Map<string, { content: string; isError?: boolean }>();
   try {
     for (let iteration = 0; iteration < MAX_LOOP; iteration++) {
       // Thinking counts toward max_tokens, so allow the model's full output budget; streaming keeps long replies within SDK limits.
@@ -552,6 +560,7 @@ ipcMain.handle("claude:reply", async (event, payload: ReplyPayload) => {
       if (turnBlocks.some(b => b.type === "text") && final.content.some(b => b.type === "text")) turnBlocks.push({ type: "text", text: "\n\n", citations: null } as ContentBlock);
       turnBlocks.push(...final.content);
       if (final.container?.id) container = { id: final.container.id, expiresAt: final.container.expires_at };
+      stopReason = final.stop_reason;
       if (final.stop_reason === "pause_turn") {
         messages.push({ role: "assistant", content: final.content });
         continue;
@@ -563,6 +572,7 @@ ipcMain.handle("claude:reply", async (event, payload: ReplyPayload) => {
           const outcome = block.name === "memory"
             ? await runMemoryCommand(memoryRoot(), (block.input ?? {}) as Record<string, unknown>)
             : { content: `Error: unknown tool ${block.name}`, isError: true };
+          clientResults.set(block.id, outcome);
           results.push({ type: "tool_result" as const, tool_use_id: block.id, content: outcome.content, ...(outcome.isError ? { is_error: true } : {}) });
         }
         if (!results.length) break;
@@ -593,7 +603,9 @@ ipcMain.handle("claude:reply", async (event, payload: ReplyPayload) => {
       files.push({ fileId, name: meta.filename, size: meta.size_bytes });
     } catch { files.push({ fileId, name: fileId }); }
   }
-  return { text, thinking, aborted, usage, citations, files, container, notices: [...built.skipped.map(s => `添付をスキップ: ${s}`), ...unavailable.map(u => `${u}はこのモデルでは使えません`)] };
+  // "pause_turn"/"tool_use" here mean the loop limit cut the turn short; the UI offers to continue.
+  const steps = extractSteps(turnBlocks, clientResults);
+  return { text, thinking, aborted, usage, citations, files, container, steps, ...(stopReason && stopReason !== "end_turn" && stopReason !== "stop_sequence" && !aborted ? { stopReason } : {}), notices: [...built.skipped.map(s => `添付をスキップ: ${s}`), ...unavailable.map(u => `${u}はこのモデルでは使えません`)] };
 });
 
 // ---- Hand off to the Claude apps (claude://claude.ai/new?q=…, prefilled, never auto-sent) ----

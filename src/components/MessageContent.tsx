@@ -2,6 +2,10 @@ import { createContext, memo, useContext, useState, type ReactNode } from "react
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
+import remarkMath from "remark-math";
+import rehypeKatex from "rehype-katex";
+import "katex/dist/katex.min.css";
+import { normalizeMath } from "../lib/math";
 import { Check, ChevronDown, Code2, Copy, Eye, Image as ImageIcon } from "lucide-react";
 
 export type ArtifactRequest = { title: string; language: "html" | "svg"; code: string };
@@ -93,11 +97,11 @@ export function linkCitations(text: string, citations: { url: string; title: str
 /** Renders assistant Markdown (GFM tables, code highlighting). Raw HTML is never rendered. */
 function MarkdownBody({ text }: { text: string }) {
   return <div className="markdown">
-    <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[[rehypeHighlight, { detect: true }]]}
+    <ReactMarkdown remarkPlugins={[remarkGfm, [remarkMath, { singleDollarTextMath: false }]]} rehypePlugins={[[rehypeKatex, { throwOnError: false, strict: "ignore" }], [rehypeHighlight, { detect: true }]]}
       components={{
         pre: ({ children }) => <CodeBlock>{children}</CodeBlock>,
         a: ({ href, children, title }) => <a href={href} title={title} target="_blank" rel="noreferrer">{children}</a>
-      }}>{text}</ReactMarkdown>
+      }}>{normalizeMath(text)}</ReactMarkdown>
   </div>;
 }
 export const Markdown = memo(MarkdownBody);

@@ -164,3 +164,54 @@ export function activityLabel(name: string | undefined): string | null {
     default: return null;
   }
 }
+
+export type ToolStep = {
+  kind: "search" | "fetch" | "code" | "file" | "memory" | "other";
+  label: string;
+  detail?: string;
+  output?: string;
+  error?: boolean;
+  sources?: { url: string; title: string }[];
+};
+const clip = (value: unknown, max = 4000) => {
+  const s = typeof value === "string" ? value : value == null ? "" : JSON.stringify(value);
+  return s.length > max ? s.slice(0, max) + "\n…（以下略）" : s;
+};
+const TEXT_EDITOR_LABELS: Record<string, string> = { view: "ファイルを表示", create: "ファイルを作成", str_replace: "ファイルを編集", insert: "ファイルに追記" };
+const MEMORY_LABELS: Record<string, string> = { view: "メモリを確認", create: "メモリに保存", str_replace: "メモリを更新", insert: "メモリに追記", delete: "メモリを削除", rename: "メモリの名前を変更" };
+
+/**
+ * Tool calls made while answering, paired with their results, for the expandable "what Claude did" view.
+ * Server tools (web search/fetch, code execution) come back as content blocks; client memory results are passed in.
+ */
+export function extractSteps(blocks: unknown[], clientResults: Map<string, { content: string; isError?: boolean }> = new Map()): ToolStep[] {
+  const results = new Map<string, any>();
+  for (const b of blocks as any[]) if (b && typeof b.tool_use_id === "string" && typeof b.type === "string" && b.type.endsWith("_tool_result")) results.set(b.tool_use_id, b);
+  const steps: ToolStep[] = [];
+  for (const b of blocks as any[]) {
+    if (!b || (b.type !== "server_tool_use" && b.type !== "tool_use")) continue;
+    const input = b.input ?? {};
+    const result = results.get(b.id)?.content;
+    const errorCode = result && typeof result === "object" && !Array.isArray(result) && typeof result.error_code === "string" ? result.error_code : undefined;
+    if (b.name === "web_search") {
+      const list = Array.isArray(result) ? result.filter((r: any) => r?.type === "web_search_result").map((r: any) => ({ url: String(r.url ?? ""), title: String(r.title ?? r.url ?? "") })) : [];
+      steps.push({ kind: "search", label: `「${clip(input.query, 200)}」を検索`, ...(errorCode ? { error: true, output: `エラー: ${errorCode}` } : { sources: list.slice(0, 20), output: `${list.length} 件の結果` }) });
+    } else if (b.name === "web_fetch") {
+      const title = result?.content?.title ?? result?.url ?? input.url;
+      steps.push({ kind: "fetch", label: "ページを読み込み", detail: clip(input.url, 500), ...(errorCode ? { error: true, output: `エラー: ${errorCode}` } : { output: clip(title, 300) }) });
+    } else if (b.name === "bash_code_execution" || b.name === "code_execution") {
+      const out = [result?.stdout ? clip(result.stdout) : "", result?.stderr ? "[stderr]\n" + clip(result.stderr, 2000) : ""].filter(Boolean).join("\n");
+      steps.push({ kind: "code", label: "コードを実行", detail: clip(input.command ?? input.code), ...(errorCode ? { error: true, output: `エラー: ${errorCode}` } : { output: out || (typeof result?.return_code === "number" ? `終了コード ${result.return_code}` : ""), ...(result?.return_code ? { error: true } : {}) }) });
+    } else if (b.name === "text_editor_code_execution") {
+      const command = String(input.command ?? "");
+      steps.push({ kind: "file", label: `${TEXT_EDITOR_LABELS[command] ?? "ファイル操作"}: ${clip(input.path, 300)}`, ...(command === "create" && input.file_text ? { detail: clip(input.file_text) } : {}),
+        ...(errorCode ? { error: true, output: `エラー: ${errorCode}` } : result?.content && typeof result.content === "string" ? { output: clip(result.content) } : {}) });
+    } else if (b.name === "memory") {
+      const own = clientResults.get(b.id);
+      steps.push({ kind: "memory", label: `${MEMORY_LABELS[String(input.command)] ?? "メモリ操作"}${input.path ? `: ${clip(input.path, 300)}` : ""}`, ...(own ? { output: clip(own.content), ...(own.isError ? { error: true } : {}) } : {}) });
+    } else {
+      steps.push({ kind: "other", label: String(b.name ?? "ツール"), detail: clip(input, 2000) });
+    }
+  }
+  return steps;
+}

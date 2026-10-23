@@ -87,3 +87,33 @@ describe("extract helpers", () => {
     ])).toEqual(["file_out"]);
   });
 });
+
+describe("extractSteps", () => {
+  it("pairs server tools with their results", async () => {
+    const { extractSteps } = await import("./request");
+    const steps = extractSteps([
+      { type: "server_tool_use", id: "s1", name: "web_search", input: { query: "Q3 売上" } },
+      { type: "web_search_tool_result", tool_use_id: "s1", content: [{ type: "web_search_result", url: "https://a.example", title: "A" }] },
+      { type: "server_tool_use", id: "s2", name: "bash_code_execution", input: { command: "python a.py" } },
+      { type: "bash_code_execution_tool_result", tool_use_id: "s2", content: { type: "bash_code_execution_result", stdout: "ok\n", stderr: "", return_code: 0, content: [] } },
+      { type: "server_tool_use", id: "s3", name: "web_fetch", input: { url: "https://b.example" } },
+      { type: "web_fetch_tool_result", tool_use_id: "s3", content: { type: "web_fetch_tool_error", error_code: "url_not_accessible" } },
+      { type: "text", text: "done" }
+    ]);
+    expect(steps).toEqual([
+      { kind: "search", label: "「Q3 売上」を検索", sources: [{ url: "https://a.example", title: "A" }], output: "1 件の結果" },
+      { kind: "code", label: "コードを実行", detail: "python a.py", output: "ok\n" },
+      { kind: "fetch", label: "ページを読み込み", detail: "https://b.example", error: true, output: "エラー: url_not_accessible" }
+    ]);
+  });
+  it("uses client results for memory and flags failing commands", async () => {
+    const { extractSteps } = await import("./request");
+    const steps = extractSteps([
+      { type: "tool_use", id: "m1", name: "memory", input: { command: "view", path: "/memories" } },
+      { type: "server_tool_use", id: "c1", name: "bash_code_execution", input: { command: "false" } },
+      { type: "bash_code_execution_tool_result", tool_use_id: "c1", content: { type: "bash_code_execution_result", stdout: "", stderr: "boom", return_code: 1, content: [] } }
+    ], new Map([["m1", { content: "Directory: /memories" }]]));
+    expect(steps[0]).toEqual({ kind: "memory", label: "メモリを確認: /memories", output: "Directory: /memories" });
+    expect(steps[1]).toMatchObject({ kind: "code", error: true, output: "[stderr]\nboom" });
+  });
+});
