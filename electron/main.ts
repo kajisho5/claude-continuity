@@ -5,7 +5,8 @@ import { randomUUID } from "node:crypto";
 import Anthropic from "@anthropic-ai/sdk";
 import AdmZip from "adm-zip";
 
-const isDev = !app.isPackaged;
+// Only `npm run dev` passes --dev; `npm start` after a build must load the bundled renderer.
+const isDev = !app.isPackaged && process.argv.includes("--dev");
 let mainWindow: BrowserWindow | null = null;
 const dataDir = () => path.join(app.getPath("userData"), "claude-continuity");
 const sessionId = randomUUID();
@@ -191,7 +192,7 @@ function fitContext(messages: NormalizedMessage[], maxChars = 120000): Normalize
   const merged: NormalizedMessage[] = [];
   for (const message of ordered) {
     const last = merged[merged.length - 1];
-    if (last && last.role === message.role) last.content += "\\n\\n" + message.content;
+    if (last && last.role === message.role) last.content += "\n\n" + message.content;
     else merged.push({ ...message });
   }
   return merged;
@@ -213,6 +214,15 @@ async function getApiKey() {
   if (!safeStorage.isEncryptionAvailable()) throw new Error("安全なキー保存が利用できません。");
   return safeStorage.decryptString(await fs.readFile(keyFile()));
 }
+ipcMain.handle("claude:models", async () => {
+  // Follow every page so the selector shows all models the key can access.
+  const client = new Anthropic({ apiKey: await getApiKey() });
+  const models: { id: string; displayName: string; createdAt?: string }[] = [];
+  for await (const model of client.models.list({ limit: 1000 })) {
+    models.push({ id: model.id, displayName: model.display_name || model.id, createdAt: model.created_at });
+  }
+  return models;
+});
 ipcMain.handle("claude:reply", async (_event, payload: { messages: NormalizedMessage[]; model?: string }) => {
   if (!payload || !Array.isArray(payload.messages) || payload.messages.length === 0) {
     throw new Error("送信する会話がありません。");
