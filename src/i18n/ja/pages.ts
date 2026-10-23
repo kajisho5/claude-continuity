@@ -55,7 +55,7 @@ export const pages = {
     knowledgeEmpty: "PDF やテキストを追加すると、毎回の会話に自動で添付されます",
     addFiles: "ファイルを追加",
     useMemory: "このプロジェクトでメモリを使う",
-    memoryHint: "覚えた内容はこの端末の memories フォルダに保存され、API設定から確認・削除できます",
+    memoryHint: "覚えた内容はこの端末の memories フォルダに保存され、設定の「スタイルとメモリ」から確認・削除できます",
     confirmDelete: "このプロジェクトを削除しますか？（会話は残ります）"
   }
 };

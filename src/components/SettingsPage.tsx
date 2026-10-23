@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { ConnectorView } from "../lib/connectors";
 import { Cable, Sparkles, CreditCard as CreditIcon, HardDrive, ExternalLink, Info, KeyRound, MessageSquareText, Plug, ShieldCheck, UserRound, X } from "lucide-react";
 import CreditSettingsForm from "./CreditSettingsForm";
@@ -67,13 +67,27 @@ export default function SettingsPage(p: Props) {
   const [about, setAbout] = useState(p.prefs.preferences);
   const [key, setKey] = useState("");
   const [keyMessage, setKeyMessage] = useState("");
+  const update = (patch: Partial<Prefs>) => void p.onSavePrefs(current => ({ ...current, ...patch }));
+  // The name and instructions are saved on blur; closing (Esc, the backdrop, a shortcut) skips blur, so
+  // whatever is still unsaved is saved when the settings close.
+  const draftRef = useRef({ name, about, prefs: p.prefs, save: p.onSavePrefs });
+  draftRef.current = { name, about, prefs: p.prefs, save: p.onSavePrefs };
+  useEffect(() => () => {
+    const d = draftRef.current;
+    const patch: Partial<Prefs> = {};
+    if (d.name.trim() !== d.prefs.displayName) patch.displayName = d.name.trim();
+    if (d.about !== d.prefs.preferences) patch.preferences = d.about;
+    if (Object.keys(patch).length) void d.save(current => ({ ...current, ...patch }));
+  }, []);
+  const close = () => p.onClose();
+  const closeRef = useRef(close);
+  closeRef.current = close;
   useEffect(() => {
     // A confirm dialog opened from a tab handles its own Escape.
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape" && !e.isComposing && e.keyCode !== 229 && !document.querySelector(".dialog")) { e.stopPropagation(); p.onClose(); } };
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape" && !e.isComposing && e.keyCode !== 229 && !document.querySelector(".dialog")) { e.stopPropagation(); closeRef.current(); } };
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
-  }, [p.onClose]);
-  const update = (patch: Partial<Prefs>) => void p.onSavePrefs(current => ({ ...current, ...patch }));
+  }, []);
   // Registration happens in the main process after saving; another app may already own the keys.
   const [shortcutError, setShortcutError] = useState("");
   useEffect(() => { void window.continuity.shortcutStatus().then(setShortcutError).catch(() => {}); }, [p.prefs.quickShortcut]);
@@ -82,7 +96,7 @@ export default function SettingsPage(p: Props) {
     catch (e) { setKeyMessage(e instanceof Error ? e.message : String(e)); }
   }
 
-  return <div className="overlay" onMouseDown={p.onClose}>
+  return <div className="overlay" onMouseDown={close}>
     <div className="settings flex h-[min(640px,calc(100vh_-_40px))] w-[min(880px,100%)] animate-[popIn_.2s_var(--ease)_both] overflow-hidden rounded-[16px] border border-line-strong bg-modal shadow-[0_20px_80px_#0008] light:shadow-[0_1px_2px_#0000000f,0_16px_48px_#0000001f]" role="dialog" aria-modal="true" aria-label={t.settings.title} onMouseDown={e => e.stopPropagation()}>
       <nav className="settings-nav flex w-[210px] shrink-0 flex-col gap-[2px] border-r border-line bg-sidebar px-[10px] py-[20px]">
         <h2 className="m-[0_10px_14px] font-serif text-[18px] leading-[normal] font-semibold text-ink">{t.settings.title}</h2>
@@ -91,7 +105,7 @@ export default function SettingsPage(p: Props) {
           <item.icon size={16} />{t.settings.tabs[item.id]}{item.id === "api" && <span className={"dot ml-auto " + (p.configured ? "green" : "")} />}</button>)}
       </nav>
       <div className="settings-body relative min-w-0 flex-1 animate-[fadeIn_.16s_ease] overflow-auto pt-[28px] px-[34px] pb-[30px]" key={tab}>
-        <button className="settings-close ghost-btn absolute top-[14px] right-[14px]" onClick={p.onClose} aria-label={t.common.close}><X size={18} /></button>
+        <button className="settings-close ghost-btn absolute top-[14px] right-[14px]" onClick={close} aria-label={t.common.close}><X size={18} /></button>
         {tab === "general" && <>
           <h3 className={SETTINGS_H3}>{t.settings.general.profile}</h3>
           <label className="field"><span>{t.settings.general.displayName}</span>

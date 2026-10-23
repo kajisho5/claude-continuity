@@ -67,8 +67,8 @@ export default function PreferencesSection({ prefs, onSave, model, onUsage }: { 
   const [memoryError, setMemoryError] = useState("");
   async function write(path: string, text: string) {
     setMemoryError("");
-    try { await window.continuity.writeMemory(path, text); setEditing(null); setMemory(await window.continuity.listMemory()); }
-    catch (e) { setMemoryError((e instanceof Error ? e.message : String(e)).replace(/^Error invoking remote method '[^']+': (Error: )?/, "")); }
+    try { await window.continuity.writeMemory(path, text); setEditing(null); setMemory(await window.continuity.listMemory()); return true; }
+    catch (e) { setMemoryError((e instanceof Error ? e.message : String(e)).replace(/^Error invoking remote method '[^']+': (Error: )?/, "")); return false; }
   }
   async function remove(path: string) {
     if (!window.confirm(m.confirmDelete(path))) return;
@@ -93,7 +93,7 @@ export default function PreferencesSection({ prefs, onSave, model, onUsage }: { 
       ? <div className="memory-edit new mt-[10px] flex min-w-0 flex-1 flex-col gap-[6px] rounded-[10px] border border-dashed border-line-strong p-[10px]">
         <input className="text-input" value={adding.name} onChange={e => setAdding({ ...adding, name: e.target.value })} placeholder={m.fileNamePlaceholder} aria-label={m.fileNameLabel} />
         <textarea className="text-input tall" value={adding.text} onChange={e => setAdding({ ...adding, text: e.target.value })} placeholder={m.contentPlaceholder} aria-label={m.contentLabel} />
-        <div className="form-actions start"><button className="btn-primary small" disabled={!adding.name.trim() || !adding.text.trim()} onClick={() => void write("/memories/" + adding.name.trim().replace(/[\\/]/g, "_"), adding.text).then(() => setAdding(null))}>{t.common.add}</button>
+        <div className="form-actions start"><button className="btn-primary small" disabled={!adding.name.trim() || !adding.text.trim()} onClick={() => void write("/memories/" + adding.name.trim().replace(/[\\/]/g, "_"), adding.text).then(ok => { if (ok) setAdding(null); })}>{t.common.add}</button>
           <button className="btn-text" onClick={() => setAdding(null)}>{t.common.cancel}</button></div></div>
       : <div className="form-actions start"><button className="btn-secondary small" onClick={() => setAdding({ name: "", text: "" })}><Plus size={13} />{m.addMore}</button></div>}
     {memoryError && <p className="form-message error text-danger">{memoryError}</p>}

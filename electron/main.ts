@@ -611,7 +611,7 @@ const prefsFile = () => path.join(dataDir(), "prefs.json");
 type Theme = "system" | "light" | "dark";
 type ChatFont = "serif" | "sans" | "system";
 type CustomStyle = { id: string; name: string; prompt: string };
-type Prefs = { autoTitle: boolean; customStyle: string; customStyles: CustomStyle[]; displayName: string; theme: Theme; chatFont: ChatFont; shareName: boolean; preferences: string; searchPastChats: boolean; notifyOnReply: boolean; checkUpdates: boolean; language: Language; quickShortcut: QuickShortcut; enabledSkills: string[] };
+type Prefs = { autoTitle: boolean; customStyle: string; customStyles: CustomStyle[]; displayName: string; theme: Theme; chatFont: ChatFont; shareName: boolean; preferences: string; searchPastChats: boolean; notifyOnReply: boolean; checkUpdates: boolean; language: Language; quickShortcut: QuickShortcut; enabledSkills: string[]; lastModel: string; lastEffort: string };
 type Language = "system" | "ja" | "en";
 /** Global shortcut that brings the app forward with a new chat ("" = off). */
 type QuickShortcut = "" | "CommandOrControl+Alt+Space" | "CommandOrControl+Shift+Space" | "Alt+Space";
@@ -647,7 +647,10 @@ function sanitizePrefs(raw: any): Prefs {
     language: LANGUAGES.includes(raw?.language) ? raw.language : "system",
     // ⌘⌥Space is macOS's Finder search shortcut, which wins over the app's.
     quickShortcut: QUICK_SHORTCUTS.includes(raw?.quickShortcut) ? raw.quickShortcut : process.platform === "darwin" ? "CommandOrControl+Shift+Space" : "CommandOrControl+Alt+Space",
-    enabledSkills: Array.isArray(raw?.enabledSkills) ? [...new Set(raw.enabledSkills.filter((s: unknown) => typeof s === "string" && /^[\w-]{1,100}$/.test(s)) as string[])].slice(0, 16) : []
+    enabledSkills: Array.isArray(raw?.enabledSkills) ? [...new Set(raw.enabledSkills.filter((s: unknown) => typeof s === "string" && /^[\w-]{1,100}$/.test(s)) as string[])].slice(0, 16) : [],
+    // The model and thinking effort picked last, so a restart keeps them.
+    lastModel: typeof raw?.lastModel === "string" && /^[\w.:-]{1,100}$/.test(raw.lastModel) ? raw.lastModel : "",
+    lastEffort: typeof raw?.lastEffort === "string" && /^[a-z]{0,20}$/.test(raw.lastEffort) ? raw.lastEffort : ""
   };
 }
 async function loadPrefs(): Promise<Prefs> {
@@ -1054,7 +1057,7 @@ async function runReply(event: Electron.IpcMainInvokeEvent, payload: ReplyPayloa
   const turns = sanitizeTurns(payload?.messages);
   if (!turns.length) throw new Error(mainT().main.noTurns);
   if (!turns.some(m => m.role === "user")) throw new Error(mainT().main.noUserMessage);
-  const model = payload.model || "claude-sonnet-4-5";
+  const model = payload.model || "claude-opus-5-5";
   const info = modelCache.get(model);
   const caps = { webSearch: info?.webSearch ?? true, codeExecution: info?.codeExecution ?? true, imageInput: info?.imageInput ?? true, pdfInput: info?.pdfInput ?? true };
   const effort = payload.effort && info?.effortLevels.includes(payload.effort) ? payload.effort : undefined;

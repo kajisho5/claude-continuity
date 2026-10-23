@@ -103,7 +103,7 @@ export const settings: typeof Ja = {
     restoreFailed: "Could not restore: ",
     backup: "Backup",
     backupIntro: "Bundles your chats, projects, attachments, memory, settings and usage records into one ZIP. You can also use it to move to another PC.",
-    backupNoKey: "Your API key is not included (it is encrypted for this PC only). Set it again after restoring.",
+    backupNoKey: "Your API key and connectors are not included (their secrets are encrypted for this PC only). Set them again after restoring.",
     createBackup: "Create backup",
     restore: "Restore from backup",
     restoreIntro: "Replaces your current data with the backup's contents. The state before replacing is saved automatically, so you can undo a mistake.",

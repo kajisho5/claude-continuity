@@ -21,6 +21,7 @@ export const artifacts: typeof Ja = {
     searchPlaceholder: "Search artifacts…",
     emptyTitle: "No artifacts yet",
     emptyText: "When Claude creates HTML, SVG, Mermaid diagrams or longer Markdown documents, they'll show up here. In a chat they appear as cards; click one to open it on the right.",
+    noMatches: "No artifacts found.",
     versions: (n: number) => `${n} ${n === 1 ? "version" : "versions"}`
   }
 };

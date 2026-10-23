@@ -78,6 +78,13 @@ function snapshot(m: Msg): Reply {
 
 // Sidebar preview per message list, computed once per list (lists are replaced, not mutated, on change).
 const previews=new WeakMap<object,string>();
+const lowered=new WeakMap<Msg[],string>();
+/** Lower-cased text of every message, for the Chats page's full-text search (cached per messages array). */
+function searchTextOf(messages:Msg[]):string{
+  let t=lowered.get(messages);
+  if(t===undefined){t=messages.map(m=>m.content).join("\n").toLowerCase();lowered.set(messages,t);}
+  return t;
+}
 function previewOf(messages:Msg[]):string{
   let p=previews.get(messages);
   if(p===undefined){p=plainPreview([...messages].reverse().find(m=>m.role==="assistant")?.content??messages[0]?.content??"",140);previews.set(messages,p);}
@@ -91,7 +98,8 @@ export default function App() {
  const [draft,setDraft]=useState("");
  const [pendingAttachments,setPendingAttachments]=useState<Attachment[]>([]);
  const [search,setSearch]=useState("");
- const [model,setModel]=useState("claude-sonnet-4-5");
+ // Until the model list and the saved choice load; a missing id falls back to the newest Opus the key can use.
+ const [model,setModel]=useState("claude-opus-5-5");
  const [effort,setEffort]=useState("");
  const [availableModels,setAvailableModels]=useState<Model[]>([]);
  const [modelsLoading,setModelsLoading]=useState(false);
@@ -144,7 +152,7 @@ export default function App() {
 
  useEffect(()=>{
    Promise.all([window.continuity.keyStatus(),window.continuity.loadChats(),window.continuity.loadUsage(),window.continuity.loadCredit(),window.continuity.loadProjects(),window.continuity.loadPrefs()])
-    .then(([s,saved,usage,savedCredit,savedProjects,savedPrefs])=>{setConfigured(s.configured); if(saved.length){setChats(saved as Chat[]);setActive(saved[0].id);} setUsageRows(toUsageRows(usage)); setCredit(savedCredit); setOnboarding(!savedCredit?.onboardingDone); setProjects(savedProjects); setPrefs(savedPrefs); setLoaded(true);})
+    .then(([s,saved,usage,savedCredit,savedProjects,savedPrefs])=>{setConfigured(s.configured); if(saved.length){setChats(saved as Chat[]);setActive(saved[0].id);} setUsageRows(toUsageRows(usage)); setCredit(savedCredit); setOnboarding(!savedCredit?.onboardingDone); setProjects(savedProjects); setPrefs(savedPrefs); if(savedPrefs.lastEffort) setEffort(savedPrefs.lastEffort); setLoaded(true);})
     // Saving stays off when loading failed, so the empty window does not overwrite the history on disk.
     .catch(e=>{setLoadFailed(true);setStatus(t.app.status.loadFailedNoSave+err(e));});
    // Re-evaluate the credit cycle as time passes (day boundaries, expiry).
@@ -177,13 +185,17 @@ export default function App() {
    void window.continuity.answerApproval(current.approval.approvalId,decision);
    const next={...current,approval:undefined};pendingRef.current=next;setPending(next);
  }
+ // The user's own picks are remembered for the next launch (automatic choices are not saved).
+ function pickModel(id:string){setModel(id);void savePrefs(cur=>({...cur,lastModel:id}));}
+ function pickEffort(level:string){setEffort(level);void savePrefs(cur=>({...cur,lastEffort:level}));}
  async function refreshModels(announce=false){
    if(!configured){setSettings("api");setStatus(t.app.status.setKeyFirst);return;}
    setModelsLoading(true);
    try{
      const sorted=sortModels(await window.continuity.listModels());
      setAvailableModels(sorted);
-     setModel(current=>sorted.some(m=>m.id===current)?current:(sorted.find(m=>m.id.includes("opus"))?.id??sorted[0]?.id??current));
+     const saved=prefsRef.current.lastModel;
+     setModel(current=>saved&&sorted.some(m=>m.id===saved)?saved:sorted.some(m=>m.id===current)?current:(sorted.find(m=>m.id.includes("opus"))?.id??sorted[0]?.id??current));
      setStatus(sorted.length?t.app.status.modelsLoaded(sorted.length,announce):t.app.status.noModels);
    }catch(e){setStatus(t.app.status.modelsError+err(e));}
    finally{setModelsLoading(false);}
@@ -238,11 +250,11 @@ export default function App() {
    // Shortcuts modeled on the Claude apps: new chat, search, stop/close.
    const onKey=(e:KeyboardEvent)=>{
      const mod=e.metaKey||e.ctrlKey;
-     if(mod&&e.shiftKey&&e.key.toLowerCase()==="o"){e.preventDefault();newChat();}
+     if(mod&&e.shiftKey&&e.key.toLowerCase()==="o"){e.preventDefault();setSettings(null);newChat();}
      else if(mod&&e.shiftKey&&(e.key==="?"||e.code==="Slash")){e.preventDefault();setShortcuts(true);}
      else if(mod&&e.shiftKey&&e.key.toLowerCase()==="s"){e.preventDefault();setSidebarOpen(v=>!v);}
      else if(mod&&!e.shiftKey&&e.key.toLowerCase()==="k"){e.preventDefault();setSidebarOpen(true);setTimeout(()=>searchRef.current?.focus(),0);}
-     else if(mod&&e.key==="/"){e.preventDefault();composerRef.current?.focus();}
+     else if(mod&&e.key==="/"){e.preventDefault();setSettings(null);setView("chat");requestAnimationFrame(()=>composerRef.current?.focus());}
      // Esc also cancels an IME conversion; that keystroke must not stop the reply or close anything.
      else if(e.key==="Escape"&&!e.isComposing&&e.keyCode!==229){
        if(projectModal) setProjectModal(null);
@@ -507,8 +519,8 @@ export default function App() {
    onPaste={e=>void onPaste(e)} onSend={()=>void send()} onStop={stop} busy={busy}
    tools={chat.incognito?{...chat.tools,memory:false}:chat.tools??{}} onTools={tools=>patchChat(chat.id,c=>({...c,tools}))} projectMemory={chatProject?.memory}
    style={chat.style==="custom"?"custom:custom":chat.style??"standard"} styles={[...STYLE_IDS.map(id=>({value:id,label:t.app.styles[id]})),...prefs.customStyles.map(st=>({value:"custom:"+st.id,label:st.name}))]} onStyle={v=>patchChat(chat.id,c=>({...c,style:v}))}
-   model={model} models={availableModels.length?availableModels.map(m=>({value:m.id,label:m.displayName})):[{value:model,label:modelsLoading?t.app.modelsLoading:model}]} onModel={setModel} modelsLoading={modelsLoading} onRefreshModels={()=>void refreshModels(true)}
-   effort={effort} efforts={currentModel?.effortLevels.length?[{value:"",label:t.app.effortDefault},...currentModel.effortLevels.map(l=>({value:l,label:t.app.effort(t.app.effortLevels[l]??l)}))]:[]} onEffort={setEffort}
+   model={model} models={availableModels.length?availableModels.map(m=>({value:m.id,label:m.displayName})):[{value:model,label:modelsLoading?t.app.modelsLoading:model}]} onModel={pickModel} modelsLoading={modelsLoading} onRefreshModels={()=>void refreshModels(true)}
+   effort={effort} efforts={currentModel?.effortLevels.length?[{value:"",label:t.app.effortDefault},...currentModel.effortLevels.map(l=>({value:l,label:t.app.effort(t.app.effortLevels[l]??l)}))]:[]} onEffort={pickEffort}
    connectors={chat.incognito?[]:connectors.filter(c=>c.enabled).map(c=>({id:c.id,name:c.name}))} onManageConnectors={()=>setSettings("connectors")}
    placeholder={chat.incognito?t.app.placeholder.incognito:fresh?t.app.placeholder.fresh:t.app.placeholder.reply} placement={fresh?"down":"up"}/></>;
  return <ArtifactContext.Provider value={setArtifact}><div className={"shell chatfont-"+prefs.chatFont+(sidebarOpen?"":" sidebar-closed")+" flex h-screen min-h-[600px]"+(prefs.chatFont==="sans"?" [--chat-font:var(--sans)]":prefs.chatFont==="system"?' [--chat-font:system-ui,-apple-system,"Segoe_UI","Hiragino_Sans","Yu_Gothic_UI",sans-serif]':"")}>
@@ -551,6 +563,7 @@ export default function App() {
     view==="project"&&openProjectData?<div className="workspace flex min-h-0 flex-1"><ProjectPage project={openProjectData} chats={chatRows} now={now} onBack={()=>setView("projects")}
       onEdit={()=>setProjectModal({project:openProjectData,isNew:false})} onStart={()=>newChat(openProjectData.id)} onOpenChat={id=>{setActive(id);setView("chat");}}/></div>:
    view==="chats"?<div className="workspace flex min-h-0 flex-1"><ChatsPage now={now} onNew={()=>newChat()} onDelete={ids=>setConfirmBulk(ids)} onOpen={id=>{setActive(id);setView("chat");}}
+     searchIn={(id,q)=>{const c=chats.find(x=>x.id===id);return !!c&&searchTextOf(c.messages).includes(q);}}
      chats={chatRows.map(c=>({...c,projectName:projects.find(p=>p.id===c.projectId)?.name}))}/></div>:
    <div className="workspace flex min-h-0 flex-1">
     <div className={"conversation relative flex min-w-0 flex-1 flex-col"+(fresh?" fresh items-center justify-center overflow-auto":"")+(chat.incognito?" incognito":"")}>
