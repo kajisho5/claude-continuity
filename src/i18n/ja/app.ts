@@ -19,7 +19,6 @@ export const app = {
   approvalElsewhere: (title: string) => `「${title}」でツールの実行が承認を待っています`,
   openChat: "開く",
   status: {
-    initError: "初期化エラー: ",
     loadFailedNoSave: "会話を読み込めなかったため、上書きしないよう保存を止めています。アプリを再起動してください: ",
     setKeyFirst: "先にAnthropic APIキーを設定してください",
     modelsLoaded: (n: number, refreshed: boolean) => `${n}件の利用可能モデルを${refreshed ? "更新" : "取得"}しました`,

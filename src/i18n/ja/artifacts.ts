@@ -19,6 +19,7 @@ export const artifacts = {
     searchPlaceholder: "アーティファクトを検索…",
     emptyTitle: "まだアーティファクトはありません",
     emptyText: "Claude が HTML・SVG・図（Mermaid）・長めの文書（Markdown）を書くと、ここにまとまります。会話の中ではカードとして表示され、クリックすると右側で開きます。",
+    noMatches: "一致するアーティファクトはありません。",
     versions: (n: number) => `${n} バージョン`
   }
 };

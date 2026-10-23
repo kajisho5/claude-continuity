@@ -59,7 +59,7 @@ export const pages: typeof Ja = {
     knowledgeEmpty: "Add PDFs or text files and Claude will reference them in every chat in this project",
     addFiles: "Add files",
     useMemory: "Use memory in this project",
-    memoryHint: "Memories are saved in the memories folder on this device. Review or delete them in API settings",
+    memoryHint: "Memories are saved in the memories folder on this device. Review or delete them in Settings → Styles & memory",
     confirmDelete: "Delete this project? Its chats will be kept."
   }
 };

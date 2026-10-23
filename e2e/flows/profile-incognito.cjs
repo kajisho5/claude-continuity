@@ -9,8 +9,10 @@ module.exports = async function profileIncognito(ctx) {
   await openSettings(w);
   await w.fill(".settings input[placeholder*='あいさつ']", "Shota"); await w.keyboard.press("Enter");
   await w.click(".settings .toggle-row:has-text('この名前で呼んでもらう') input");
-  await w.fill(".settings textarea[placeholder*='経営企画']", "回答は結論から書いてください。"); await w.click(".settings h3 >> nth=0");
-  await w.keyboard.press("Escape");
+  // Closing with Esc right after typing (no blur) still saves the instructions.
+  await w.fill(".settings textarea[placeholder*='経営企画']", "回答は結論から書いてください。");
+  await w.keyboard.press("Escape"); await w.waitForSelector(".settings", { state: "detached" });
+  await until(() => w.evaluate(() => window.continuity.loadPrefs()), p => p.preferences === "回答は結論から書いてください。", { message: "instructions saved on Esc" });
 
   await w.click(".new-chat"); await ask(w, "通常の会話です");
   // The profile reaches the system prompt.
@@ -30,4 +32,7 @@ module.exports = async function profileIncognito(ctx) {
   await w.click(".chatrow >> nth=0 >> .chatlink");
   await w.click(".side-nav:has-text('チャット')"); await w.waitForSelector(".chats-page");
   assert.deepEqual(await w.locator(".chats-title").allTextContents(), ["四半期の論点", "はじめに"], "the incognito chat is gone after leaving it");
+  // Search covers the whole conversation, not only the title and the last reply.
+  await w.fill(".chats-search input", "通常の会話です");
+  assert.deepEqual(await w.locator(".chats-title").allTextContents(), ["四半期の論点"], "full-text search finds the chat by a user message");
 };

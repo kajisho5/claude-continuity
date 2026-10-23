@@ -48,7 +48,7 @@ A desktop app (Windows / macOS / Linux, Electron + React) for continuing Claude 
 - **Theme and fonts**: dark / light / system, chat font
 - **Backup and restore**; export chats as JSON or HTML
 - **In-app updates**: lets you know about a new version, then downloads and restarts when you press the button
-- **Quick access shortcut**: `Ctrl/⌘ + Alt/⌥ + Space` (change or turn off in Settings → General) brings the app forward with a new chat from any app
+- **Quick access shortcut**: `Ctrl + Alt + Space` on Windows/Linux, `⌘ + Shift + Space` on macOS (change or turn off in Settings → General) brings the app forward with a new chat from any app
 - **Screenshot attachments**: the camera button in the message box captures the screen under the pointer (macOS needs Screen Recording permission)
 - **Reply notifications** and keyboard shortcuts (`Ctrl/⌘ + Shift + ?` lists them)
 
@@ -127,9 +127,10 @@ The app ships an MCP server (`dist-mcp/server.js`). Register it with Claude Code
 
 ### Backup and moving to another computer
 
-Settings → "Data & backup" exports all data as a single ZIP.
+Settings → "Data & backup" exports chats, projects, settings, usage and credit records, memory and attachments as a single ZIP.
 
 - The API key is not included, because it is encrypted per computer; set it again on the new computer.
+- Connectors (MCP servers) are not included either, because their tokens and environment variables are encrypted per computer. Add them again on the new computer; restoring keeps the connectors already set up there.
 - Restoring replaces the current data; the previous state is saved automatically as `backups/before-restore-*.zip`.
 
 ## Known limitations

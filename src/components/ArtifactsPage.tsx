@@ -26,6 +26,7 @@ export default function ArtifactsPage({ entries, now, onOpen }: { entries: Artif
     {entries.length === 0
       ? <div className={EMPTY}><Code2 size={28} /><b className={EMPTY_TITLE}>{a.emptyTitle}</b>
         <p className={EMPTY_TEXT}>{a.emptyText}</p></div>
+      : shown.length === 0 ? <p className="hint mb-0 mt-[16px]">{a.noMatches}</p>
       : <div className={GRID}>
         {shown.map(e => { const Icon = ICON[e.latest.language]; return <button key={e.chatId + e.key} className={CARD + " artifact-entry"} onClick={() => onOpen(e)}>
           <span className={ARTIFACT_THUMB + " size-[40px]"}><Icon size={20} /></span>

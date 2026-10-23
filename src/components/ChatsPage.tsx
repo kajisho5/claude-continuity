@@ -21,7 +21,7 @@ export const STAR = "star-on text-warn";
 type Row = { id: string; title: string; updatedAt?: string; starred?: boolean; projectName?: string; preview: string };
 
 /** Full chat history with search, like the "Chats" page of the Claude apps. */
-export default function ChatsPage({ chats, onOpen, onNew, onDelete, now }: { chats: Row[]; onOpen: (id: string) => void; onNew: () => void; onDelete: (ids: string[]) => void; now: number }) {
+export default function ChatsPage({ chats, onOpen, onNew, onDelete, now, searchIn }: { chats: Row[]; onOpen: (id: string) => void; onNew: () => void; onDelete: (ids: string[]) => void; now: number; searchIn?: (id: string, lowerQuery: string) => boolean }) {
   const t = useT();
   const s = t.pages.chats;
   const [query, setQuery] = useState("");
@@ -30,9 +30,9 @@ export default function ChatsPage({ chats, onOpen, onNew, onDelete, now }: { cha
   const toggle = (id: string) => setSelected(prev => { const next = new Set(prev); if (next.has(id)) next.delete(id); else next.add(id); return next; });
   const rows = useMemo(() => {
     const q = query.trim().toLowerCase();
-    const filtered = q ? chats.filter(c => c.title.toLowerCase().includes(q) || c.preview.toLowerCase().includes(q)) : chats;
+    const filtered = q ? chats.filter(c => c.title.toLowerCase().includes(q) || c.preview.toLowerCase().includes(q) || !!searchIn?.(c.id, q)) : chats;
     return [...filtered].sort((a, b) => (Date.parse(b.updatedAt ?? "") || 0) - (Date.parse(a.updatedAt ?? "") || 0));
-  }, [chats, query]);
+  }, [chats, query, searchIn]);
   return <section className={PAGE}>
     <div className={PAGE_HEAD}><h1 className={PAGE_TITLE}>{s.title}</h1><button className="btn-primary" onClick={onNew}><Plus size={15} />{s.newChat}</button></div>
     <label className={SEARCH}><Search size={16} /><input className={SEARCH_INPUT} autoFocus value={query} onChange={e => setQuery(e.target.value)} placeholder={s.searchPlaceholder} aria-label={s.search} /></label>

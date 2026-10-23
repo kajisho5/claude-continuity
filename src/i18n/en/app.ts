@@ -23,7 +23,6 @@ export const app: typeof Ja = {
   approvalElsewhere: (title: string) => `A tool in "${title}" is waiting for your approval`,
   openChat: "Open",
   status: {
-    initError: "Startup error: ",
     loadFailedNoSave: "Couldn't load your chats, so saving is paused to avoid overwriting them. Restart the app: ",
     setKeyFirst: "Set your Anthropic API key first",
     modelsLoaded: (n: number, refreshed: boolean) => `${refreshed ? "Refreshed" : "Loaded"} ${n} available ${n === 1 ? "model" : "models"}`,
