@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Infinity as InfinityIcon, KeyRound, MessageSquare, Plus, Send, Settings2, ShieldCheck, FileUp, Download, Trash2, Square, RefreshCw, ExternalLink, Paperclip, FolderOpen, Pencil } from "lucide-react";
+import { KeyRound, MessageSquare, Plus, Send, Settings2, ShieldCheck, FileUp, Download, Trash2, Square, RefreshCw, ExternalLink, Paperclip, FolderOpen, Pencil } from "lucide-react";
 import CreditCard from "./components/CreditCard";
+import LogoMark from "./components/LogoMark";
 import CreditSettingsForm from "./components/CreditSettingsForm";
 import OnboardingWizard from "./components/OnboardingWizard";
 import { ArtifactContext, Markdown, ThinkingBlock, type ArtifactRequest } from "./components/MessageContent";
@@ -253,7 +254,7 @@ export default function App() {
  const lastAssistant=chat.messages.length-1;
  return <ArtifactContext.Provider value={setArtifact}><div className="shell">
   <aside>
-   <div className="brand"><span className="mark"><InfinityIcon size={19}/></span><div><b>Claude Continuity</b><small>LOCAL WORKSPACE</small></div></div>
+   <div className="brand"><span className="mark"><LogoMark size={36} title="Claude Continuity"/></span><div><b>Claude Continuity</b><small>LOCAL WORKSPACE</small></div></div>
    <button className="btn-primary new" onClick={newChat}><Plus size={16}/> 新しい会話</button>
    <button className="nav" onClick={()=>void importExport()}><FileUp size={16}/> Claudeエクスポートを読み込む</button>
    <CreditCard summary={summary} totals={usageTotal} onConfigure={()=>setOnboarding(true)}/>
@@ -279,10 +280,10 @@ export default function App() {
    <div className="workspace">
     <div className="conversation">
      <section className="messages" ref={messagesRef}>
-      {chat.messages.length===0&&!showPending&&<div className="empty"><InfinityIcon size={30}/><h1>{chatProject?chatProject.name:"会話を続ける"}</h1><p>{chatProject?"このプロジェクトの指示とナレッジが自動で付きます。":"インポートした履歴を選ぶか、ここから新しい会話を始めます。"}</p>{!chatProject&&<button className="btn-secondary" onClick={()=>void importExport()}><FileUp size={16}/> Claudeのエクスポートを読み込む</button>}</div>}
+      {chat.messages.length===0&&!showPending&&<div className="empty"><LogoMark size={64}/><h1>{chatProject?chatProject.name:"会話を続ける"}</h1><p>{chatProject?"このプロジェクトの指示とナレッジが自動で付きます。":"インポートした履歴を選ぶか、ここから新しい会話を始めます。"}</p>{!chatProject&&<button className="btn-secondary" onClick={()=>void importExport()}><FileUp size={16}/> Claudeのエクスポートを読み込む</button>}</div>}
       {chat.messages.map((m,i)=><MessageItem key={`${chat.id}-${i}`} message={m} isLast={i===lastAssistant&&!showPending} busy={busy}
         onRegenerate={()=>regenerate(i)} onEdit={text=>editAndResend(i,text)} onSelectAlternate={alt=>selectAlternate(i,alt)} onSaveFile={(id,name)=>void saveFile(id,name)}/>)}
-      {showPending&&<article className="message assistant pending"><div className="avatar"><InfinityIcon size={16}/></div><div className="msgbody"><b>Claude</b>
+      {showPending&&<article className="message assistant pending"><div className="avatar brand-avatar"><LogoMark size={31}/></div><div className="msgbody"><b>Claude</b>
         <ThinkingBlock text={pending.thinking} live={!pending.text}/>
         {pending.activity&&<p className="activity">{pending.activity}</p>}
         {pending.text?<Markdown text={pending.text}/>:!pending.thinking&&!pending.activity&&<p className="busy">Claudeが応答中…</p>}

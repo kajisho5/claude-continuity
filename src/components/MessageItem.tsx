@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { ChevronLeft, ChevronRight, Download, FileText, Image as ImageIcon, Infinity as InfinityIcon, Pencil, RefreshCw } from "lucide-react";
+import { ChevronLeft, ChevronRight, Download, FileText, Image as ImageIcon, Pencil, RefreshCw } from "lucide-react";
+import LogoMark from "./LogoMark";
 import { CopyButton, Markdown, ThinkingBlock, linkCitations } from "./MessageContent";
 import { formatUsd } from "../lib/pricing";
 
@@ -69,7 +70,7 @@ export default function MessageItem({ message: m, isLast, busy, onRegenerate, on
       {!editing && <div className="msg-actions"><CopyButton text={m.content} /><button className="copy-btn" disabled={busy} onClick={() => { setDraft(m.content); setEditing(true); }}><Pencil size={13} />編集</button></div>}
     </div></article>;
   }
-  return <article className="message assistant"><div className="avatar"><InfinityIcon size={16} /></div><div className="msgbody">
+  return <article className="message assistant"><div className="avatar brand-avatar"><LogoMark size={31} /></div><div className="msgbody">
     <b>Claude{m.model && <span className="msg-meta">{m.model}{m.costUsd != null ? ` · ${formatUsd(m.costUsd, 4)}` : ""}</span>}</b>
     {m.thinking && <ThinkingBlock text={m.thinking} />}
     <Markdown text={linkCitations(m.content, m.citations)} />
