@@ -48,7 +48,7 @@ const Composer = forwardRef<ComposerHandle, Props>(function Composer(p, ref) {
     + (p.incognito ? "border-dashed border-line-input" : "border-line-strong")}>
     {p.attachments.length > 0 && <div className="attachment-row mt-[6px] mb-[8px] flex flex-wrap gap-[6px]">{p.attachments.map(a => <AttachmentChip key={a.id} attachment={a} onRemove={() => p.onRemoveAttachment(a.id)} />)}</div>}
     <textarea ref={area} rows={1} className={"block h-auto max-h-[300px] w-full resize-none overflow-y-auto border-0 bg-transparent px-[2px] pt-[2px] pb-0 font-sans text-[15px] leading-[1.6] font-normal text-ink outline-none placeholder:text-subtle "
-      + (welcome ? "min-h-[48px] flex-1" : "min-h-[26px]")} value={p.draft} placeholder={p.placeholder} aria-label={t.composer.message}
+      + (welcome ? "min-h-[48px] flex-auto" : "min-h-[26px]")} value={p.draft} placeholder={p.placeholder} aria-label={t.composer.message}
       onChange={e => p.onDraft(e.target.value)} onPaste={p.onPaste}
       onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); if (!p.busy && canSend) p.onSend(); } }} />
     <div className="composer-bar mt-[10px] flex items-center gap-[4px]">
