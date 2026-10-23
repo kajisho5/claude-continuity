@@ -129,6 +129,26 @@ export const ja = {
     readyTitle: "アップデートの準備ができました",
     readyBody: (version: string) => `再起動するとバージョン ${version} になります。`
   },
+  compaction: {
+    summarizing: "古いやり取りを要約しています…",
+    attachments: (names: string) => `［添付: ${names}］`,
+    start: "（会話の始まり）",
+    system: "あなたは会話の記録係です。渡された会話（と、あればこれまでの要約）を、続きの会話に必要な情報が失われないように要約してください。目的、決まったこと、数値や固有名詞、ユーザーの好みや指示、未解決の点を残し、日本語の見出しと箇条書きで書いてください。前置きは不要です。",
+    request: (previous: string, transcript: string) => `${previous ? `<previous_summary>\n${previous}\n</previous_summary>\n\n` : ""}<conversation>\n${transcript}\n</conversation>\n\n${previous ? "これまでの要約に、この続きの会話の内容を加えた" : "この会話の"}要約を書いてください。`,
+    user: "ユーザー",
+    assistant: "アシスタント",
+    noticeSummarized: (n: number) => `古いやり取り ${n} 件は要約して送りました`
+  },
+  batch: {
+    noLocal: (names: string) => `Batch ではこの PC で動くツールを使えないため外しました: ${names}`,
+    noKnowledgeSearch: "Batch ではナレッジ検索を使えないため、大きなナレッジは送っていません",
+    notFound: "この Batch は見つかりません。",
+    expired: "24 時間以内に処理されませんでした（課金なし）",
+    canceled: "キャンセルしました",
+    errored: (message: string) => `処理できませんでした: ${message}`,
+    notifyTitle: "Batch の返答が届きました",
+    tooOld: "結果の保存期間（29 日）を過ぎました"
+  },
   main: {
     shortcutTaken: (keys: string) => `${keys} はほかのアプリが使っているため登録できませんでした。別の組み合わせを選んでください。`,
     captureFailed: "画面を取り込めませんでした。macOS では、システム設定 →「プライバシーとセキュリティ」→「画面収録」でこのアプリを許可してください。",

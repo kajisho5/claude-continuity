@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useT } from "../i18n";
 
-function Frame({ title, children, onClose }: { title: string; children: ReactNode; onClose: () => void }) {
+export function Frame({ title, children, onClose }: { title: string; children: ReactNode; onClose: () => void }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape" && !e.isComposing && e.keyCode !== 229) { e.stopPropagation(); onClose(); } };
     window.addEventListener("keydown", onKey, true);

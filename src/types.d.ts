@@ -15,16 +15,31 @@ type ContinuityMessage = ContinuityReply & {
   alternates?: ContinuityReply[];
   altIndex?: number;
 };
-type ContinuityTools = { research?: boolean; webSearch?: boolean; webFetch?: boolean; files?: boolean; analysis?: boolean; memory?: boolean; connectors?: string[] };
+type ContinuityTools = { research?: boolean; webSearch?: boolean; webFetch?: boolean; files?: boolean; analysis?: boolean; memory?: boolean; batch?: boolean; connectors?: string[] };
+/** A chat's summary of its older turns (electron/compaction.ts). */
+type ContinuitySummary = { upto: number; fingerprint: string; kind: "api" | "text"; block?: Record<string, unknown>; text: string; model: string; createdAt: string };
+type ContinuityReplyPayload = {
+  requestId: string; messages: { role: "user" | "assistant"; content: string; attachments?: ContinuityAttachment[] }[];
+  model?: string; effort?: string; style?: string; projectId?: string; tools?: ContinuityTools; containerId?: string; chatId?: string; incognito?: boolean;
+  compaction?: ContinuitySummary;
+};
+type ContinuityReplyResult = {
+  text: string; thinking: string; aborted?: boolean; usage: ContinuityUsage; costUsd?: number | null; citations: ContinuityCitation[]; files: ContinuityFile[];
+  container?: { id: string; expiresAt?: string }; notices?: string[]; steps: ContinuityStep[]; stopReason?: string; compaction?: ContinuitySummary;
+};
+type ContinuityBatchJob = {
+  id: string; chatId: string; chatTitle: string; model: string; createdAt: string; status: "pending" | "done" | "expired" | "canceled" | "errored";
+  endedAt?: string; estimateUsd?: number; costUsd?: number; error?: string; canceling?: boolean; result?: ContinuityReplyResult;
+};
 type ContinuityConversation = {
   id: string; title: string; messages: ContinuityMessage[]; source?: string;
-  projectId?: string; style?: string; tools?: ContinuityTools; container?: { id: string; expiresAt?: string };
+  projectId?: string; style?: string; tools?: ContinuityTools; container?: { id: string; expiresAt?: string }; compaction?: ContinuitySummary;
 };
 type ContinuityProject = { id: string; name: string; instructions: string; knowledge: ContinuityAttachment[]; memory: boolean };
 type ContinuityPrefs = import("./lib/prefs").Prefs;
 type ContinuityUsage = {
   model: string; inputTokens: number; outputTokens: number;
-  cacheCreationInputTokens: number; cacheReadInputTokens: number; webSearchRequests?: number; source?: string;
+  cacheCreationInputTokens: number; cacheReadInputTokens: number; webSearchRequests?: number; source?: string; batch?: boolean;
 };
 type ContinuityModel = {
   id: string; displayName: string; createdAt?: string; maxTokens?: number; maxInputTokens?: number;
@@ -60,6 +75,7 @@ declare global {
       deleteSkill: (id: string) => Promise<boolean>;
       importDesktopConnectors: () => Promise<{ list: ContinuityConnector[]; added: number; found: number; file: string }>;
       resetAllowedTools: (id: string) => Promise<ContinuityConnector[]>;
+      setConnectorEnabled: (id: string, enabled: boolean) => Promise<ContinuityConnector[]>;
       answerApproval: (approvalId: string, decision: import("./lib/connectors").ApprovalDecision) => Promise<boolean>;
       onApproval: (listener: (approval: import("./lib/connectors").ToolApproval) => void) => () => void;
       deleteConnector: (id: string) => Promise<ContinuityConnector[]>;
@@ -89,13 +105,14 @@ declare global {
       mcpInfo: () => Promise<{ serverPath: string; runtimePath: string; dataDir: string; platform: string; unstable?: boolean }>;
       pickMcpFolders: () => Promise<string[]>;
       listModels: () => Promise<ContinuityModel[]>;
-      reply: (payload: {
-        requestId: string; messages: { role: "user" | "assistant"; content: string; attachments?: ContinuityAttachment[] }[];
-        model?: string; effort?: string; style?: string; projectId?: string; tools?: ContinuityTools; containerId?: string; chatId?: string; incognito?: boolean;
-      }) => Promise<{
-        text: string; thinking: string; aborted: boolean; usage: ContinuityUsage; costUsd?: number | null; citations: ContinuityCitation[]; files: ContinuityFile[];
-        container?: { id: string; expiresAt?: string }; notices: string[]; steps: ContinuityStep[]; stopReason?: string;
-      }>;
+      reply: (payload: ContinuityReplyPayload) => Promise<ContinuityReplyResult & { aborted: boolean; notices: string[] }>;
+      estimate: (payload: ContinuityReplyPayload) => Promise<{ model: string; inputTokens: number; maxOutputTokens: number; withoutTools: boolean }>;
+      createBatch: (payload: ContinuityReplyPayload & { chatTitle: string; estimateUsd?: number }) => Promise<{ job: ContinuityBatchJob; notices: string[]; compaction?: ContinuitySummary; summaryCostUsd?: number }>;
+      listBatches: () => Promise<ContinuityBatchJob[]>;
+      cancelBatch: (id: string) => Promise<ContinuityBatchJob[]>;
+      ackBatch: (id: string) => Promise<ContinuityBatchJob[]>;
+      clearBatches: () => Promise<ContinuityBatchJob[]>;
+      onBatchUpdate: (listener: (jobs: ContinuityBatchJob[]) => void) => () => void;
       generateTitle: (user: string, assistant: string) => Promise<{ title: string | null; usage: { model: string; inputTokens: number; outputTokens: number } } | null>;
       abortReply: (requestId: string) => Promise<boolean>;
       onStream: (listener: (event: { requestId: string; kind: "text" | "thinking" | "activity"; delta: string }) => void) => () => void;

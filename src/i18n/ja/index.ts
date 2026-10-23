@@ -11,5 +11,6 @@ import { settings } from "./settings";
 import { credit } from "./credit";
 import { onboarding } from "./onboarding";
 import { runtime } from "./runtime";
+import { spend } from "./spend";
 
-export const ja = { common, app, composer, message, lib, menus, dialogs, artifacts, pages, settings, credit, onboarding, runtime };
+export const ja = { common, app, composer, message, lib, menus, dialogs, artifacts, pages, settings, credit, onboarding, runtime, spend };

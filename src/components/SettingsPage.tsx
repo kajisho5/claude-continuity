@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type { ConnectorView } from "../lib/connectors";
 import { Cable, Sparkles, CreditCard as CreditIcon, HardDrive, ExternalLink, Info, KeyRound, MessageSquareText, Plug, ShieldCheck, UserRound, X } from "lucide-react";
 import CreditSettingsForm from "./CreditSettingsForm";
+import LimitsSection, { LongChatsSection } from "./LimitsSection";
 import PreferencesSection from "./PreferencesSection";
 import McpSection from "./McpSection";
 import DataSection from "./DataSection";
@@ -164,8 +165,10 @@ export default function SettingsPage(p: Props) {
             <a className="p-0 text-[10px]" href="https://platform.claude.com/docs/en/about-claude/api-credits-for-subscribers" target="_blank" rel="noreferrer">{t.settings.creditGuide.officialSteps}</a>
             <a className="p-0 text-[10px]" href="https://platform.claude.com/settings/billing" target="_blank" rel="noreferrer">{t.settings.creditGuide.openBilling}</a>
             <button className="link p-0 text-[10px]" onClick={p.onRestartOnboarding}>{t.settings.creditGuide.restartOnboarding}</button></div>
+          <LimitsSection prefs={p.prefs} onSave={change => p.onSavePrefs(change)} />
         </>}
-        {tab === "responses" && <PreferencesSection prefs={p.prefs} onSave={p.onSavePrefs} model={p.model} onUsage={p.onUsage} />}
+        {tab === "responses" && <><PreferencesSection prefs={p.prefs} onSave={p.onSavePrefs} model={p.model} onUsage={p.onUsage} />
+          <LongChatsSection prefs={p.prefs} onSave={change => p.onSavePrefs(change)} /></>}
         {tab === "skills" && <SkillsSection prefs={p.prefs} configured={p.configured} onSavePrefs={next => void p.onSavePrefs(next)} onReloadPrefs={() => void window.continuity.loadPrefs().then(p.onSavePrefs)} />}
         {tab === "connectors" && <ConnectorsSection onChange={p.onConnectors} />}
         {tab === "data" && <DataSection onNotice={p.onNotice} />}

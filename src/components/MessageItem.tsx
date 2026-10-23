@@ -3,6 +3,7 @@ import { ChevronLeft, ChevronRight, Download, FileText, Image as ImageIcon, Penc
 import { CopyButton, Markdown, ThinkingBlock, linkCitations } from "./MessageContent";
 import { LogoGlyph } from "./LogoMark";
 import StepsBlock from "./StepsBlock";
+import BatchPendingCard, { type BatchState } from "./BatchPendingCard";
 import { stopNotice, type ToolStep } from "../lib/steps";
 import { formatUsd } from "../lib/pricing";
 import { useT } from "../i18n";
@@ -12,6 +13,8 @@ type Reply = {
   content: string; thinking?: string; thinkingSeconds?: number; model?: string; costUsd?: number; aborted?: boolean;
   citations?: { url: string; title: string }[]; files?: { fileId: string; name: string; size?: number }[];
   steps?: ToolStep[]; stopReason?: string;
+  /** Sent with Batch: the reply arrives later and takes this message's place. */
+  batch?: BatchState;
 };
 export type MsgVersion = { content: string; attachments?: Attachment[]; tail: Msg[] };
 export type Msg = Reply & { role: "user" | "assistant"; attachments?: Attachment[]; alternates?: Reply[]; altIndex?: number; versions?: MsgVersion[]; versionIndex?: number };
@@ -120,9 +123,12 @@ type Props = {
   onSaveFile: (fileId: string, name: string) => void;
   onContinue: () => void;
   onSelectVersion: (index: number) => void;
+  batchJob?: Awaited<ReturnType<typeof window.continuity.listBatches>>[number];
+  onCancelBatch?: () => void;
+  onResendBatch?: () => void;
 };
 
-export default function MessageItem({ message: m, isLast, busy, onRegenerate, onEdit, onSelectAlternate, onSaveFile, onContinue, onSelectVersion }: Props) {
+export default function MessageItem({ message: m, isLast, busy, onRegenerate, onEdit, onSelectAlternate, onSaveFile, onContinue, onSelectVersion, batchJob, onCancelBatch, onResendBatch }: Props) {
   const t = useT();
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(m.content);
@@ -151,6 +157,11 @@ export default function MessageItem({ message: m, isLast, busy, onRegenerate, on
           <button className="icon-action" disabled={busy || versionIndex >= versions - 1} onClick={() => onSelectVersion(versionIndex + 1)} aria-label={t.message.nextVersion}><ChevronRight size={15} /></button>
         </span>}
       </div>}
+    </article>;
+  }
+  if (m.batch && m.batch.status !== "done") {
+    return <article className={ASSISTANT_ARTICLE + " batch-message"}>
+      <BatchPendingCard state={m.batch} job={batchJob} busy={busy} onCancel={() => onCancelBatch?.()} onResend={() => onResendBatch?.()} />
     </article>;
   }
   const notice = stopNotice(m.stopReason);

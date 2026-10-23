@@ -1,19 +1,21 @@
 import { useState } from "react";
-import { BarChart3, Brain, Check, ChevronRight, FileSpreadsheet, Globe, PenLine, Plug, Plus, Search, SlidersHorizontal, Telescope } from "lucide-react";
+import { BarChart3, Brain, Check, ChevronRight, FileSpreadsheet, Globe, PenLine, Plug, Plus, Search, SlidersHorizontal, Telescope, Timer } from "lucide-react";
 import { usePopover } from "./Popover";
 import { useT, type Messages } from "../i18n";
 
-export type Tools = { research?: boolean; webSearch?: boolean; webFetch?: boolean; files?: boolean; analysis?: boolean; memory?: boolean; connectors?: string[] };
+export type Tools = { research?: boolean; webSearch?: boolean; webFetch?: boolean; files?: boolean; analysis?: boolean; memory?: boolean; batch?: boolean; connectors?: string[] };
 export type ConnectorOption = { id: string; name: string };
 type Key = Exclude<keyof Tools, "connectors">;
 type Option = { value: string; label: string };
-const items = ({ menus: { tools: m } }: Messages): { key: Key; title: string; desc: string; icon: typeof Search; chip: string }[] => [
+const items = ({ menus: { tools: m }, spend: { batch: b } }: Messages): { key: Key; title: string; desc: string; icon: typeof Search; chip: string }[] => [
   { key: "research", title: m.researchTitle, desc: m.researchDesc, icon: Telescope, chip: m.researchChip },
   { key: "webSearch", title: m.webSearchTitle, desc: m.webSearchDesc, icon: Search, chip: m.webSearchChip },
   { key: "webFetch", title: m.webFetchTitle, desc: m.webFetchDesc, icon: Globe, chip: m.webFetchChip },
   { key: "files", title: m.filesTitle, desc: m.filesDesc, icon: FileSpreadsheet, chip: m.filesChip },
   { key: "analysis", title: m.analysisTitle, desc: m.analysisDesc, icon: BarChart3, chip: m.analysisChip },
-  { key: "memory", title: m.memoryTitle, desc: m.memoryDesc, icon: Brain, chip: m.memoryChip }
+  { key: "memory", title: m.memoryTitle, desc: m.memoryDesc, icon: Brain, chip: m.memoryChip },
+  // Not a tool for Claude: how the message is sent (Message Batches API, half price, the reply arrives later).
+  { key: "batch", title: b.tool, desc: b.toolDesc, icon: Timer, chip: b.chip }
 ];
 
 // Legacy .tool-chip (+ light override and the composer @container rules); the composer root is the container.
@@ -31,12 +33,14 @@ type Props = {
   tools: Tools; onChange: (next: Tools) => void; disabled?: boolean; projectMemory?: boolean;
   style: string; styles: Option[]; onStyle: (v: string) => void; placement?: "up" | "down";
   connectors?: ConnectorOption[]; onManageConnectors?: () => void;
+  /** Batch is left out where a reply delivered later has nowhere to go (incognito chats). */
+  noBatch?: boolean;
 };
 
-export default function ToolsMenu({ tools, onChange, disabled, projectMemory, style, styles, onStyle, placement, connectors = [], onManageConnectors }: Props) {
+export default function ToolsMenu({ tools, onChange, disabled, projectMemory, style, styles, onStyle, placement, connectors = [], onManageConnectors, noBatch }: Props) {
   const t = useT();
   const m = t.menus.tools;
-  const ITEMS = items(t);
+  const ITEMS = items(t).filter(item => !(noBatch && item.key === "batch"));
   const { open, setOpen, ref } = usePopover();
   const [stylesOpen, setStylesOpen] = useState(false);
   const active = ITEMS.filter(item => tools[item.key] || (item.key === "memory" && projectMemory));

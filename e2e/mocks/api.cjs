@@ -17,6 +17,39 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 function start(port = 8787) {
   const log = [];
   let skills = [];
+  // Message Batches: a batch ends a second after it is created (or when canceled).
+  const batches = new Map();
+  const batchObj = (id) => {
+    const b = batches.get(id);
+    // "ゆっくり" in the request keeps it processing long enough to cancel.
+    const ended = b.canceled || Date.now() - b.created > (b.slow ? 60000 : 1000);
+    const n = b.requests.length;
+    return { id, type: "message_batch", processing_status: ended ? "ended" : "in_progress",
+      request_counts: { processing: ended ? 0 : n, succeeded: ended && !b.canceled ? n : 0, errored: 0, canceled: b.canceled ? n : 0, expired: 0 },
+      created_at: new Date(b.created).toISOString(), ended_at: ended ? new Date().toISOString() : null, expires_at: new Date(b.created + 86400000).toISOString(),
+      archived_at: null, cancel_initiated_at: b.canceled ? new Date().toISOString() : null, results_url: ended ? `http://127.0.0.1:${port}/v1/messages/batches/${id}/results` : null };
+  };
+  function batchRoute(req, res, body) {
+    res.setHeader("content-type", "application/json");
+    const parts = new URL(req.url, "http://x").pathname.split("/").filter(Boolean); // v1 messages batches [id] [results|cancel]
+    if (req.method === "POST" && parts.length === 3) {
+      const b = JSON.parse(body);
+      const id = "msgbatch_" + (batches.size + 1);
+      batches.set(id, { created: Date.now(), requests: b.requests, canceled: false, slow: body.includes("ゆっくり") });
+      const params = b.requests[0].params;
+      log.push("batch create " + JSON.stringify({ beta: req.headers["anthropic-beta"] || "", n: b.requests.length, stream: params.stream ?? null, tools: (params.tools || []).map(t => t.name), messages: params.messages.length }));
+      return res.end(JSON.stringify(batchObj(id)));
+    }
+    const id = parts[3];
+    if (!batches.has(id)) { res.statusCode = 404; return res.end(JSON.stringify({ type: "error", error: { type: "not_found_error", message: "not found" } })); }
+    if (req.method === "POST" && parts[4] === "cancel") { batches.get(id).canceled = true; log.push("batch cancel " + id); return res.end(JSON.stringify(batchObj(id))); }
+    if (parts[4] === "results") {
+      const b = batches.get(id);
+      res.setHeader("content-type", "application/binary");
+      return res.end(b.requests.map(r => JSON.stringify({ custom_id: r.custom_id, result: b.canceled ? { type: "canceled" } : { type: "succeeded", message: { id: "msg_b", type: "message", role: "assistant", model: r.params.model, content: [{ type: "text", text: "Batch の返答です。半額で処理しました。" }], stop_reason: "end_turn", stop_sequence: null, usage: { input_tokens: 5000, output_tokens: 300, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 } } } })).join("\n"));
+    }
+    return res.end(JSON.stringify(batchObj(id)));
+  }
   const server = http.createServer((req, res) => {
   let body = ""; req.on("data", c => body += c); req.on("end", async () => {
     log.push(`${req.method} ${req.url}`);
@@ -40,8 +73,24 @@ function start(port = 8787) {
       if (req.method === "DELETE" && parts.length === 3) { skills = skills.filter(k => k.id !== parts[2]); return res.end(JSON.stringify({ id: parts[2], type: "skill_deleted" })); }
       res.statusCode = 404; return res.end("{}");
     }
+    if (req.url.startsWith("/v1/messages/count_tokens")) {
+      const b = JSON.parse(body);
+      const chars = JSON.stringify(b.messages).length + JSON.stringify(b.system || "").length;
+      log.push("count " + JSON.stringify({ model: b.model, n: b.messages.length, tools: !!b.tools, first: b.messages[0] && b.messages[0].role }));
+      res.setHeader("content-type", "application/json");
+      return res.end(JSON.stringify({ input_tokens: Math.ceil(chars / 2) }));
+    }
+    if (req.url.startsWith("/v1/messages/batches")) return batchRoute(req, res, body);
     if (req.url.startsWith("/v1/messages")) {
       const b = JSON.parse(body);
+      if (b.compaction) {
+        log.push("compact " + JSON.stringify({ beta: req.headers["anthropic-beta"] || "", model: b.model, n: b.messages.length, first: b.messages[0].role, prior: JSON.stringify(b.messages[0].content).includes("\"compaction\"") }));
+        res.setHeader("content-type", "application/json");
+        return res.end(JSON.stringify({ id: "msg_c", type: "message", role: "assistant", model: b.model, content: [{ type: "compaction", content: "## 要約\n- 前半で長い資料を共有した", encrypted_content: null }], stop_reason: "compaction", stop_sequence: null, usage: { input_tokens: 30000, output_tokens: 200, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 } }));
+      }
+      if (b.stream && JSON.stringify(b.messages[0].content).includes("<conversation_summary>")) log.push("text-summary " + JSON.stringify({ model: b.model, n: b.messages.length }));
+      if (!b.stream && JSON.stringify(b.system || "").includes("記録係")) log.push("summarize " + JSON.stringify({ model: b.model }));
+      if (b.stream && Array.isArray(b.messages[0].content) && b.messages[0].content[0] && b.messages[0].content[0].type === "compaction") log.push("summary-sent " + JSON.stringify({ beta: req.headers["anthropic-beta"] || "", role: b.messages[0].role, n: b.messages.length }));
       log.push("params " + JSON.stringify({ system: b.system, model: b.model, max_tokens: b.max_tokens, thinking: b.thinking, output_config: b.output_config, stream: b.stream, n: b.messages.length }));
       if (!b.stream) {
         const sys = typeof b.system === "string" ? b.system : JSON.stringify(b.system || "");

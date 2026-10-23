@@ -43,7 +43,10 @@ A desktop app (Windows / macOS / Linux, Electron + React) for continuing Claude 
 
 **More**
 - **Handoff to the Claude apps**: puts a summary or the full transcript into Claude Desktop's message box as a draft
-- **API credit tracker**: estimated balance, days until expiry, a daily target and pace warnings; can be calibrated from the Console balance
+- **API credit tracker**: estimated balance, days until expiry, a daily target and pace warnings; can be calibrated from the Console balance. In the last week, when the credit is going unused, it suggests ways to use it (summarize past chats with Batch, start a research task, hand work over from Claude Code)
+- **Batch (half price)**: turn on "Batch" in the tools menu and that chat's messages go through the Message Batches API at 50% off. The reply arrives later (usually within an hour, at most 24 hours) in place of a waiting card, with a notification; the Batch page lists every request. Tools that run on this computer (memory, past-chat search, local MCP servers) can't be used with Batch
+- **Cost estimate and spending limits**: under the message box, the input of the next message is counted with the free `count_tokens` and priced. Settings → Credit → Spending limits sets a per-message and a daily limit, and whether to ask or not send when a message would go over
+- **Long chats**: the earlier messages that no longer fit the model's input are summarized (with the API's compaction where the model supports it, otherwise a short summary written by the cheapest Haiku) and sent in their place; the newest turns are sent word for word. A divider in the chat shows where the summary ends. Can be turned off in Settings → Styles & memory
 - **Japanese and English UI**: Settings → General → Language; the English wording follows Claude's English UI
 - **Theme and fonts**: dark / light / system, chat font
 - **Backup and restore**; export chats as JSON or HTML
@@ -137,7 +140,8 @@ Settings → "Data & backup" exports chats, projects, settings, usage and credit
 
 - **Not verified on real machines yet**: a real API key, the Windows installer, handoff to the real Claude Desktop, and real `npx`-based local MCP servers. Testing so far ran on Linux against a mock API. In-app updates were run end to end (check → download → restart → the app file replaced by the new version) with Linux AppImage builds and a local feed; the Windows and macOS installers themselves have not been tried on real machines. If you try it, please send a [real-machine report](https://github.com/kajisho5/claude-continuity/issues/new?template=real-machine-report.yml).
 - **Importing exports**: the format is inferred and may not always be read correctly. Attachments, artifacts and tool calls in an export are not reconstructed.
-- **Long chats**: the oldest history beyond the input limit is left out (the app tells you); there is no automatic summarization.
+- **Long chats**: the summary uses the API's compaction, which is a beta feature, and it may change. With summaries turned off, the oldest history beyond the input limit is left out (the app tells you).
+- **Cost estimate**: it counts the input only and leaves out tool definitions and connectors (which `count_tokens` doesn't take); prompt caching usually makes the real cost lower.
 - **Voice input**: there is no built-in feature, but the OS's dictation works as is (`Win + H` on Windows, the Dictation shortcut on macOS).
 - **Knowledge search**: matches keywords, not meaning. Scanned PDFs without a text layer are still sent whole, and once knowledge is searched, PDFs are read as text (figures and layout are not seen).
 - **Not possible through the API**: syncing history with claude.ai, or using claude.ai's account memory.

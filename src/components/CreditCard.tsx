@@ -1,9 +1,13 @@
 import { PLAN_LABELS, formatShortDate, type CreditSummary } from "../lib/credit";
 import { formatUsd } from "../lib/pricing";
 import { intlLocale, useT } from "../i18n";
+import { Files, Telescope, TerminalSquare } from "lucide-react";
 
 type Totals = { inputTokens: number; outputTokens: number; calls: number; mcpCalls?: number };
-type Props = { summary: CreditSummary | null; totals: Totals; onConfigure: () => void };
+/** Ways to use credit that would otherwise expire (shown in the last week when spending is behind pace). */
+export type Suggestions = { onBatchSummary: () => void; onResearch: () => void; onDelegate: () => void; onDismiss: () => void };
+type Props = { summary: CreditSummary | null; totals: Totals; onConfigure: () => void; suggestions?: Suggestions | null };
+const SUGGESTION = "suggestion flex w-full items-center gap-[7px] rounded-[8px] border border-line-strong bg-transparent px-[9px] py-[6px] text-left text-[10px] text-ink-3 hover:border-line-input hover:bg-line [&_svg]:shrink-0 [&_svg]:text-muted";
 
 const CARD = "credit-card relative m-[10px_0_0] flex shrink-0 flex-col gap-[5px] rounded-[10px] border border-line bg-surface p-[12px]";
 const HEAD = "credit-head flex items-center justify-between text-[9px] text-muted";
@@ -25,7 +29,7 @@ function compactTokens(n: number): string {
   return n.toLocaleString(intlLocale());
 }
 
-export default function CreditCard({ summary, totals, onConfigure }: Props) {
+export default function CreditCard({ summary, totals, onConfigure, suggestions }: Props) {
   const t = useT();
   const c = t.credit.card;
   const device = c.device(totals.calls, totals.mcpCalls, compactTokens(totals.inputTokens + totals.outputTokens));
@@ -65,6 +69,13 @@ export default function CreditCard({ summary, totals, onConfigure }: Props) {
       : summary.pace === "over"
         ? <p className={LINE + " strong text-ink-3"}>{c.stayWithinBefore}<b className="text-ink">{formatUsd(summary.dailyBudgetUsd)}</b>{c.stayWithinAfter}</p>
         : <p className={LINE + " strong text-ink-3"}>{c.useUpBefore}<b className="text-ink">{formatUsd(summary.dailyBudgetUsd)}</b>{c.useUpAfter}</p>}
+    {suggestions && <div className="credit-suggestions mt-[8px] flex flex-col gap-[5px] border-t border-line pt-[8px]">
+      <b className="text-[9.5px] font-semibold text-ink-3">{t.spend.suggest.heading}</b>
+      <button className={SUGGESTION + " suggest-batch"} onClick={suggestions.onBatchSummary}><Files size={12} />{t.spend.suggest.batchSummary}</button>
+      <button className={SUGGESTION + " suggest-research"} onClick={suggestions.onResearch}><Telescope size={12} />{t.spend.suggest.research}</button>
+      <button className={SUGGESTION + " suggest-delegate"} onClick={suggestions.onDelegate}><TerminalSquare size={12} />{t.spend.suggest.delegate}</button>
+      <button className="suggest-dismiss self-start border-0 bg-transparent p-0 text-[9px] text-subtle hover:text-ink-3" onClick={suggestions.onDismiss}>{t.spend.suggest.dismiss}</button>
+    </div>}
     <footer className={FOOTER}>
       <span>{device}{summary.unpricedCalls > 0 ? c.unpriced(summary.unpricedCalls) : ""}</span>
       <span>{summary.calibrated && summary.calibratedAt

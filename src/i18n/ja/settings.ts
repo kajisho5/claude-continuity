@@ -199,6 +199,8 @@ export const settings = {
     envCount: (n: number) => ` · 環境変数 ${n} 個`,
     allowedCount: (n: number) => `常に許可したツール ${n} 個`,
     resetAllowed: "許可をリセット",
+    enabledLabel: (name: string) => `${name} を使う（オフにするとツールメニューに出さず、送りません）`,
+    disabledBadge: "オフ",
     importDesktop: "Claude Desktop から読み込む",
     imported: (added: number, found: number) => found === 0 ? "読み込めるローカル MCP サーバーはありませんでした。" : added === 0 ? `${found} 個のサーバーはすべて登録済みです。` : `${added} 個のローカル MCP サーバーを追加しました。`
   }
