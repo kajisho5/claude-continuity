@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowDown, ArrowUpRight, Ghost, Plus, FileUp, FolderOpen, MessagesSquare, PanelLeftClose, PanelLeftOpen, Search } from "lucide-react";
+import { ArrowDown, ArrowUpRight, Ghost, Plus, Shapes, FileUp, FolderOpen, MessagesSquare, PanelLeftClose, PanelLeftOpen, Search } from "lucide-react";
 import CreditCard from "./components/CreditCard";
 import LogoMark, { LogoGlyph } from "./components/LogoMark";
 import OnboardingWizard from "./components/OnboardingWizard";
@@ -13,6 +13,8 @@ import Toaster, { type Toast } from "./components/Toaster";
 import ChatsPage from "./components/ChatsPage";
 import { ProjectPage, ProjectsPage } from "./components/ProjectsPage";
 import ShortcutsDialog from "./components/ShortcutsDialog";
+import ArtifactsPage, { type ArtifactEntry } from "./components/ArtifactsPage";
+import { artifactKey, extractArtifacts } from "./lib/artifacts";
 import { statusText } from "./components/UpdateSection";
 import type { UpdateStatus } from "./lib/update";
 import HandoffDialog from "./components/HandoffDialog";
@@ -80,7 +82,7 @@ export default function App() {
  const [modelsLoading,setModelsLoading]=useState(false);
  const [configured,setConfigured]=useState(false);
  const [settings,setSettings]=useState<SettingsTab|null>(null);
- const [view,setView]=useState<"chat"|"chats"|"projects"|"project">("chat");
+ const [view,setView]=useState<"chat"|"chats"|"projects"|"project"|"artifacts">("chat");
  const [openProject,setOpenProject]=useState<string|null>(null);
  const [shortcuts,setShortcuts]=useState(false);
  const [toasts,setToasts]=useState<Toast[]>([]);
@@ -114,6 +116,9 @@ export default function App() {
  const chatProject=projects.find(p=>p.id===chat.projectId)??null;
  const currentModel=availableModels.find(m=>m.id===model);
  const usageTotal=useMemo(()=>usageRows.reduce((acc,row)=>({inputTokens:acc.inputTokens+row.inputTokens,outputTokens:acc.outputTokens+row.outputTokens,calls:acc.calls+1,mcpCalls:acc.mcpCalls+(row.source==="mcp"?1:0)}),{inputTokens:0,outputTokens:0,calls:0,mcpCalls:0}),[usageRows]);
+ // Artifacts in the open chat, oldest first; same kind + title are versions of one artifact.
+ const chatArtifacts=useMemo(()=>chat.messages.filter(m=>m.role==="assistant").flatMap(m=>extractArtifacts(m.content)),[chat.messages]);
+ const artifactVersions=artifact?chatArtifacts.filter(a=>artifactKey(a)===artifactKey(artifact)):[];
  const summary=useMemo(()=>summarizeCredit(usageRows,credit,new Date(now)),[usageRows,credit,now]);
 
  useEffect(()=>{
@@ -143,6 +148,15 @@ export default function App() {
    finally{setModelsLoading(false);}
  }
  useEffect(()=>{ if(configured) void refreshModels(); },[configured]);
+ // When a new reply rewrites the open artifact, follow it to the newest version, as the Claude apps do.
+ useEffect(()=>{
+   if(!artifact)return;
+   const same=chatArtifacts.filter(a=>artifactKey(a)===artifactKey(artifact));
+   const newest=same[same.length-1];
+   if(newest&&newest.code!==artifact.code&&!same.slice(0,-1).some(a=>a.code===artifact.code)) return;
+   if(newest&&newest.code!==artifact.code) setArtifact(newest);
+ // eslint-disable-next-line react-hooks/exhaustive-deps
+ },[chatArtifacts.length]);
  useEffect(()=>{
    // Resolve the theme here rather than trusting the OS bridge: "system" follows prefers-color-scheme, the others are fixed.
    const media=window.matchMedia("(prefers-color-scheme: dark)");
@@ -371,6 +385,14 @@ export default function App() {
  const visibleChats=chats.filter(c=>c.messages.length>0&&!c.incognito&&(c.title.toLowerCase().includes(query)||c.messages.some(m=>m.content.toLowerCase().includes(query))));
  const chatRows=chats.filter(c=>c.messages.length>0&&!c.incognito).map(c=>({id:c.id,title:c.title,projectId:c.projectId,updatedAt:c.updatedAt,starred:c.starred,
    preview:plainPreview([...c.messages].reverse().find(m=>m.role==="assistant")?.content??c.messages[0]?.content??"",140)}));
+ const artifactEntries:ArtifactEntry[]=view!=="artifacts"?[]:chats.filter(c=>!c.incognito).flatMap(c=>{
+   const groups=new Map<string,ArtifactEntry>();
+   for(const a of c.messages.filter(m=>m.role==="assistant").flatMap(m=>extractArtifacts(m.content))){
+     const key=artifactKey(a);const prev=groups.get(key);
+     groups.set(key,{key,chatId:c.id,chatTitle:c.title,updatedAt:c.updatedAt,latest:a,versions:(prev?.versions??0)+1});
+   }
+   return [...groups.values()];
+ });
  const openProjectData=projects.find(p=>p.id===openProject)??null;
  const starredChats=visibleChats.filter(c=>c.starred);
  const recentChats=visibleChats.filter(c=>!c.starred);
@@ -395,6 +417,7 @@ export default function App() {
    <button className="new-chat" onClick={()=>newChat()}><span className="plus-dot"><Plus size={15} strokeWidth={2.6}/></span>新しい会話<kbd>{KEYS.newChat}</kbd></button>
    <div className="search-box"><Search size={14}/><input ref={searchRef} className="chat-search" value={search} onChange={e=>setSearch(e.target.value)} placeholder="会話を検索" aria-label="会話を検索"/><kbd>{KEYS.search}</kbd></div>
    <button className={"side-nav"+(view==="chats"?" active":"")} onClick={()=>{setView("chats");setArtifact(null);}}><MessagesSquare size={16}/>チャット</button>
+   <button className={"side-nav"+(view==="artifacts"?" active":"")} onClick={()=>{setView("artifacts");setArtifact(null);}}><Shapes size={16}/>アーティファクト</button>
    <button className={"side-nav"+(view==="projects"||view==="project"?" active":"")} onClick={()=>{setView("projects");setArtifact(null);}}><FolderOpen size={16}/>プロジェクト</button>
    <div className="side-scroll">
     {starredChats.length>0&&<><div className="label">スター付き</div>
@@ -422,7 +445,8 @@ export default function App() {
      {view==="chat"&&!fresh&&<button className="btn-secondary small handoff-btn tip tip-below" data-tip="Claude アプリの新しいチャットに文脈を渡す" onClick={()=>setHandoff(true)}><ArrowUpRight size={14}/>Claude で続ける</button>}
      {!configured&&<button className="btn-secondary small" onClick={()=>setSettings("api")}><span className="dot"/>APIキーを設定</button>}
     </div></header>
-   {view==="projects"?<div className="workspace"><ProjectsPage projects={projects} chats={chatRows} now={now} onCreate={newProject} onOpen={id=>{setOpenProject(id);setView("project");}}/></div>:
+   {view==="artifacts"?<div className="workspace"><ArtifactsPage entries={artifactEntries} now={now} onOpen={e=>{setActive(e.chatId);setView("chat");setTimeout(()=>setArtifact(e.latest),0);}}/></div>:
+    view==="projects"?<div className="workspace"><ProjectsPage projects={projects} chats={chatRows} now={now} onCreate={newProject} onOpen={id=>{setOpenProject(id);setView("project");}}/></div>:
     view==="project"&&openProjectData?<div className="workspace"><ProjectPage project={openProjectData} chats={chatRows} now={now} onBack={()=>setView("projects")}
       onEdit={()=>setProjectModal({project:openProjectData,isNew:false})} onStart={()=>newChat(openProjectData.id)} onOpenChat={id=>{setActive(id);setView("chat");}}/></div>:
    view==="chats"?<div className="workspace"><ChatsPage now={now} onNew={()=>newChat()} onDelete={ids=>setConfirmBulk(ids)} onOpen={id=>{setActive(id);setView("chat");}}
@@ -458,7 +482,7 @@ export default function App() {
        </footer>
       </>}
     </div>
-    {artifact&&<ArtifactPanel artifact={artifact} onClose={()=>setArtifact(null)}/>}
+    {artifact&&<ArtifactPanel artifact={artifact} versions={artifactVersions.length?artifactVersions:[artifact]} onSelect={setArtifact} onClose={()=>setArtifact(null)}/>}
    </div>}
    {(update.state==="available"||update.state==="downloading"||update.state==="ready")&&updateDismissed!==update.state+update.version&&<div className="update-banner" role="status">
      <span className="update-banner-text"><b>{update.state==="ready"?"アップデートの準備ができました":"アップデートがあります"}</b>{statusText(update)}</span>

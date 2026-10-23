@@ -6,9 +6,10 @@ import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
 import "katex/dist/katex.min.css";
 import { normalizeMath } from "../lib/math";
-import { Check, ChevronDown, Code2, Copy, Eye, Image as ImageIcon } from "lucide-react";
+import { Check, ChevronDown, Code2, Copy, Eye, FileText, Image as ImageIcon, Workflow } from "lucide-react";
 
-export type ArtifactRequest = { title: string; language: "html" | "svg"; code: string };
+import { artifactKind, artifactTitle, KIND_LABEL, type ArtifactKind, type ArtifactRequest } from "../lib/artifacts";
+export type { ArtifactRequest };
 /** Lets code blocks open the artifact panel without threading a prop through react-markdown. */
 export const ArtifactContext = createContext<((artifact: ArtifactRequest) => void) | null>(null);
 
@@ -37,19 +38,8 @@ export function CopyButton({ text, label = "コピー", iconOnly = false }: { te
   </button>;
 }
 
-function previewLanguage(language: string, code: string): "html" | "svg" | null {
-  if (language === "html" || language === "htm") return "html";
-  if (language === "svg" || ((language === "xml" || language === "text") && /^\s*<svg[\s>]/i.test(code))) return "svg";
-  return null;
-}
-
-function artifactTitle(language: "html" | "svg", code: string): string {
-  const title = /<title[^>]*>([^<]{1,80})<\/title>/i.exec(code)?.[1]?.trim();
-  return title || (language === "svg" ? "画像" : "Web ページ");
-}
-
 /** Previewable code shows as an artifact card that opens the side panel, as in the Claude apps. */
-function ArtifactCard({ language, code, children }: { language: "html" | "svg"; code: string; children: ReactNode }) {
+function ArtifactCard({ language, code, children }: { language: ArtifactKind; code: string; children: ReactNode }) {
   const openArtifact = useContext(ArtifactContext)!;
   const [showCode, setShowCode] = useState(false);
   const title = artifactTitle(language, code);
@@ -57,8 +47,8 @@ function ArtifactCard({ language, code, children }: { language: "html" | "svg"; 
   return <div className="artifact-card-wrap">
     <div className="artifact-card" role="button" tabIndex={0} onClick={() => openArtifact({ title, language, code })}
       onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openArtifact({ title, language, code }); } }}>
-      <span className="artifact-thumb">{language === "svg" ? <ImageIcon size={20} /> : <Code2 size={20} />}</span>
-      <span className="artifact-meta"><b>{title}</b><small>{language === "svg" ? "SVG" : "HTML"} · {lines} 行 · クリックして開く</small></span>
+      <span className="artifact-thumb">{language === "svg" ? <ImageIcon size={20} /> : language === "markdown" ? <FileText size={20} /> : language === "mermaid" ? <Workflow size={20} /> : <Code2 size={20} />}</span>
+      <span className="artifact-meta"><b>{title}</b><small>{KIND_LABEL[language]} · {lines} 行 · クリックして開く</small></span>
       <Eye size={16} className="artifact-open" />
     </div>
     <button className="artifact-code-toggle" onClick={() => setShowCode(v => !v)} aria-expanded={showCode}>
@@ -80,7 +70,7 @@ function CodeBlock({ children }: { children?: ReactNode }) {
   const className = (child as { props?: { className?: string } })?.props?.className ?? "";
   const language = /language-([\w-]+)/.exec(className)?.[1] ?? "text";
   const code = plainText(children).replace(/\n$/, "");
-  const preview = previewLanguage(language, code);
+  const preview = artifactKind(language, code);
   if (preview && openArtifact) return <ArtifactCard language={preview} code={code}>{children}</ArtifactCard>;
   return <CodeFrame language={language} code={code}>{children}</CodeFrame>;
 }

@@ -867,3 +867,14 @@ html,body{overflow:hidden}
 .style-editor-head .text-input{padding:7px 10px;font-weight:600}
 .style-editor textarea.text-input{min-height:60px}
 .style-sample{margin-top:10px;padding:12px;border:1px dashed var(--border-strong);border-radius:10px}
+
+/* Artifact panel: documents, diagrams, versions */
+.artifact-panel header small{flex:0 0 auto}
+.artifact-versions{font-size:11.5px;color:var(--muted)}
+.artifact-doc{flex:1;min-height:0;overflow:auto;padding:18px 22px;background:var(--surface);border:1px solid var(--border);border-radius:10px}
+.artifact-doc .markdown{font-family:var(--chat-font);font-size:14.5px;line-height:1.8;color:var(--text-3)}
+.artifact-loading,.artifact-error{flex:1;display:grid;place-items:center;align-content:center;gap:8px;border:1px dashed var(--border-strong);border-radius:10px;color:var(--muted);font-size:13px;padding:20px}
+.artifact-error pre{max-width:100%;white-space:pre-wrap;font:11.5px/1.6 var(--mono);color:var(--danger);margin:0}
+.artifact-entry .artifact-thumb{width:40px;height:40px}
+.artifact-entry b{font-family:var(--sans);font-size:14px}
+.artifact-panel header small{font-size:11px;color:var(--muted)}
