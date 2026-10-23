@@ -41,7 +41,7 @@ export default function CreditCard({ summary, totals, onConfigure }: Props) {
       <span className="credit-fill" style={{ width: `${used * 100}%` }} />
       <span className="credit-marker" style={{ left: `${summary.elapsedRatio * 100}%` }} />
     </div>
-    <span className="credit-marker-label" style={{ left: `${summary.elapsedRatio * 100}%` }}>▲ 今日の目安</span>
+    <span className="credit-marker-label" style={{ left: `${Math.min(80, Math.max(20, summary.elapsedRatio * 100))}%` }}>▲ 今日の目安</span>
     <span className="pace-chip"><i />{PACE_LABEL[summary.pace]}</span>
     <p className="credit-line">失効まで {summary.daysLeft}日 · {formatShortDate(summary.cycleEnd)} 頃</p>
     {negative

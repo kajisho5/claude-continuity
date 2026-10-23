@@ -4,6 +4,10 @@ import fs from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import Anthropic from "@anthropic-ai/sdk";
 import AdmZip from "adm-zip";
+import type { MessageParam, ContentBlock, Message } from "@anthropic-ai/sdk/resources/messages";
+import { AttachmentStore, type Attachment } from "./attachments";
+import { listMemoryFiles, runMemoryCommand } from "./memory";
+import { activityLabel, buildMessages, buildSystem, buildTools, extractFileIds, extractText, type ChatTurn, type Project, type StyleId, type ToolFlags } from "./request";
 
 // Only `npm run dev` passes --dev; `npm start` after a build must load the bundled renderer.
 const isDev = !app.isPackaged && process.argv.includes("--dev");
@@ -147,20 +151,43 @@ ipcMain.handle("chats:load", async () => {
   try { const data = JSON.parse(await fs.readFile(chatsFile(), "utf8")); return Array.isArray(data) ? data : []; }
   catch { return []; }
 });
+const str = (v: unknown, max: number) => typeof v === "string" ? v.slice(0, max) : undefined;
+function sanitizeAttachment(a: any): Attachment | null {
+  if (!a || typeof a.id !== "string" || !/^[0-9a-f-]{36}$/.test(a.id)) return null;
+  const kind = ["image", "pdf", "text", "file"].includes(a.kind) ? a.kind : "file";
+  return { id: a.id, name: str(a.name, 200) ?? "file", mediaType: str(a.mediaType, 120) ?? "application/octet-stream", size: Number(a.size) || 0, kind };
+}
+const sanitizeAttachments = (list: unknown) => Array.isArray(list) ? list.slice(0, 50).map(sanitizeAttachment).filter((a): a is Attachment => a !== null) : undefined;
+function sanitizeReply(m: any) {
+  return {
+    content: String(m.content ?? "").slice(0, 2_000_000),
+    ...(typeof m.thinking === "string" && m.thinking ? { thinking: m.thinking.slice(0, 500_000) } : {}),
+    ...(typeof m.model === "string" ? { model: m.model.slice(0, 200) } : {}),
+    ...(typeof m.costUsd === "number" && Number.isFinite(m.costUsd) ? { costUsd: m.costUsd } : {}),
+    ...(m.aborted === true ? { aborted: true } : {}),
+    ...(Array.isArray(m.citations) ? { citations: m.citations.slice(0, 100).map((c: any) => ({ url: str(c?.url, 2000) ?? "", title: str(c?.title, 500) ?? "", ...(c?.citedText ? { citedText: str(c.citedText, 1000) } : {}) })) } : {}),
+    ...(Array.isArray(m.files) ? { files: m.files.slice(0, 50).map((f: any) => ({ fileId: str(f?.fileId, 200) ?? "", name: str(f?.name, 300) ?? "file", ...(typeof f?.size === "number" ? { size: f.size } : {}) })) } : {})
+  };
+}
 ipcMain.handle("chats:save", async (_event, chats: unknown[]) => {
   if (!Array.isArray(chats)) throw new Error("会話データの形式が正しくありません。");
   const safeChats = chats.map((chat: any) => ({
     id: String(chat.id ?? ""),
     title: String(chat.title ?? "会話").slice(0, 300),
     source: typeof chat.source === "string" ? chat.source.slice(0, 1000) : undefined,
-    messages: Array.isArray(chat.messages) ? chat.messages.slice(-5000).map((m: any) => ({
-      role: m.role === "assistant" ? "assistant" : "user",
-      content: String(m.content ?? "").slice(0, 2_000_000),
-      ...(typeof m.thinking === "string" && m.thinking ? { thinking: m.thinking.slice(0, 500_000) } : {}),
-      ...(typeof m.model === "string" ? { model: m.model.slice(0, 200) } : {}),
-      ...(typeof m.costUsd === "number" && Number.isFinite(m.costUsd) ? { costUsd: m.costUsd } : {}),
-      ...(m.aborted === true ? { aborted: true } : {})
-    })) : []
+    ...(typeof chat.projectId === "string" ? { projectId: chat.projectId.slice(0, 100) } : {}),
+    ...(typeof chat.style === "string" ? { style: chat.style.slice(0, 40) } : {}),
+    ...(chat.tools && typeof chat.tools === "object" ? { tools: Object.fromEntries(["webSearch", "webFetch", "files", "analysis", "memory"].map(k => [k, chat.tools[k] === true])) } : {}),
+    ...(chat.container && typeof chat.container.id === "string" ? { container: { id: chat.container.id.slice(0, 200), expiresAt: str(chat.container.expiresAt, 60) } } : {}),
+    messages: Array.isArray(chat.messages) ? chat.messages.slice(-5000).map((m: any) => {
+      const role = m.role === "assistant" ? "assistant" : "user";
+      const attachments = role === "user" ? sanitizeAttachments(m.attachments) : undefined;
+      return {
+        role, ...sanitizeReply(m),
+        ...(attachments?.length ? { attachments } : {}),
+        ...(role === "assistant" && Array.isArray(m.alternates) ? { alternates: m.alternates.slice(0, 20).map(sanitizeReply), altIndex: Number(m.altIndex) || 0 } : {})
+      };
+    }) : []
   }));
   await fs.writeFile(chatsFile(), JSON.stringify(safeChats), "utf8");
   return true;
@@ -174,7 +201,7 @@ ipcMain.handle("usage:load", async () => {
     return Array.isArray(data) ? data : [];
   } catch { return []; }
 });
-type UsageEntry = { model: string; inputTokens: number; outputTokens: number; cacheCreationInputTokens: number; cacheReadInputTokens: number };
+type UsageEntry = { model: string; inputTokens: number; outputTokens: number; cacheCreationInputTokens: number; cacheReadInputTokens: number; webSearchRequests: number };
 async function recordUsage(entry: UsageEntry) {
   let rows: any[] = [];
   try { const raw = JSON.parse(await fs.readFile(usageFile(), "utf8")); if (Array.isArray(raw)) rows = raw; } catch {}
@@ -182,35 +209,6 @@ async function recordUsage(entry: UsageEntry) {
   // Retain a bounded local ledger instead of allowing indefinite growth.
   await fs.writeFile(usageFile(), JSON.stringify(rows.slice(-10000)), "utf8");
 }
-function fitContext(messages: NormalizedMessage[], maxChars = 120000): NormalizedMessage[] {
-  // Anthropic Messages expects a user message to start the conversation. Keep a recent
-  // contiguous suffix, then normalize adjacent roles to avoid malformed imported turns.
-  const selected: NormalizedMessage[] = [];
-  let remaining = maxChars;
-  for (let i = messages.length - 1; i >= 0 && remaining > 0; i--) {
-    const message = messages[i];
-    if (!message.content) continue;
-    if (message.content.length <= remaining) {
-      selected.push({ role: message.role, content: message.content });
-      remaining -= message.content.length;
-    } else if (selected.length === 0) {
-      selected.push({ role: message.role, content: message.content.slice(-remaining) });
-      remaining = 0;
-    } else {
-      break;
-    }
-  }
-  let ordered = selected.reverse();
-  while (ordered.length && ordered[0].role !== "user") ordered.shift();
-  const merged: NormalizedMessage[] = [];
-  for (const message of ordered) {
-    const last = merged[merged.length - 1];
-    if (last && last.role === message.role) last.content += "\n\n" + message.content;
-    else merged.push({ ...message });
-  }
-  return merged;
-}
-
 ipcMain.handle("key:save", async (_event, apiKey: string) => {
   if (!safeStorage.isEncryptionAvailable()) throw new Error("この環境では安全なキー保存を利用できません。");
   if (!apiKey || !apiKey.startsWith("sk-ant-")) throw new Error("Anthropic APIキーの形式を確認してください。");
@@ -230,11 +228,13 @@ async function getApiKey() {
 type ModelSummary = {
   id: string; displayName: string; createdAt?: string;
   maxTokens?: number; maxInputTokens?: number; effortLevels: string[]; adaptiveThinking: boolean;
+  webSearch: boolean; codeExecution: boolean; imageInput: boolean; pdfInput: boolean;
 };
 const EFFORT_LEVELS = ["low", "medium", "high", "xhigh", "max"];
-// Capability fields are newer than SDK 0.68's ModelInfo type, so read them defensively.
+// Read capability fields defensively: older models or proxies may omit them.
 function summarizeModel(model: any): ModelSummary {
   const caps = model?.capabilities ?? {};
+  const known = model?.capabilities != null;
   return {
     id: String(model.id),
     displayName: model.display_name || String(model.id),
@@ -242,7 +242,12 @@ function summarizeModel(model: any): ModelSummary {
     maxTokens: typeof model.max_tokens === "number" && model.max_tokens > 0 ? model.max_tokens : undefined,
     maxInputTokens: typeof model.max_input_tokens === "number" && model.max_input_tokens > 0 ? model.max_input_tokens : undefined,
     effortLevels: caps.effort?.supported ? EFFORT_LEVELS.filter(level => caps.effort?.[level]?.supported) : [],
-    adaptiveThinking: caps.thinking?.types?.adaptive?.supported === true
+    adaptiveThinking: caps.thinking?.types?.adaptive?.supported === true,
+    // When capabilities are missing, assume support and let the API report errors.
+    webSearch: known ? caps.server_tools?.web_search?.supported === true : true,
+    codeExecution: known ? caps.server_tools?.code_execution?.supported === true : true,
+    imageInput: known ? caps.image_input?.supported !== false : true,
+    pdfInput: known ? caps.pdf_input?.supported !== false : true
   };
 }
 const modelCache = new Map<string, ModelSummary>();
@@ -290,71 +295,250 @@ ipcMain.handle("credit:save", async (_event, value: any) => {
   return saved;
 });
 
-type ReplyPayload = { requestId: string; messages: NormalizedMessage[]; model?: string; effort?: string };
+// ---- Preferences and projects ----
+const prefsFile = () => path.join(dataDir(), "prefs.json");
+type Prefs = { autoTitle: boolean; customStyle: string };
+async function loadPrefs(): Promise<Prefs> {
+  try {
+    const raw = JSON.parse(await fs.readFile(prefsFile(), "utf8"));
+    return { autoTitle: raw.autoTitle !== false, customStyle: typeof raw.customStyle === "string" ? raw.customStyle.slice(0, 4000) : "" };
+  } catch { return { autoTitle: true, customStyle: "" }; }
+}
+ipcMain.handle("prefs:load", () => loadPrefs());
+ipcMain.handle("prefs:save", async (_event, value: any) => {
+  const prefs: Prefs = { autoTitle: value?.autoTitle !== false, customStyle: String(value?.customStyle ?? "").slice(0, 4000) };
+  await fs.writeFile(prefsFile(), JSON.stringify(prefs), "utf8");
+  return prefs;
+});
+const projectsFile = () => path.join(dataDir(), "projects.json");
+async function loadProjects(): Promise<Project[]> {
+  try {
+    const raw = JSON.parse(await fs.readFile(projectsFile(), "utf8"));
+    return Array.isArray(raw) ? raw : [];
+  } catch { return []; }
+}
+ipcMain.handle("projects:load", () => loadProjects());
+ipcMain.handle("projects:save", async (_event, list: unknown) => {
+  if (!Array.isArray(list)) throw new Error("プロジェクトの形式が正しくありません。");
+  const projects: Project[] = list.slice(0, 200).map((p: any) => ({
+    id: String(p?.id ?? randomUUID()).slice(0, 100),
+    name: String(p?.name ?? "プロジェクト").slice(0, 100) || "プロジェクト",
+    instructions: String(p?.instructions ?? "").slice(0, 20_000),
+    knowledge: sanitizeAttachments(p?.knowledge) ?? [],
+    memory: p?.memory === true
+  }));
+  await fs.writeFile(projectsFile(), JSON.stringify(projects), "utf8");
+  return projects;
+});
+
+// ---- Attachments ----
+const attachments = () => new AttachmentStore(path.join(dataDir(), "attachments"));
+ipcMain.handle("attachments:pick", async () => {
+  const result = await dialog.showOpenDialog({ title: "ファイルを添付", properties: ["openFile", "multiSelections"] });
+  if (result.canceled) return { added: [], errors: [] };
+  return addAttachmentPaths(result.filePaths);
+});
+async function addAttachmentPaths(paths: string[]) {
+  const added: Attachment[] = [];
+  const errors: string[] = [];
+  for (const p of paths.slice(0, 20)) {
+    try { added.push(await attachments().addPath(String(p))); }
+    catch (e) { errors.push(e instanceof Error ? e.message : String(e)); }
+  }
+  return { added, errors };
+}
+ipcMain.handle("attachments:addPaths", (_event, paths: unknown) => addAttachmentPaths(Array.isArray(paths) ? paths.map(String) : []));
+ipcMain.handle("attachments:addData", async (_event, payload: { name: string; data: Uint8Array }) => {
+  try { return { added: [await attachments().add(String(payload?.name ?? "pasted.png"), Buffer.from(payload.data))], errors: [] }; }
+  catch (e) { return { added: [], errors: [e instanceof Error ? e.message : String(e)] }; }
+});
+ipcMain.handle("attachments:preview", async (_event, id: string) => {
+  // Small data URL for image thumbnails in the composer and history.
+  const buffer = await attachments().read(String(id));
+  if (buffer.length > 10 * 1024 * 1024) return null;
+  const head = buffer.subarray(0, 12);
+  const type = head[0] === 0x89 ? "image/png" : head[0] === 0xff ? "image/jpeg" : head.toString("latin1", 0, 3) === "GIF" ? "image/gif" : "image/webp";
+  return `data:${type};base64,${buffer.toString("base64")}`;
+});
+
+// ---- Memory ----
+const memoryRoot = () => path.join(dataDir(), "memories");
+ipcMain.handle("memory:list", () => listMemoryFiles(memoryRoot()));
+ipcMain.handle("memory:delete", async (_event, virtualPath: string) => {
+  const result = await runMemoryCommand(memoryRoot(), { command: "delete", path: String(virtualPath) });
+  if (result.isError) throw new Error(result.content);
+  return true;
+});
+
+// ---- Generated files ----
+ipcMain.handle("files:save", async (_event, payload: { fileId: string; name: string }) => {
+  const fileId = String(payload?.fileId ?? "");
+  if (!/^file_[A-Za-z0-9_-]+$/.test(fileId)) throw new Error("ファイル ID が正しくありません。");
+  const result = await dialog.showSaveDialog({ title: "生成されたファイルを保存", defaultPath: String(payload?.name ?? "output").replace(/[\\/:*?"<>|]/g, "_").slice(0, 150) });
+  if (result.canceled || !result.filePath) return { canceled: true };
+  const client = new Anthropic({ apiKey: await getApiKey() });
+  const response = await client.files.download(fileId);
+  await fs.writeFile(result.filePath, Buffer.from(await response.arrayBuffer()));
+  return { canceled: false, filePath: result.filePath };
+});
+
+// ---- Replies ----
+type ReplyPayload = {
+  requestId: string; messages: ChatTurn[]; model?: string; effort?: string;
+  style?: StyleId; projectId?: string; tools?: ToolFlags; containerId?: string;
+};
 const activeReplies = new Map<string, AbortController>();
+const MAX_LOOP = 8;
 ipcMain.handle("claude:abort", (_event, requestId: string) => {
   activeReplies.get(String(requestId))?.abort();
   return true;
 });
+function sanitizeTurns(list: unknown): ChatTurn[] {
+  if (!Array.isArray(list)) return [];
+  return list.filter((m: any) => m && (m.role === "user" || m.role === "assistant") && typeof m.content === "string")
+    .map((m: any) => ({ role: m.role, content: m.content.slice(0, 2_000_000), ...(m.role === "user" ? { attachments: sanitizeAttachments(m.attachments) } : {}) }));
+}
 ipcMain.handle("claude:reply", async (event, payload: ReplyPayload) => {
-  if (!payload || !Array.isArray(payload.messages) || payload.messages.length === 0) {
-    throw new Error("送信する会話がありません。");
-  }
+  const turns = sanitizeTurns(payload?.messages);
+  if (!turns.length) throw new Error("送信する会話がありません。");
+  if (!turns.some(m => m.role === "user")) throw new Error("ユーザーのメッセージがありません。");
   const requestId = String(payload.requestId ?? randomUUID());
-  const safeMessages = payload.messages
-    .filter(m => m && (m.role === "user" || m.role === "assistant") && typeof m.content === "string")
-    .map(m => ({ role: m.role, content: m.content.slice(0, 2_000_000) }));
-  if (!safeMessages.some(m => m.role === "user")) throw new Error("ユーザーのメッセージがありません。");
-  const bounded = fitContext(safeMessages);
   const model = payload.model || "claude-sonnet-4-5";
   const info = modelCache.get(model);
+  const caps = { webSearch: info?.webSearch ?? true, codeExecution: info?.codeExecution ?? true, imageInput: info?.imageInput ?? true, pdfInput: info?.pdfInput ?? true };
   const effort = payload.effort && info?.effortLevels.includes(payload.effort) ? payload.effort : undefined;
+  const [prefs, projects] = await Promise.all([loadPrefs(), loadProjects()]);
+  const project = payload.projectId ? projects.find(p => p.id === payload.projectId) ?? null : null;
+  const flags: ToolFlags = { ...(payload.tools ?? {}), memory: payload.tools?.memory === true || project?.memory === true };
+  const { tools, skills, unavailable } = buildTools(flags, caps);
+  const codeOn = tools.some(t => t.type === "code_execution_20250825");
   const client = new Anthropic({ apiKey: await getApiKey() });
-  // Thinking counts toward max_tokens, so allow the model's full output budget; streaming keeps long replies within SDK limits.
-  const params: Record<string, unknown> = {
-    model, max_tokens: info?.maxTokens ?? 8192,
-    messages: bounded.map(m => ({ role: m.role, content: m.content })),
-    // Newer models default to display "omitted" (empty thinking text); ask for the readable summary instead.
-    ...(info?.adaptiveThinking ? { thinking: { type: "adaptive", display: "summarized" } } : {}),
-    ...(effort ? { output_config: { effort } } : {})
+  const store = attachments();
+  const loader = {
+    read: (a: Attachment) => store.read(a.id),
+    uploadForContainer: async (a: Attachment) => {
+      const cached = await store.fileId(a.id);
+      if (cached) return cached;
+      const { toFile } = await import("@anthropic-ai/sdk");
+      const uploaded = await client.files.upload({ file: await toFile(await store.read(a.id), a.name, { type: a.mediaType }) });
+      await store.setFileId(a.id, uploaded.id);
+      return uploaded.id;
+    }
   };
+  const built = await buildMessages(turns, project?.knowledge ?? [], loader, { containerUploads: codeOn, caps });
+  const messages: MessageParam[] = built.messages;
+  const system = buildSystem(payload.style, prefs.customStyle, project);
+  const containerId = typeof payload.containerId === "string" && payload.containerId ? payload.containerId : undefined;
+
   const controller = new AbortController();
   activeReplies.set(requestId, controller);
-  const send = (kind: "text" | "thinking", delta: string) => {
+  const send = (kind: "text" | "thinking" | "activity", delta: string) => {
     if (!event.sender.isDestroyed()) event.sender.send("claude:stream", { requestId, kind, delta });
   };
-  let text = "";
+  const totals = { input: 0, output: 0, cacheCreate: 0, cacheRead: 0, searches: 0 };
+  const addUsage = (u: any) => {
+    if (!u) return;
+    totals.input += u.input_tokens ?? 0; totals.output += u.output_tokens ?? 0;
+    totals.cacheCreate += u.cache_creation_input_tokens ?? 0; totals.cacheRead += u.cache_read_input_tokens ?? 0;
+    totals.searches += u.server_tool_use?.web_search_requests ?? 0;
+  };
+  const turnBlocks: ContentBlock[] = [];
   let thinking = "";
-  let snapshotUsage: any = null;
   let aborted = false;
   let finalModel = model;
+  let container: { id: string; expiresAt?: string } | undefined = containerId ? { id: containerId } : undefined;
+  let pendingUsage: any = null;
   try {
-    // output_config and adaptive thinking are newer than SDK 0.68's request types; the SDK forwards them unchanged.
-    const stream = client.messages.stream(params as any, { signal: controller.signal });
-    stream.on("text", delta => { text += delta; send("text", delta); });
-    stream.on("thinking", delta => { thinking += delta; send("thinking", delta); });
-    stream.on("streamEvent", (_e, snapshot) => { snapshotUsage = snapshot.usage; finalModel = snapshot.model || model; });
-    const final = await stream.finalMessage();
-    snapshotUsage = final.usage;
-    finalModel = final.model || model;
+    for (let iteration = 0; iteration < MAX_LOOP; iteration++) {
+      // Thinking counts toward max_tokens, so allow the model's full output budget; streaming keeps long replies within SDK limits.
+      const stream = client.messages.stream({
+        model, max_tokens: info?.maxTokens ?? 8192, messages,
+        ...(system ? { system } : {}),
+        ...(tools.length ? { tools } : {}),
+        ...(skills.length || container ? { container: { ...(container ? { id: container.id } : {}), ...(skills.length ? { skills: skills.map(skill_id => ({ type: "anthropic" as const, skill_id, version: "latest" })) } : {}) } } : {}),
+        // Newer models default to display "omitted" (empty thinking text); ask for the readable summary instead.
+        ...(info?.adaptiveThinking ? { thinking: { type: "adaptive" as const, display: "summarized" as const } } : {}),
+        ...(effort ? { output_config: { effort: effort as "high" } } : {}),
+        // Automatic prompt caching: the cache breakpoint moves forward with the conversation.
+        cache_control: { type: "ephemeral" }
+      }, { signal: controller.signal });
+      stream.on("text", delta => send("text", delta));
+      stream.on("thinking", delta => { thinking += delta; send("thinking", delta); });
+      stream.on("streamEvent", (e, snapshot) => {
+        pendingUsage = snapshot.usage;
+        finalModel = snapshot.model || model;
+        if (e.type === "content_block_start") {
+          const label = activityLabel((e.content_block as { name?: string }).name);
+          if (label && (e.content_block.type === "server_tool_use" || e.content_block.type === "tool_use")) send("activity", label);
+        }
+      });
+      const final: Message = await stream.finalMessage();
+      addUsage(final.usage); pendingUsage = null;
+      finalModel = final.model || model;
+      // Separate text written before and after a tool round-trip, matching the "\n\n" streamed live.
+      if (turnBlocks.some(b => b.type === "text") && final.content.some(b => b.type === "text")) turnBlocks.push({ type: "text", text: "\n\n", citations: null } as ContentBlock);
+      turnBlocks.push(...final.content);
+      if (final.container?.id) container = { id: final.container.id, expiresAt: final.container.expires_at };
+      if (final.stop_reason === "pause_turn") {
+        messages.push({ role: "assistant", content: final.content });
+        continue;
+      }
+      if (final.stop_reason === "tool_use") {
+        const results = [];
+        for (const block of final.content) {
+          if (block.type !== "tool_use") continue;
+          const outcome = block.name === "memory"
+            ? await runMemoryCommand(memoryRoot(), (block.input ?? {}) as Record<string, unknown>)
+            : { content: `Error: unknown tool ${block.name}`, isError: true };
+          results.push({ type: "tool_result" as const, tool_use_id: block.id, content: outcome.content, ...(outcome.isError ? { is_error: true } : {}) });
+        }
+        if (!results.length) break;
+        messages.push({ role: "assistant", content: final.content }, { role: "user", content: results });
+        send("text", "\n\n");
+        continue;
+      }
+      break;
+    }
   } catch (error) {
     if (!controller.signal.aborted) throw error;
     aborted = true;
+    // A stopped reply still consumed tokens; keep what the stream reported so far.
+    addUsage(pendingUsage);
   } finally {
     activeReplies.delete(requestId);
   }
   const usage = {
-    model: finalModel,
-    inputTokens: snapshotUsage?.input_tokens ?? 0,
-    outputTokens: snapshotUsage?.output_tokens ?? 0,
-    cacheCreationInputTokens: snapshotUsage?.cache_creation_input_tokens ?? 0,
-    cacheReadInputTokens: snapshotUsage?.cache_read_input_tokens ?? 0
+    model: finalModel, inputTokens: totals.input, outputTokens: totals.output,
+    cacheCreationInputTokens: totals.cacheCreate, cacheReadInputTokens: totals.cacheRead, webSearchRequests: totals.searches
   };
-  // A stopped reply still consumed tokens; record what the stream reported so far.
-  if (snapshotUsage) await recordUsage(usage);
-  return {
-    text, thinking, aborted, usage,
-    contextMessages: bounded.length,
-    contextCharacters: bounded.reduce((total, m) => total + m.content.length, 0)
-  };
+  if (usage.inputTokens || usage.outputTokens) await recordUsage(usage);
+  const { text, citations } = extractText(turnBlocks);
+  const files = [];
+  for (const fileId of extractFileIds(turnBlocks)) {
+    try {
+      const meta = await client.files.retrieveMetadata(fileId);
+      files.push({ fileId, name: meta.filename, size: meta.size_bytes });
+    } catch { files.push({ fileId, name: fileId }); }
+  }
+  return { text, thinking, aborted, usage, citations, files, container, notices: [...built.skipped.map(s => `添付をスキップ: ${s}`), ...unavailable.map(u => `${u}はこのモデルでは使えません`)] };
+});
+
+ipcMain.handle("claude:title", async (_event, payload: { user: string; assistant: string }) => {
+  // Use the cheapest small model without thinking so a tiny max_tokens still yields text.
+  const candidates = [...modelCache.values()].filter(m => /haiku/.test(m.id)).sort((a, b) => (a.id.includes("4-5") ? -1 : 0) - (b.id.includes("4-5") ? -1 : 0));
+  const pick = candidates[0];
+  if (!pick) return null;
+  const client = new Anthropic({ apiKey: await getApiKey() });
+  const response = await client.messages.create({
+    model: pick.id, max_tokens: 60,
+    ...(pick.adaptiveThinking ? { thinking: { type: "disabled" as const }, ...(pick.effortLevels.includes("low") ? { output_config: { effort: "low" as const } } : {}) } : {}),
+    system: "会話の内容を表す日本語のタイトルを20文字以内で1つだけ出力してください。記号や引用符、説明は不要です。",
+    messages: [{ role: "user", content: `ユーザー: ${String(payload?.user ?? "").slice(0, 2000)}\n\nアシスタント: ${String(payload?.assistant ?? "").slice(0, 2000)}` }]
+  });
+  await recordUsage({
+    model: response.model, inputTokens: response.usage.input_tokens, outputTokens: response.usage.output_tokens,
+    cacheCreationInputTokens: response.usage.cache_creation_input_tokens ?? 0, cacheReadInputTokens: response.usage.cache_read_input_tokens ?? 0, webSearchRequests: 0
+  });
+  const title = response.content.filter(b => b.type === "text").map(b => b.text).join("").trim().replace(/^["「『]|["」』]$/g, "").slice(0, 40);
+  return { title: title || null, usage: { model: response.model, inputTokens: response.usage.input_tokens, outputTokens: response.usage.output_tokens } };
 });
