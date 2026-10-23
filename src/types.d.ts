@@ -1,29 +1,33 @@
 export {};
-type ContinuityMessage = {
-  role: "user" | "assistant";
-  content: string;
-  thinking?: string;
-  model?: string;
-  costUsd?: number;
-  aborted?: boolean;
+type ContinuityAttachment = { id: string; name: string; mediaType: string; size: number; kind: "image" | "pdf" | "text" | "file" };
+type ContinuityCitation = { url: string; title: string; citedText?: string };
+type ContinuityFile = { fileId: string; name: string; size?: number };
+type ContinuityReply = {
+  content: string; thinking?: string; model?: string; costUsd?: number; aborted?: boolean;
+  citations?: ContinuityCitation[]; files?: ContinuityFile[];
 };
-type ContinuityConversation = { id: string; title: string; messages: ContinuityMessage[]; source?: string };
+type ContinuityMessage = ContinuityReply & {
+  role: "user" | "assistant";
+  attachments?: ContinuityAttachment[];
+  alternates?: ContinuityReply[];
+  altIndex?: number;
+};
+type ContinuityTools = { webSearch?: boolean; webFetch?: boolean; files?: boolean; analysis?: boolean; memory?: boolean };
+type ContinuityConversation = {
+  id: string; title: string; messages: ContinuityMessage[]; source?: string;
+  projectId?: string; style?: string; tools?: ContinuityTools; container?: { id: string; expiresAt?: string };
+};
+type ContinuityProject = { id: string; name: string; instructions: string; knowledge: ContinuityAttachment[]; memory: boolean };
+type ContinuityPrefs = { autoTitle: boolean; customStyle: string };
 type ContinuityUsage = {
-  model: string;
-  inputTokens: number;
-  outputTokens: number;
-  cacheCreationInputTokens: number;
-  cacheReadInputTokens: number;
+  model: string; inputTokens: number; outputTokens: number;
+  cacheCreationInputTokens: number; cacheReadInputTokens: number; webSearchRequests?: number;
 };
 type ContinuityModel = {
-  id: string;
-  displayName: string;
-  createdAt?: string;
-  maxTokens?: number;
-  maxInputTokens?: number;
-  effortLevels: string[];
-  adaptiveThinking: boolean;
+  id: string; displayName: string; createdAt?: string; maxTokens?: number; maxInputTokens?: number;
+  effortLevels: string[]; adaptiveThinking: boolean; webSearch: boolean; codeExecution: boolean; imageInput: boolean; pdfInput: boolean;
 };
+type AttachResult = { added: ContinuityAttachment[]; errors: string[] };
 type ContinuityCreditSettings = import("./lib/credit").CreditSettings;
 declare global {
   interface Window {
@@ -38,12 +42,28 @@ declare global {
       saveChats: (chats: ContinuityConversation[]) => Promise<boolean>;
       loadCredit: () => Promise<ContinuityCreditSettings | null>;
       saveCredit: (settings: ContinuityCreditSettings) => Promise<ContinuityCreditSettings>;
+      loadPrefs: () => Promise<ContinuityPrefs>;
+      savePrefs: (prefs: ContinuityPrefs) => Promise<ContinuityPrefs>;
+      loadProjects: () => Promise<ContinuityProject[]>;
+      saveProjects: (projects: ContinuityProject[]) => Promise<ContinuityProject[]>;
+      pickAttachments: () => Promise<AttachResult>;
+      addAttachmentFiles: (files: File[]) => Promise<AttachResult>;
+      addAttachmentData: (name: string, data: Uint8Array) => Promise<AttachResult>;
+      attachmentPreview: (id: string) => Promise<string | null>;
+      listMemory: () => Promise<{ path: string; size: number; content: string }[]>;
+      deleteMemory: (path: string) => Promise<boolean>;
+      saveGeneratedFile: (fileId: string, name: string) => Promise<{ canceled: boolean; filePath?: string }>;
       listModels: () => Promise<ContinuityModel[]>;
-      reply: (payload: { requestId: string; messages: { role: "user" | "assistant"; content: string }[]; model?: string; effort?: string }) => Promise<{
-        text: string; thinking: string; aborted: boolean; usage: ContinuityUsage; contextMessages?: number; contextCharacters?: number;
+      reply: (payload: {
+        requestId: string; messages: { role: "user" | "assistant"; content: string; attachments?: ContinuityAttachment[] }[];
+        model?: string; effort?: string; style?: string; projectId?: string; tools?: ContinuityTools; containerId?: string;
+      }) => Promise<{
+        text: string; thinking: string; aborted: boolean; usage: ContinuityUsage; citations: ContinuityCitation[]; files: ContinuityFile[];
+        container?: { id: string; expiresAt?: string }; notices: string[];
       }>;
+      generateTitle: (user: string, assistant: string) => Promise<{ title: string | null; usage: { model: string; inputTokens: number; outputTokens: number } } | null>;
       abortReply: (requestId: string) => Promise<boolean>;
-      onStream: (listener: (event: { requestId: string; kind: "text" | "thinking"; delta: string }) => void) => () => void;
+      onStream: (listener: (event: { requestId: string; kind: "text" | "thinking" | "activity"; delta: string }) => void) => () => void;
     };
   }
 }

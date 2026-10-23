@@ -6,6 +6,7 @@ export type UsageTokens = {
   outputTokens: number;
   cacheCreationInputTokens?: number;
   cacheReadInputTokens?: number;
+  webSearchRequests?: number;
 };
 
 export const PRICING_AS_OF = "2026-10";
@@ -46,6 +47,8 @@ const TABLE: Record<string, Price> = {
   "claude-3-5-haiku": haiku35
 };
 
+// Web search is billed per search on top of tokens: $10 per 1,000 searches.
+export const WEB_SEARCH_USD = 0.01;
 // Claude Haiku 5.5 charges higher rates when the whole prompt (including cache reads/writes) exceeds 100k tokens.
 const HAIKU_55_LONG_PROMPT = 100_000;
 
@@ -67,7 +70,7 @@ export function costOf(modelId: string, usage: UsageTokens): number | null {
   const price = priceFor(modelId, usage.inputTokens + cacheWrite + cacheRead);
   if (!price) return null;
   return (usage.inputTokens * price.input + cacheWrite * price.cacheWrite + cacheRead * price.cacheHit +
-    usage.outputTokens * price.output) / 1_000_000;
+    usage.outputTokens * price.output) / 1_000_000 + (usage.webSearchRequests ?? 0) * WEB_SEARCH_USD;
 }
 
 export function formatUsd(value: number, digits = 2): string {

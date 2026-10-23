@@ -46,6 +46,9 @@ describe("pricing", () => {
     const cost = costOf("claude-opus-5-5", { inputTokens: 12_340, outputTokens: 1_024, cacheCreationInputTokens: 1_000, cacheReadInputTokens: 10_000 });
     expect(cost).toBeCloseTo((12_340 * 4 + 1_024 * 20 + 1_000 * 5 + 10_000 * 0.2) / 1e6, 10);
   });
+  it("adds $0.01 per web search", () => {
+    expect(costOf("claude-opus-5-5", { inputTokens: 0, outputTokens: 0, webSearchRequests: 3 })).toBeCloseTo(0.03, 10);
+  });
   it("switches Haiku 5.5 to long-prompt rates above 100k prompt tokens", () => {
     expect(costOf("claude-haiku-5-5", { inputTokens: 100_000, outputTokens: 0 })).toBeCloseTo(0.01, 10);
     expect(costOf("claude-haiku-5-5", { inputTokens: 90_000, outputTokens: 0, cacheReadInputTokens: 20_000 }))

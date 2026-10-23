@@ -16,6 +16,10 @@ A local-first Electron desktop app for importing Claude conversation exports and
 - Continue imported conversations through the Anthropic API
 - Choose between configured Claude models in the composer, plus the thinking depth (`effort`) each model supports
 - Streamed replies with Markdown rendering (tables, highlighted code with copy buttons), a summarized-thinking panel, and a stop button
+- Attachments (images, PDFs, text/code; spreadsheets via code execution) by button, drag and drop, or paste
+- Projects with custom instructions and knowledge files, response styles, and optional memory (`memory_20250818`, stored locally)
+- Tools per conversation: web search and URL fetch with numbered sources, Skills (Excel/Word/PowerPoint/PDF creation with download), and data analysis via code execution
+- Regenerate (with version switching), edit-and-resend, automatic titles, sandboxed HTML/SVG artifact preview, and automatic prompt caching
 - Monthly API credit tracker for Max/Team plans: first-run setup (plan → grant day → API key with connection test), estimated remaining credit, expiry countdown, daily budget, and pace warnings; optional calibration from the Console balance
 - Store conversation history and API usage records locally
 - Search conversations by title and message text
