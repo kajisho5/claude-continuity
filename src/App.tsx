@@ -492,7 +492,7 @@ export default function App() {
          </article>}
         </div>
        </section>
-       {!atBottom&&<button className="to-bottom tip relative bottom-[150px] left-1/2 z-[3] grid size-[34px] -translate-x-1/2 animate-fade-in place-items-center rounded-full border border-line-strong bg-surface-2 text-ink-3 shadow-[0_8px_24px_var(--shadow)] hover:bg-raised" data-tip="最新へ" aria-label="最新のメッセージへ" onClick={scrollToBottom}><ArrowDown size={16}/></button>}
+       {!atBottom&&<button className="to-bottom tip absolute bottom-[150px] left-1/2 z-[3] grid size-[34px] -translate-x-1/2 animate-fade-in place-items-center rounded-full border border-line-strong bg-surface-2 text-ink-3 shadow-[0_8px_24px_var(--shadow)] hover:bg-raised" data-tip="最新へ" aria-label="最新のメッセージへ" onClick={scrollToBottom}><ArrowDown size={16}/></button>}
        <footer className="px-[24px] pt-0 pb-[14px] max-[1000px]:px-[18px]">{composer("footer")}
         <div className="status mx-auto mt-[8px] mb-0 flex max-w-[760px] flex-wrap justify-center gap-x-[10px] gap-y-[4px] px-[8px] text-center text-[11px] text-subtle"><span className="status-text">{status==="準備完了"?"Claude は間違えることがあります。回答は必ずご確認ください。":status}</span>{hint&&<span className="status-hint text-faint before:mr-[10px] before:text-faint before:content-['·']">{hint}</span>}</div>
        </footer>
@@ -500,7 +500,7 @@ export default function App() {
     </div>
     {artifact&&<ArtifactPanel artifact={artifact} versions={artifactVersions.length?artifactVersions:[artifact]} onSelect={setArtifact} onClose={()=>setArtifact(null)}/>}
    </div>}
-   {(update.state==="available"||update.state==="downloading"||update.state==="ready")&&updateDismissed!==update.state+update.version&&<div className="update-banner absolute top-[58px] left-1/2 z-[6] flex max-w-[min(720px,calc(100%-40px))] animate-toast-in items-center gap-[12px] rounded-[12px] border border-line-strong bg-modal py-[8px] pr-[8px] pl-[16px] text-[12.5px] whitespace-normal text-ink-2 shadow-[0_8px_24px_var(--shadow)] [transform:translateX(-50%)]" role="status">
+   {(update.state==="available"||update.state==="downloading"||update.state==="ready")&&updateDismissed!==update.state+update.version&&<div className="update-banner absolute top-[58px] left-1/2 z-[6] flex max-w-[min(720px,calc(100%-40px))] animate-toast-in items-center gap-[12px] rounded-[12px] border border-line-strong bg-modal py-[8px] pr-[8px] pl-[16px] text-[12.5px] whitespace-normal text-ink-2 shadow-[0_8px_24px_var(--shadow)] -translate-x-1/2" role="status">
      <span className="update-banner-text flex min-w-0 flex-col gap-px"><b className="text-[13px] text-ink">{update.state==="ready"?"アップデートの準備ができました":"アップデートがあります"}</b>{statusText(update)}</span>
      {update.state==="downloading"&&<span className="update-progress block h-[6px] w-[140px] shrink-0 overflow-hidden rounded-[3px] bg-line" aria-label={`${update.percent}%`}><i className="block h-full bg-accent transition-[width] duration-300 ease-[ease]" style={{width:`${update.percent}%`}}/></span>}
      {update.state!=="downloading"&&"notes" in update&&update.notes&&<button className="link text-[12px] whitespace-nowrap no-underline" onClick={()=>setSettings("about")}>変更内容</button>}

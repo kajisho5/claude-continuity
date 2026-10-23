@@ -45,7 +45,7 @@ export default function ConnectorsSection({ onChange }: { onChange: (list: Conne
         <button className="btn-text" onClick={() => setDraft({ id: c.id, name: c.name, url: c.url, token: "", keepToken: true })}>編集</button>
         <button className="icon-btn" aria-label={`${c.name} を削除`} onClick={() => { if (window.confirm(`${c.name} を削除しますか？`)) void window.continuity.deleteConnector(c.id).then(update); }}><Trash2 size={14} /></button>
       </li>)}
-      {list.length === 0 && !draft && <li className={"empty " + CONNECTOR_ROW + " h-full min-h-[350px] flex-col items-center justify-center border-dashed bg-transparent text-center text-[12px] text-subtle"}>まだコネクタはありません。</li>}
+      {list.length === 0 && !draft && <li className={"empty " + CONNECTOR_ROW + " justify-center border-dashed bg-transparent text-center text-[12px] text-subtle"}>まだコネクタはありません。</li>}
     </ul>}
     {draft
       ? <div className="connector-form mt-[12px] rounded-[12px] border border-line-strong px-[14px] py-[12px]">

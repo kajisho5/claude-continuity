@@ -72,7 +72,7 @@ export default function PreferencesSection({ prefs, onSave, model, onUsage }: { 
   }
   return <section className="credit-form">
     <StylesEditor prefs={prefs} onSave={onSave} model={model} onUsage={onUsage} />
-    <h3 className="spaced m-[0_0_6px] font-serif text-[16px] leading-[normal] font-semibold text-ink">メモリ</h3>
+    <h3 className="spaced m-[26px_0_6px] font-serif text-[16px] leading-[normal] font-semibold text-ink">メモリ</h3>
     <p className="muted">メモリをオンにした会話で Claude が読み書きする内容です。ここで直接直したり、覚えておいてほしいことを書き足したりできます。</p>
     {memory === null ? <p className="hint">読み込み中…</p> : memory.length === 0 && !adding ? <p className="hint">保存されたメモリはありません。</p> :
       <ul className="memory-list m-[8px_0_0] flex list-none flex-col gap-[6px] p-0">{memory.map(file => <li key={file.path} className="flex items-start gap-[6px] rounded-[8px] border border-line bg-inset px-[8px] py-[6px]">
