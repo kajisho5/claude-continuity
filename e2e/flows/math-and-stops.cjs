@@ -1,4 +1,4 @@
-// KaTeX math (with dollar amounts left alone), max_tokens stop with "continue" merging, and refusal.
+// KaTeX math (with dollar amounts left alone), max_tokens stop with "continue" merging, refusal, and Stop keeping the streamed text.
 const { launch, onboard, ask, waitReply, until, text, assert } = require("../lib.cjs");
 
 module.exports = async function mathAndStops(ctx) {
@@ -22,4 +22,14 @@ module.exports = async function mathAndStops(ctx) {
   await ask(w, "拒否して");
   assert.equal(await text(w.locator(".stop-notice.refusal span")), "Claude はこの依頼への回答を控えました。言い方や内容を変えて、もう一度お試しください。");
   assert.equal(await w.locator(".stop-notice.refusal button").count(), 0, "a refusal offers no continue button");
+
+  // Stop mid-stream: the text already shown stays in the saved reply. (A fresh chat: the mock matches on the whole history.)
+  await w.click(".new-chat");
+  await w.fill(".composer textarea", "ゆっくり 説明して");
+  await w.keyboard.press("Enter");
+  await until(() => w.locator(".message.pending .markdown").count().then(n => n ? text(w.locator(".message.pending .markdown")) : ""), t => t.length >= 24, { message: "some text streams before stopping" });
+  await w.keyboard.press("Escape");
+  await waitReply(w);
+  assert.ok((await text(w.locator(".message.assistant .markdown").last())).length >= 24, "the stopped reply keeps the streamed text");
+  assert.equal(await text(w.locator(".message.assistant .msg-note").last()), "応答を途中で停止しました");
 };

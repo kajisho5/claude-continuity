@@ -67,10 +67,13 @@ export async function readFiles(requested: string[], roots: string[]): Promise<{
   return { blocks, read, skipped };
 }
 
-/** Upper-bound cost of one call: counted input at full price plus the whole output budget. */
+/**
+ * Upper-bound cost of one call: the counted input at the cache-write price (the call sets cache_control, so a
+ * fresh prompt is billed as a cache write) plus the whole output budget.
+ */
 export function worstCaseUsd(model: string, inputTokens: number, maxOutput = MAX_OUTPUT_TOKENS): number | null {
   const price = priceFor(model, inputTokens);
-  return price ? (inputTokens * price.input + maxOutput * price.output) / 1_000_000 : null;
+  return price ? (inputTokens * Math.max(price.input, price.cacheWrite) + maxOutput * price.output) / 1_000_000 : null;
 }
 
 export function truncateResult(text: string, maxChars: number): { text: string; truncated: boolean } {
@@ -101,7 +104,9 @@ export async function delegate(client: Anthropic, input: DelegateInput, config: 
 
   const counted = await client.messages.countTokens(request);
   const worst = worstCaseUsd(model, counted.input_tokens);
-  if (worst != null && worst > config.maxUsdPerCall) {
+  // Without a known price the limit cannot be checked, so the call is not run.
+  if (worst == null) throw new Error(mcpT().delegate.unknownPrice(model));
+  if (worst > config.maxUsdPerCall) {
     throw new Error(mcpT().delegate.overBudget(formatUsd(worst), formatUsd(config.maxUsdPerCall), counted.input_tokens.toLocaleString(mcpIntlLocale())));
   }
 

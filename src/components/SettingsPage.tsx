@@ -69,7 +69,7 @@ export default function SettingsPage(p: Props) {
   const [keyMessage, setKeyMessage] = useState("");
   useEffect(() => {
     // A confirm dialog opened from a tab handles its own Escape.
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape" && !document.querySelector(".dialog")) { e.stopPropagation(); p.onClose(); } };
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape" && !e.isComposing && e.keyCode !== 229 && !document.querySelector(".dialog")) { e.stopPropagation(); p.onClose(); } };
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
   }, [p.onClose]);

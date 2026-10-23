@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { mainT } from "./i18n";
+import { saveFile, withFileLock } from "./fileStore";
 
 export type AttachmentKind = "image" | "pdf" | "text" | "file";
 export type Attachment = { id: string; name: string; mediaType: string; size: number; kind: AttachmentKind };
@@ -62,8 +63,10 @@ export class AttachmentStore {
   read(id: string): Promise<Buffer> { return fs.readFile(this.fileFor(id)); }
   async fileId(id: string): Promise<string | undefined> { return (await this.index())[id]?.fileId; }
   async setFileId(id: string, fileId: string) {
-    const index = await this.index();
-    index[id] = { ...index[id], fileId };
-    await fs.writeFile(this.indexFile(), JSON.stringify(index), "utf8");
+    await withFileLock(this.indexFile() + ":update", async () => {
+      const index = await this.index();
+      index[id] = { ...index[id], fileId };
+      await saveFile(this.indexFile(), JSON.stringify(index));
+    });
   }
 }

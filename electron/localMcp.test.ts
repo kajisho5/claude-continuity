@@ -76,6 +76,10 @@ describe("toToolResult", () => {
     expect(toToolResult({ content: [] }).content).toEqual([{ type: "text", text: "（結果なし）" }]);
     expect(toToolResult({ content: [], structuredContent: { a: 1 } }).text).toBe('{"a":1}');
   });
+  it("drops empty text, which the API rejects", () => {
+    expect(toToolResult({ content: [{ type: "text", text: "" }] }).content).toEqual([{ type: "text", text: "（結果なし）" }]);
+    expect(toToolResult({ content: [{ type: "text", text: "" }, { type: "text", text: "ok" }] }).content).toEqual([{ type: "text", text: "ok" }]);
+  });
   it("truncates very long text", () => {
     const r = toToolResult({ content: [{ type: "text", text: "a".repeat(150_000) }] });
     expect(r.text.length).toBeLessThan(101_000);

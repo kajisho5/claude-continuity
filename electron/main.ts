@@ -1,7 +1,7 @@
 import { app, BrowserWindow, desktopCapturer, dialog, globalShortcut, ipcMain, nativeTheme, safeStorage, screen, shell } from "electron";
 import path from "node:path";
 import fs from "node:fs/promises";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import Anthropic from "@anthropic-ai/sdk";
 import AdmZip from "adm-zip";
 import type { MessageParam, ContentBlock, Message } from "@anthropic-ai/sdk/resources/messages";
@@ -12,12 +12,14 @@ import { createBackup, readBackup, restoreEntries } from "./backup";
 import { formatHits, searchPastChats } from "./pastChats";
 import { setupUpdater } from "./updater";
 import { getMainLocale, mainT, resolveMainLocale, setMainLocale } from "./i18n";
+import { readJsonFile, saveFile, withFileLock, writeFileAtomic } from "./fileStore";
 import { connectorRequest, MCP_CONNECTOR_BETA, serverName, validateConnector, type Connector, type ConnectorView } from "./connectors";
 import { containerSkills, readSkillSource } from "./skills";
 import { buildIndex, formatKnowledgeHits, knowledgeTool, pdfText, searchKnowledge, type KnowledgeIndex } from "./knowledge";
 import { desktopConfigPath, LocalMcpPool, parseDesktopConfig, parseEnv, toolDefinitions, toToolResult, validateLocal, type LocalServer, type LocalToolRef } from "./localMcp";
 import { HANDOFF_PREFIX, fitsHandoff } from "../src/lib/handoff";
-import { activityLabel, buildMessages, historyBudget, buildSystem, buildTools, extractFileIds, extractSteps, extractText, type ChatTurn, type Project, type StyleId, type ToolFlags } from "./request";
+import { activityLabel, buildMessages, historyBudget, buildSystem, buildTools, extractFileIds, extractSteps, extractText, RESEARCH_MAX_USES, type ChatTurn, type Project, type StyleId, type ToolFlags } from "./request";
+import { costOf } from "../src/lib/pricing";
 
 // Only `npm run dev` passes --dev; `npm start` after a build must load the bundled renderer.
 const isDev = !app.isPackaged && process.argv.includes("--dev");
@@ -41,6 +43,11 @@ function createWindow() {
   mainWindow.webContents.on("will-navigate", (event, url) => {
     if (url !== mainWindow?.webContents.getURL()) event.preventDefault();
   });
+  // Artifact previews are srcdoc frames; one must not navigate itself (refresh, location, a link) to a page
+  // outside its sandbox policy.
+  mainWindow.webContents.on("will-frame-navigate", details => {
+    if (!details.isMainFrame && !/^about:(srcdoc|blank)$/.test(details.url)) details.preventDefault();
+  });
   if (isDev) void mainWindow.loadURL("http://127.0.0.1:5173");
   else void mainWindow.loadFile(path.join(__dirname, "../dist/index.html"));
 }
@@ -56,7 +63,16 @@ app.whenReady().then(async () => {
   app.on("activate", () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
 });
 app.on("window-all-closed", () => { if (process.platform !== "darwin") app.quit(); });
-app.on("will-quit", () => { globalShortcut.unregisterAll(); void localPool.closeAll(); });
+// Local MCP servers get a moment to shut down (stdin closed, then SIGTERM) before the app exits,
+// so servers behind wrappers such as npx are not left running.
+let quitting = false;
+app.on("will-quit", event => {
+  globalShortcut.unregisterAll();
+  if (quitting) return;
+  quitting = true;
+  event.preventDefault();
+  void Promise.race([localPool.closeAll(), new Promise(r => setTimeout(r, 3000))]).finally(() => app.exit());
+});
 
 // ---- Quick access: a global shortcut and screenshots ----
 const showWindow = () => {
@@ -161,7 +177,7 @@ function parseExportText(text: string, source: string): NormalizedConversation[]
   for (const item of candidates) {
     const messages = extractMessages(item);
     if (!messages.length) continue;
-    const id = String(item.uuid ?? item.id ?? item.conversation_id ?? `import-${unique.size}`);
+    const id = String(item.uuid ?? item.id ?? item.conversation_id ?? `${source}-${unique.size}`);
     unique.set(id, {
       id: `imported-${id}`,
       title: String(item.name ?? item.title ?? item.summary ?? mainT().main.importedChat).trim() || mainT().main.importedChat,
@@ -173,7 +189,9 @@ function parseExportText(text: string, source: string): NormalizedConversation[]
   // Some exports contain a single conversation object rather than a list.
   if (!unique.size) {
     const messages = extractMessages(data);
-    if (messages.length) unique.set("single", { id: "imported-single", title: String(data.name ?? data.title ?? mainT().main.importedChat), messages, source });
+    // Use the conversation's own id, or one derived from its content, so a second single export is not mistaken for the first.
+    const id = String(data.uuid ?? data.id ?? data.conversation_id ?? createHash("sha256").update(text).digest("hex").slice(0, 32));
+    if (messages.length) unique.set(id, { id: `imported-${id}`, title: String(data.name ?? data.title ?? mainT().main.importedChat), messages, ...isoDate(data.updated_at ?? data.created_at), source });
   }
   return [...unique.values()];
 }
@@ -219,8 +237,10 @@ ipcMain.handle("dialog:import-export", async () => {
 
 const chatsFile = () => path.join(dataDir(), "chats.json");
 ipcMain.handle("chats:load", async () => {
-  try { const data = JSON.parse(await fs.readFile(chatsFile(), "utf8")); return Array.isArray(data) ? data : []; }
-  catch { return []; }
+  // A missing file means no chats yet; an unparsable one is moved aside; any other read error is reported
+  // so the window does not start empty and save over the history.
+  const data = await readJsonFile<unknown>(chatsFile(), []);
+  return Array.isArray(data) ? data : [];
 });
 const str = (v: unknown, max: number) => typeof v === "string" ? v.slice(0, max) : undefined;
 function sanitizeAttachment(a: any): Attachment | null {
@@ -264,7 +284,8 @@ function sanitizeMessage(m: any, depth: number): any {
     } : {})
   };
 }
-ipcMain.handle("chats:save", async (_event, chats: unknown[]) => {
+ipcMain.handle("chats:save", async (event, chats: unknown[]) => {
+  if (staleWindows.has(event.sender)) return false;
   if (!Array.isArray(chats)) throw new Error(mainT().main.badChats);
   const safeChats = chats.map((chat: any) => ({
     id: String(chat.id ?? ""),
@@ -281,7 +302,7 @@ ipcMain.handle("chats:save", async (_event, chats: unknown[]) => {
     ...(chat.container && typeof chat.container.id === "string" ? { container: { id: chat.container.id.slice(0, 200), expiresAt: str(chat.container.expiresAt, 60) } } : {}),
     messages: Array.isArray(chat.messages) ? chat.messages.slice(-5000).map((m: any) => sanitizeMessage(m, 0)) : []
   }));
-  await fs.writeFile(chatsFile(), JSON.stringify(safeChats), "utf8");
+  await saveFile(chatsFile(), JSON.stringify(safeChats));
   return true;
 });
 
@@ -320,7 +341,10 @@ ipcMain.handle("data:openFolder", async () => {
   if (error) throw new Error(error);
   return true;
 });
-ipcMain.handle("data:restore", async () => {
+// After a restore the window's in-memory state is stale until it reloads, so its saves are ignored until then
+// (otherwise a reply finishing or a pending debounce would write the old chats over the restored ones).
+const staleWindows = new WeakSet<Electron.WebContents>();
+ipcMain.handle("data:restore", async event => {
   const result = await dialog.showOpenDialog({ title: mainT().main.restoreTitle, properties: ["openFile"], filters: [{ name: "ZIP", extensions: ["zip"] }] });
   if (result.canceled || !result.filePaths[0]) return { canceled: true };
   const stat = await fs.stat(result.filePaths[0]);
@@ -333,7 +357,14 @@ ipcMain.handle("data:restore", async () => {
   await fs.mkdir(safetyDir, { recursive: true });
   const safetyPath = path.join(safetyDir, `before-restore-${stamp()}.zip`);
   await fs.writeFile(safetyPath, (await createBackup(dataDir(), app.getVersion())).zip.toBuffer());
-  await restoreEntries(dataDir(), entries);
+  const sender = event.sender;
+  staleWindows.add(sender);
+  try {
+    // Let saves already queued finish first, so none of them lands after the restored files.
+    await Promise.all([chatsFile(), prefsFile(), projectsFile(), creditFile(), usageFile()].map(f => withFileLock(f, async () => {})));
+    await restoreEntries(dataDir(), entries);
+  } catch (error) { staleWindows.delete(sender); throw error; }
+  sender.once("did-finish-load", () => staleWindows.delete(sender));
   const restoredPrefs = await loadPrefs();
   nativeTheme.themeSource = restoredPrefs.theme;
   applyLanguage(restoredPrefs.language);
@@ -368,7 +399,7 @@ ipcMain.handle("skills:upload", async (_event, kind: "folder" | "file") => {
   const { toFile } = await import("@anthropic-ai/sdk");
   const skill = await client.beta.skills.create({ files: await Promise.all(files.map(f => toFile(f.data, f.name))) });
   const prefs = await loadPrefs();
-  await fs.writeFile(prefsFile(), JSON.stringify(sanitizePrefs({ ...prefs, enabledSkills: [...prefs.enabledSkills, skill.id] })), "utf8");
+  await saveFile(prefsFile(), JSON.stringify(sanitizePrefs({ ...prefs, enabledSkills: [...prefs.enabledSkills, skill.id] })));
   return { id: skill.id, name: skill.display_name, updatedAt: skill.updated_at };
 });
 /** A skill can only be deleted once its versions are gone. */
@@ -380,7 +411,7 @@ ipcMain.handle("skills:delete", async (_event, id: string) => {
   for (const version of versions) await client.beta.skills.versions.delete(version, { skill_id: skillId });
   await client.beta.skills.delete(skillId);
   const prefs = await loadPrefs();
-  await fs.writeFile(prefsFile(), JSON.stringify(sanitizePrefs({ ...prefs, enabledSkills: prefs.enabledSkills.filter(s => s !== skillId) })), "utf8");
+  await saveFile(prefsFile(), JSON.stringify(sanitizePrefs({ ...prefs, enabledSkills: prefs.enabledSkills.filter(s => s !== skillId) })));
   return true;
 });
 
@@ -389,17 +420,20 @@ ipcMain.handle("mcp:pickFolder", async () => {
   return result.canceled ? [] : result.filePaths;
 });
 type UsageEntry = { model: string; inputTokens: number; outputTokens: number; cacheCreationInputTokens: number; cacheReadInputTokens: number; webSearchRequests: number };
-async function recordUsage(entry: UsageEntry) {
-  let rows: any[] = [];
-  try { const raw = JSON.parse(await fs.readFile(usageFile(), "utf8")); if (Array.isArray(raw)) rows = raw; } catch {}
-  rows.push({ ...entry, sessionId, createdAt: new Date().toISOString() });
-  // Retain a bounded local ledger instead of allowing indefinite growth.
-  await fs.writeFile(usageFile(), JSON.stringify(rows.slice(-10000)), "utf8");
+function recordUsage(entry: UsageEntry) {
+  // One writer at a time, so overlapping replies (or a title and a reply) cannot drop each other's rows.
+  return withFileLock(usageFile(), async () => {
+    const raw = await readJsonFile<unknown>(usageFile(), []);
+    const rows: any[] = Array.isArray(raw) ? raw : [];
+    rows.push({ ...entry, sessionId, createdAt: new Date().toISOString() });
+    // Retain a bounded local ledger instead of allowing indefinite growth.
+    await writeFileAtomic(usageFile(), JSON.stringify(rows.slice(-10000)));
+  });
 }
 ipcMain.handle("key:save", async (_event, apiKey: string) => {
   if (!safeStorage.isEncryptionAvailable()) throw new Error(mainT().main.keyStorageUnavailable);
   if (!apiKey || !apiKey.startsWith("sk-ant-")) throw new Error(mainT().main.badKey);
-  await fs.writeFile(keyFile(), safeStorage.encryptString(apiKey)); return true;
+  await saveFile(keyFile(), safeStorage.encryptString(apiKey)); return true;
 });
 ipcMain.handle("key:status", async () => {
   try {
@@ -462,7 +496,8 @@ const PLANS = ["max5x", "max20x", "team", "custom", "none"];
 ipcMain.handle("credit:load", async () => {
   try { return JSON.parse(await fs.readFile(creditFile(), "utf8")); } catch { return null; }
 });
-ipcMain.handle("credit:save", async (_event, value: any) => {
+ipcMain.handle("credit:save", async (event, value: any) => {
+  if (staleWindows.has(event.sender)) return false;
   if (!value || typeof value !== "object") throw new Error(mainT().main.badCredit);
   const plan = value.plan == null ? null : String(value.plan);
   if (plan !== null && !PLANS.includes(plan)) throw new Error(mainT().main.badPlan);
@@ -478,7 +513,7 @@ ipcMain.handle("credit:save", async (_event, value: any) => {
     calibration = { balanceUsd, observedAt: observedAt.toISOString() };
   }
   const saved = { plan, monthlyAmountUsd: amount, resetDay, onboardingDone: value.onboardingDone === true, ...(calibration ? { calibration } : {}) };
-  await fs.writeFile(creditFile(), JSON.stringify(saved), "utf8");
+  await saveFile(creditFile(), JSON.stringify(saved));
   return saved;
 });
 
@@ -534,9 +569,10 @@ function applyLanguage(language: Language) {
   setMainLocale(resolveMainLocale(language, app.getLocale()));
 }
 ipcMain.handle("prefs:load", () => loadPrefs());
-ipcMain.handle("prefs:save", async (_event, value: unknown) => {
+ipcMain.handle("prefs:save", async (event, value: unknown) => {
+  if (staleWindows.has(event.sender)) return false;
   const prefs = sanitizePrefs(value);
-  await fs.writeFile(prefsFile(), JSON.stringify(prefs), "utf8");
+  await saveFile(prefsFile(), JSON.stringify(prefs));
   nativeTheme.themeSource = prefs.theme;
   applyLanguage(prefs.language);
   applyQuickShortcut(prefs.quickShortcut);
@@ -550,7 +586,8 @@ async function loadProjects(): Promise<Project[]> {
   } catch { return []; }
 }
 ipcMain.handle("projects:load", () => loadProjects());
-ipcMain.handle("projects:save", async (_event, list: unknown) => {
+ipcMain.handle("projects:save", async (event, list: unknown) => {
+  if (staleWindows.has(event.sender)) return false;
   if (!Array.isArray(list)) throw new Error(mainT().main.badProjects);
   const projects: Project[] = list.slice(0, 200).map((p: any) => ({
     id: String(p?.id ?? randomUUID()).slice(0, 100),
@@ -559,7 +596,7 @@ ipcMain.handle("projects:save", async (_event, list: unknown) => {
     knowledge: sanitizeAttachments(p?.knowledge) ?? [],
     memory: p?.memory === true
   }));
-  await fs.writeFile(projectsFile(), JSON.stringify(projects), "utf8");
+  await saveFile(projectsFile(), JSON.stringify(projects));
   return projects;
 });
 
@@ -643,7 +680,7 @@ async function readStoredConnectors(): Promise<StoredConnector[]> {
     return Array.isArray(raw) ? raw.filter((c: any) => c && typeof c.id === "string" && (isLocal(c) ? typeof c.command === "string" : typeof c.url === "string")).slice(0, 30) : [];
   } catch { return []; }
 }
-const writeStoredConnectors = (list: StoredConnector[]) => fs.writeFile(connectorsFile(), JSON.stringify(list), "utf8");
+const writeStoredConnectors = (list: StoredConnector[]) => saveFile(connectorsFile(), JSON.stringify(list));
 const decrypt = (value?: string) => {
   try { if (value && safeStorage.isEncryptionAvailable()) return safeStorage.decryptString(Buffer.from(value, "base64")); } catch {}
   return undefined;
@@ -733,7 +770,8 @@ ipcMain.handle("connectors:test", async (_event, id: string) => {
   const connector = (await loadConnectors()).find(c => c.id === String(id));
   if (!connector) throw new Error(mainT().connectors.notFound);
   if (connector.transport === "local") {
-    await localPool.close(connector.id);
+    // Restart for a fresh check, unless a reply may be using the server right now.
+    if (!activeReplies.size) await localPool.close(connector.id);
     return { tools: (await localPool.tools(localServer(connector))).map(t => t.name) };
   }
   const { Client } = await import("@modelcontextprotocol/sdk/client/index.js");
@@ -773,11 +811,16 @@ type ReplyPayload = {
   style?: string; projectId?: string; tools?: ToolFlags; containerId?: string; chatId?: string; incognito?: boolean;
 };
 const activeReplies = new Map<string, AbortController>();
+// Stop pressed while a reply is still being prepared (attachments uploading, local servers starting).
+const earlyAborts = new Set<string>();
 const MAX_LOOP = 8;
 // Research runs many server-tool rounds; each pause_turn continues the same answer.
 const RESEARCH_MAX_LOOP = 24;
 ipcMain.handle("claude:abort", (_event, requestId: string) => {
-  activeReplies.get(String(requestId))?.abort();
+  const id = String(requestId);
+  const controller = activeReplies.get(id);
+  if (controller) controller.abort();
+  else { earlyAborts.add(id); setTimeout(() => earlyAborts.delete(id), 10 * 60_000); }
   return true;
 });
 function sanitizeTurns(list: unknown): ChatTurn[] {
@@ -821,12 +864,20 @@ const approvals = new Map<string, (decision: ApprovalDecision) => void>();
 type ApprovalDecision = "once" | "always" | "deny";
 function requestApproval(sender: Electron.WebContents, requestId: string, ref: LocalToolRef, input: unknown, signal: AbortSignal): Promise<ApprovalDecision> {
   return new Promise(resolve => {
+    if (signal.aborted || sender.isDestroyed()) return resolve("deny");
     const approvalId = randomUUID();
-    const done = (decision: ApprovalDecision) => { approvals.delete(approvalId); signal.removeEventListener("abort", onAbort); resolve(decision); };
+    const done = (decision: ApprovalDecision) => {
+      approvals.delete(approvalId); signal.removeEventListener("abort", onAbort);
+      sender.off("destroyed", onGone); sender.off("render-process-gone", onGone);
+      resolve(decision);
+    };
     const onAbort = () => done("deny");
+    // A closed window (macOS keeps the app running) can no longer answer.
+    const onGone = () => done("deny");
     approvals.set(approvalId, done);
     signal.addEventListener("abort", onAbort);
-    if (sender.isDestroyed()) return done("deny");
+    sender.once("destroyed", onGone);
+    sender.once("render-process-gone", onGone);
     const shown = JSON.stringify(input ?? {}, null, 2);
     sender.send("claude:approval", { requestId, approvalId, server: ref.serverName, tool: ref.tool, input: shown.length > 4000 ? shown.slice(0, 4000) + "…" : shown });
   });
@@ -910,6 +961,7 @@ ipcMain.handle("claude:reply", async (event, payload: ReplyPayload) => {
 
   const controller = new AbortController();
   activeReplies.set(requestId, controller);
+  if (earlyAborts.delete(requestId)) controller.abort();
   const send = (kind: "text" | "thinking" | "activity", delta: string) => {
     if (!event.sender.isDestroyed()) event.sender.send("claude:stream", { requestId, kind, delta });
   };
@@ -917,6 +969,7 @@ ipcMain.handle("claude:reply", async (event, payload: ReplyPayload) => {
   const localNotices: string[] = [];
   const localLists: { server: LocalServer; tools: Awaited<ReturnType<LocalMcpPool["tools"]>> }[] = [];
   for (const c of localConnectors) {
+    if (controller.signal.aborted) break;
     send("activity", mainT().localMcp.starting(c.name));
     try { localLists.push({ server: localServer(c), tools: await localPool.tools(localServer(c)) }); }
     catch (error) { localNotices.push(mainT().localMcp.unavailable(c.name, String((error as Error)?.message ?? error).split("\n")[0].slice(0, 200))); }
@@ -943,11 +996,23 @@ ipcMain.handle("claude:reply", async (event, payload: ReplyPayload) => {
   };
   const totals = { input: 0, output: 0, cacheCreate: 0, cacheRead: 0, searches: 0 };
   const progress = { searches: 0, fetches: 0 };
-  const addUsage = (u: any) => {
+  let costUsd: number | null = 0;
+  // Each API request is recorded (and priced) on its own: prices such as Haiku 5.5's long-prompt rate apply per request,
+  // and rounds that already finished stay recorded even if a later one fails.
+  const addUsage = async (u: any, usedModel: string) => {
     if (!u) return;
-    totals.input += u.input_tokens ?? 0; totals.output += u.output_tokens ?? 0;
-    totals.cacheCreate += u.cache_creation_input_tokens ?? 0; totals.cacheRead += u.cache_read_input_tokens ?? 0;
-    totals.searches += u.server_tool_use?.web_search_requests ?? 0;
+    const entry: UsageEntry = {
+      model: usedModel, inputTokens: u.input_tokens ?? 0, outputTokens: u.output_tokens ?? 0,
+      cacheCreationInputTokens: u.cache_creation_input_tokens ?? 0, cacheReadInputTokens: u.cache_read_input_tokens ?? 0,
+      webSearchRequests: u.server_tool_use?.web_search_requests ?? 0
+    };
+    totals.input += entry.inputTokens; totals.output += entry.outputTokens;
+    totals.cacheCreate += entry.cacheCreationInputTokens; totals.cacheRead += entry.cacheReadInputTokens;
+    totals.searches += entry.webSearchRequests;
+    if (!entry.inputTokens && !entry.outputTokens) return;
+    const cost = costOf(usedModel, entry);
+    costUsd = cost == null || costUsd == null ? null : costUsd + cost;
+    await recordUsage(entry).catch(() => {});
   };
   const turnBlocks: ContentBlock[] = [];
   let thinking = "";
@@ -955,15 +1020,22 @@ ipcMain.handle("claude:reply", async (event, payload: ReplyPayload) => {
   let finalModel = model;
   let container: { id: string; expiresAt?: string } | undefined = containerId ? { id: containerId } : undefined;
   let pendingUsage: any = null;
+  let snapshotContent: ContentBlock[] = [];
+  let lastStop: string | null = null;
   let stopReason: string | null = null;
   const clientResults = new Map<string, { content: string; isError?: boolean }>();
   try {
     for (let iteration = 0; iteration < (research ? RESEARCH_MAX_LOOP : MAX_LOOP); iteration++) {
       // Thinking counts toward max_tokens, so allow the model's full output budget; streaming keeps long replies within SDK limits.
+      // Research's search and page-read budgets are per turn, while max_uses counts per request; give each
+      // continuation only what is left.
+      const roundTools = research ? tools.map(t =>
+        t.type === "web_search_20250305" ? { ...t, max_uses: Math.max(1, RESEARCH_MAX_USES - progress.searches) }
+        : t.type === "web_fetch_20250910" ? { ...t, max_uses: Math.max(1, RESEARCH_MAX_USES - progress.fetches) } : t) : tools;
       const params = {
         model, max_tokens: info?.maxTokens ?? 8192, messages,
         ...(system ? { system } : {}),
-        ...(tools.length || mcp || local.tools.length ? { tools: [...tools, ...local.tools, ...(mcp?.tools ?? [])] } : {}),
+        ...(roundTools.length || mcp || local.tools.length ? { tools: [...roundTools, ...local.tools, ...(mcp?.tools ?? [])] } : {}),
         ...(mcp ? { mcp_servers: mcp.mcp_servers } : {}),
         ...(skills.length || customSkills.length || container ? { container: { ...(container ? { id: container.id } : {}), ...(skills.length || customSkills.length ? { skills: containerSkills(skills, customSkills) } : {}) } } : {}),
         // Newer models default to display "omitted" (empty thinking text); ask for the readable summary instead.
@@ -980,6 +1052,7 @@ ipcMain.handle("claude:reply", async (event, payload: ReplyPayload) => {
       stream.on("thinking", delta => { thinking += delta; send("thinking", delta); });
       stream.on("streamEvent", (e, snapshot) => {
         pendingUsage = snapshot.usage;
+        snapshotContent = snapshot.content;
         finalModel = snapshot.model || model;
         if (e.type === "content_block_start") {
           const block = e.content_block as { type: string; name?: string; server_name?: string };
@@ -991,14 +1064,19 @@ ipcMain.handle("claude:reply", async (event, payload: ReplyPayload) => {
         }
       });
       const final: Message = await stream.finalMessage();
-      addUsage(final.usage); pendingUsage = null;
+      pendingUsage = null; snapshotContent = [];
       finalModel = final.model || model;
-      // Separate text written before and after a tool round-trip, matching the "\n\n" streamed live.
-      if (turnBlocks.some(b => b.type === "text") && final.content.some(b => b.type === "text")) turnBlocks.push({ type: "text", text: "\n\n", citations: null } as ContentBlock);
+      await addUsage(final.usage, finalModel);
+      // Separate text written before and after a tool round-trip, matching the "\n\n" streamed live
+      // (a pause_turn continuation carries on the same text, so it gets no break).
+      if (lastStop === "tool_use" && turnBlocks.some(b => b.type === "text") && final.content.some(b => b.type === "text")) turnBlocks.push({ type: "text", text: "\n\n", citations: null } as ContentBlock);
       turnBlocks.push(...final.content);
+      lastStop = final.stop_reason;
       if (final.container?.id) container = { id: final.container.id, expiresAt: final.container.expires_at };
       stopReason = final.stop_reason;
       if (final.stop_reason === "pause_turn") {
+        // With both research budgets spent, stop here; the reply offers to continue.
+        if (research && progress.searches >= RESEARCH_MAX_USES && progress.fetches >= RESEARCH_MAX_USES) break;
         messages.push({ role: "assistant", content: final.content });
         continue;
       }
@@ -1006,6 +1084,8 @@ ipcMain.handle("claude:reply", async (event, payload: ReplyPayload) => {
         const results = [];
         for (const block of final.content) {
           if (block.type !== "tool_use") continue;
+          // After Stop, run nothing more (and ask nothing more) in this batch.
+          if (controller.signal.aborted) throw new Error("aborted");
           const ref = local.refs.get(block.name);
           if (ref) {
             const outcome = await runLocalTool(block, ref);
@@ -1015,6 +1095,7 @@ ipcMain.handle("claude:reply", async (event, payload: ReplyPayload) => {
           }
           const outcome = block.name === "memory"
             ? await runMemoryCommand(memoryRoot(), (block.input ?? {}) as Record<string, unknown>)
+              .catch(error => ({ content: `Error: ${String((error as Error)?.message ?? error).slice(0, 300)}`, isError: true }))
             : block.name === "search_project_knowledge" && knowledge.index
               ? { content: formatKnowledgeHits(searchKnowledge(knowledge.index, String((block.input as { query?: unknown })?.query ?? ""), Number((block.input as { max_results?: unknown })?.max_results) || 6)) }
             : block.name === "search_past_chats"
@@ -1031,18 +1112,24 @@ ipcMain.handle("claude:reply", async (event, payload: ReplyPayload) => {
       break;
     }
   } catch (error) {
+    // A stopped or failed request still consumed tokens; keep what the stream reported so far.
+    await addUsage(pendingUsage, finalModel);
     if (!controller.signal.aborted) throw error;
     aborted = true;
-    // A stopped reply still consumed tokens; keep what the stream reported so far.
-    addUsage(pendingUsage);
+    // Keep the text that was already streamed in the round that was stopped.
+    const partial = snapshotContent.filter(b => b.type === "text" && b.text);
+    if (partial.length) {
+      if (lastStop === "tool_use" && turnBlocks.some(b => b.type === "text")) turnBlocks.push({ type: "text", text: "\n\n", citations: null } as ContentBlock);
+      turnBlocks.push(...partial);
+    }
   } finally {
     activeReplies.delete(requestId);
+    earlyAborts.delete(requestId);
   }
   const usage = {
     model: finalModel, inputTokens: totals.input, outputTokens: totals.output,
     cacheCreationInputTokens: totals.cacheCreate, cacheReadInputTokens: totals.cacheRead, webSearchRequests: totals.searches
   };
-  if (usage.inputTokens || usage.outputTokens) await recordUsage(usage);
   const { text, citations } = extractText(turnBlocks);
   const files = [];
   for (const fileId of extractFileIds(turnBlocks)) {
@@ -1053,7 +1140,7 @@ ipcMain.handle("claude:reply", async (event, payload: ReplyPayload) => {
   }
   // "pause_turn"/"tool_use" here mean the loop limit cut the turn short; the UI offers to continue.
   const steps = extractSteps(turnBlocks, clientResults, Object.fromEntries(connectorNames), Object.fromEntries([...local.refs].map(([name, ref]) => [name, { server: ref.serverName, tool: ref.tool }])));
-  return { text, thinking, aborted, usage, citations, files, container, steps, ...(stopReason && stopReason !== "end_turn" && stopReason !== "stop_sequence" && !aborted ? { stopReason } : {}), notices: [...localNotices, ...(built.omitted ? [mainT().main.noticeOmitted(built.omitted)] : []), ...built.skipped.map(s => mainT().main.noticeSkipped(s)), ...unavailable.map(u => mainT().main.noticeUnavailable(u))] };
+  return { text, thinking, aborted, usage, costUsd, citations, files, container, steps, ...(stopReason && stopReason !== "end_turn" && stopReason !== "stop_sequence" && !aborted ? { stopReason } : {}), notices: [...localNotices, ...(built.omitted ? [mainT().main.noticeOmitted(built.omitted)] : []), ...built.skipped.map(s => mainT().main.noticeSkipped(s)), ...unavailable.map(u => mainT().main.noticeUnavailable(u))] };
 });
 
 // ---- Hand off to the Claude apps (claude://claude.ai/new?q=…, prefilled, never auto-sent) ----

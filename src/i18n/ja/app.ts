@@ -16,8 +16,11 @@ export const app = {
   ],
   greeting: { lateNight: "夜更かしですね", morning: "おはようございます", afternoon: "こんにちは", evening: "こんばんは" },
   greetingName: (name: string) => `、${name}さん`,
+  approvalElsewhere: (title: string) => `「${title}」でツールの実行が承認を待っています`,
+  openChat: "開く",
   status: {
     initError: "初期化エラー: ",
+    loadFailedNoSave: "会話を読み込めなかったため、上書きしないよう保存を止めています。アプリを再起動してください: ",
     setKeyFirst: "先にAnthropic APIキーを設定してください",
     modelsLoaded: (n: number, refreshed: boolean) => `${n}件の利用可能モデルを${refreshed ? "更新" : "取得"}しました`,
     noModels: "利用可能なモデルが見つかりませんでした",

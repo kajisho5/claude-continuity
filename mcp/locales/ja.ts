@@ -14,6 +14,7 @@ export const ja = {
       "根拠にした資料があればファイル名を示し、推測と事実を区別してください。依頼の言語で回答してください。"
     ].join("\n"),
     emptyInstructions: "instructions が空です",
+    unknownPrice: (model: string) => `${model} の料金が分からず、1回あたりの上限を確かめられないため実行しませんでした。料金の分かるモデル（例：claude-opus-5-5）を指定してください。`,
     overBudget: (worst: string, cap: string, tokens: string) => `見積もり上限 ${worst} が 1回あたりの上限 ${cap} を超えるため実行しませんでした（入力 ${tokens} トークン）。ファイルを減らすか CONTINUITY_MCP_MAX_USD_PER_CALL を上げてください。`
   },
   server: {

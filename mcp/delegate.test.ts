@@ -42,7 +42,7 @@ describe("readFiles", () => {
 
 describe("cost guard and truncation", () => {
   it("estimates the worst case with the full output budget", () => {
-    expect(worstCaseUsd("claude-opus-5-5", 100_000)).toBeCloseTo((100_000 * 4 + 16_000 * 20) / 1e6, 10);
+    expect(worstCaseUsd("claude-opus-5-5", 100_000)).toBeCloseTo((100_000 * 5 + 16_000 * 20) / 1e6, 10);
     expect(worstCaseUsd("claude-unknown", 1)).toBeNull();
   });
   it("truncates long results", () => {

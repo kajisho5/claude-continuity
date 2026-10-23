@@ -128,14 +128,15 @@ export default function App() {
  const currentModel=availableModels.find(m=>m.id===model);
  const usageTotal=useMemo(()=>usageRows.reduce((acc,row)=>({inputTokens:acc.inputTokens+row.inputTokens,outputTokens:acc.outputTokens+row.outputTokens,calls:acc.calls+1,mcpCalls:acc.mcpCalls+(row.source==="mcp"?1:0)}),{inputTokens:0,outputTokens:0,calls:0,mcpCalls:0}),[usageRows]);
  // Artifacts in the open chat, oldest first; same kind + title are versions of one artifact.
- const chatArtifacts=useMemo(()=>chat.messages.filter(m=>m.role==="assistant").flatMap(m=>extractArtifacts(m.content)),[chat.messages]);
+ const chatArtifacts=useMemo(()=>chat.messages.filter(m=>m.role==="assistant").flatMap(m=>extractArtifacts(m.content)),[chat.messages,t]);
  const artifactVersions=artifact?chatArtifacts.filter(a=>artifactKey(a)===artifactKey(artifact)):[];
  const summary=useMemo(()=>summarizeCredit(usageRows,credit,new Date(now)),[usageRows,credit,now]);
 
  useEffect(()=>{
    Promise.all([window.continuity.keyStatus(),window.continuity.loadChats(),window.continuity.loadUsage(),window.continuity.loadCredit(),window.continuity.loadProjects(),window.continuity.loadPrefs()])
     .then(([s,saved,usage,savedCredit,savedProjects,savedPrefs])=>{setConfigured(s.configured); if(saved.length){setChats(saved as Chat[]);setActive(saved[0].id);} setUsageRows(toUsageRows(usage)); setCredit(savedCredit); setOnboarding(!savedCredit?.onboardingDone); setProjects(savedProjects); setPrefs(savedPrefs); setLoaded(true);})
-    .catch(e=>{setStatus(t.app.status.initError+err(e));setLoaded(true);});
+    // Saving stays off when loading failed, so the empty window does not overwrite the history on disk.
+    .catch(e=>{setStatus(t.app.status.loadFailedNoSave+err(e));});
    // Re-evaluate the credit cycle as time passes (day boundaries, expiry).
    const timer=window.setInterval(()=>setNow(Date.now()),60_000);
    const unsubscribe=window.continuity.onStream(event=>{
@@ -208,7 +209,11 @@ export default function App() {
  useEffect(()=>{ const el=messagesRef.current; if(el&&atBottom) el.scrollTop=el.scrollHeight; },[chat.messages.length,pending?.text,pending?.thinking]);
  useEffect(()=>{ const el=messagesRef.current; if(el){el.scrollTop=el.scrollHeight;setAtBottom(true);} composerRef.current?.focus(); },[active]);
  // An incognito chat exists only while it is open: leaving it discards it.
- useEffect(()=>{ setChats(cs=>cs.some(c=>c.incognito&&c.id!==active)?cs.filter(c=>!c.incognito||c.id===active):cs); },[active]);
+ useEffect(()=>{
+   // What was typed or attached there goes too, so it cannot be sent into a saved chat by mistake.
+   if(chats.some(c=>c.incognito&&c.id!==active)){setDraft("");setPendingAttachments([]);}
+   setChats(cs=>cs.some(c=>c.incognito&&c.id!==active)?cs.filter(c=>!c.incognito||c.id===active):cs);
+ },[active]);
  function scrollToBottom(){ const el=messagesRef.current; if(el) el.scrollTo({top:el.scrollHeight,behavior:"smooth"}); }
  useEffect(()=>{
    // Shortcuts modeled on the Claude apps: new chat, search, stop/close.
@@ -219,10 +224,11 @@ export default function App() {
      else if(mod&&e.shiftKey&&e.key.toLowerCase()==="s"){e.preventDefault();setSidebarOpen(v=>!v);}
      else if(mod&&!e.shiftKey&&e.key.toLowerCase()==="k"){e.preventDefault();setSidebarOpen(true);setTimeout(()=>searchRef.current?.focus(),0);}
      else if(mod&&e.key==="/"){e.preventDefault();composerRef.current?.focus();}
-     else if(e.key==="Escape"){
-       if(pendingRef.current) void window.continuity.abortReply(pendingRef.current.requestId);
+     // Esc also cancels an IME conversion; that keystroke must not stop the reply or close anything.
+     else if(e.key==="Escape"&&!e.isComposing&&e.keyCode!==229){
+       if(projectModal) setProjectModal(null);
+       else if(pendingRef.current) void window.continuity.abortReply(pendingRef.current.requestId);
        else if(artifact) setArtifact(null);
-       else if(projectModal) setProjectModal(null);
      }
    };
    window.addEventListener("keydown",onKey);
@@ -254,7 +260,8 @@ export default function App() {
    setStatus(t.app.status.onboardingDone);
  }
  async function skipOnboarding(){
-   await saveCredit({plan:null,monthlyAmountUsd:0,resetDay:new Date().getDate(),onboardingDone:true});
+   // Reopened from Settings: "Later" keeps the plan and calibration already saved.
+   if(!credit?.onboardingDone) await saveCredit({plan:null,monthlyAmountUsd:0,resetDay:new Date().getDate(),onboardingDone:true});
    setOnboarding(false);
  }
  function addAttachments(result:{added:Attachment[];errors:string[]}){
@@ -283,7 +290,8 @@ export default function App() {
    try{
      const response=await window.continuity.reply({requestId,model,effort:effort||undefined,style:target.style,projectId:target.projectId,tools:target.incognito?{...target.tools,memory:false}:target.tools,containerId:container,chatId:target.id,incognito:!!target.incognito,
        messages:history.slice(-2000).map(m=>({role:m.role,content:m.content,...(m.attachments?.length?{attachments:m.attachments}:{})}))});
-     const cost=costOf(response.usage.model,response.usage);
+     // Main prices each API request of the turn on its own (per-request rates such as Haiku 5.5's long-prompt price).
+     const cost=response.costUsd!==undefined?response.costUsd:costOf(response.usage.model,response.usage);
      const thoughtUntil=pendingRef.current?.firstTextAt??Date.now();
      const reply:Reply={content:response.text,model:response.usage.model,...(response.thinking?{thinking:response.thinking,thinkingSeconds:(thoughtUntil-start.startedAt)/1000}:{}),...(cost!=null?{costUsd:cost}:{}),...(response.aborted?{aborted:true}:{}),
        ...(response.citations.length?{citations:response.citations}:{}),...(response.files.length?{files:response.files}:{}),
@@ -311,7 +319,7 @@ export default function App() {
        const note=new Notification(target.incognito?t.app.notify.incognitoTitle:target.title,{body:target.incognito?t.app.notify.incognitoBody:(plainPreview(response.text,120)||t.app.notify.done)});
        note.onclick=()=>{void window.continuity.focusWindow();setActive(target.id);setView("chat");};
      }
-     if(mode.kind==="append"&&mode.retitle&&prefs.autoTitle&&!target.incognito&&response.text&&!response.aborted) void autoTitle(target.id,history[history.length-1].content,response.text);
+     if(mode.kind==="append"&&mode.retitle&&prefs.autoTitle&&!target.incognito&&response.text&&!response.aborted) void autoTitle(target.id,history[history.length-1].content,response.text,target.title);
    }catch(e){
      // A failed regeneration keeps the previous answer; a failed new turn shows the error in place of a reply.
      const tooLong=/prompt is too long|too many (input )?tokens|context (window|length)/i.test(err(e));
@@ -323,16 +331,19 @@ export default function App() {
    }
    finally{pendingRef.current=null;setPending(null);}
  }
- async function autoTitle(chatId:string,user:string,assistant:string){
+ async function autoTitle(chatId:string,user:string,assistant:string,provisional:string){
    try{
      const result=await window.continuity.generateTitle(user,assistant);
      if(!result)return;
-     if(result.title) patchChat(chatId,c=>({...c,title:result.title!}));
+     // A rename made while the title was being generated wins.
+     if(result.title) patchChat(chatId,c=>c.title===provisional?{...c,title:result.title!}:c);
      setUsageRows(rows=>[...rows,{...result.usage,cacheCreationInputTokens:0,cacheReadInputTokens:0,createdAt:new Date().toISOString()}]);
    }catch{/* Titles are a convenience; keep the provisional title on failure. */}
  }
+ // Checked before a chat is changed, so a missing key never drops a reply or leaves an unanswered turn.
+ function needKey(){ if(configured)return false; setSettings("api");setStatus(t.app.status.setKeyFirst);return true; }
  async function send(){
-   const text=draft.trim();if((!text&&!pendingAttachments.length)||busy)return;
+   const text=draft.trim();if((!text&&!pendingAttachments.length)||busy||needKey())return;
    const current=chat;
    const userMsg:Msg={role:"user",content:text,...(pendingAttachments.length?{attachments:pendingAttachments}:{})};
    const history=[...current.messages,userMsg];
@@ -343,19 +354,19 @@ export default function App() {
  }
  function continueReply(index:number){
    const previous=chat.messages[index];
-   if(busy||previous?.role!=="assistant")return;
+   if(busy||previous?.role!=="assistant"||needKey())return;
    const history:Msg[]=[...chat.messages.slice(0,index+1),{role:"user",content:continuePrompt()}];
    void runReply(chat,history,{kind:"continue",previous});
  }
  function regenerate(index:number){
    const previous=chat.messages[index];
-   if(busy||previous?.role!=="assistant")return;
+   if(busy||previous?.role!=="assistant"||needKey())return;
    const history=chat.messages.slice(0,index);
    patchChat(chat.id,c=>({...c,messages:history}));
    void runReply(chat,history,{kind:"regenerate",previous});
  }
  function editAndResend(index:number,text:string){
-   if(busy)return;
+   if(busy||needKey())return;
    const history=editUserMessage(chat.messages,index,text);
    patchChat(chat.id,c=>({...c,messages:history}));
    void runReply(chat,history,{kind:"append"});
@@ -442,7 +453,12 @@ export default function App() {
  </div>;};
  const lastAssistant=chat.messages.length-1;
  const fresh=chat.messages.length===0&&!showPending;
- const composer=(variant:"welcome"|"footer")=><Composer ref={composerRef} variant={variant} incognito={!!chat.incognito} draft={draft} onDraft={setDraft} attachments={pendingAttachments}
+ // A tool approval asked in another chat would otherwise be invisible while the reply waits on it.
+ const approvalElsewhere=pending?.approval&&pending.chatId!==chat.id?pending:null;
+ const composer=(variant:"welcome"|"footer")=><>{approvalElsewhere&&<div className="approval-elsewhere mx-auto mb-[8px] flex w-full max-w-[760px] items-center gap-[10px] rounded-[10px] border border-line-strong bg-surface-2 px-[12px] py-[8px] text-[12.5px] text-ink-3">
+   <span className="min-w-0 flex-1">{t.app.approvalElsewhere(chats.find(c=>c.id===approvalElsewhere.chatId)?.title??"")}</span>
+   <button className="btn-secondary small" onClick={()=>{setActive(approvalElsewhere.chatId);setView("chat");}}>{t.app.openChat}</button></div>}
+  <Composer ref={composerRef} variant={variant} incognito={!!chat.incognito} draft={draft} onDraft={setDraft} attachments={pendingAttachments}
    onRemoveAttachment={id=>setPendingAttachments(list=>list.filter(x=>x.id!==id))} onPickFiles={()=>void window.continuity.pickAttachments().then(addAttachments)} onScreenshot={()=>void window.continuity.captureScreen().then(addAttachments)}
    onPaste={e=>void onPaste(e)} onSend={()=>void send()} onStop={stop} busy={busy}
    tools={chat.incognito?{...chat.tools,memory:false}:chat.tools??{}} onTools={tools=>patchChat(chat.id,c=>({...c,tools}))} projectMemory={chatProject?.memory}
@@ -450,7 +466,7 @@ export default function App() {
    model={model} models={availableModels.length?availableModels.map(m=>({value:m.id,label:m.displayName})):[{value:model,label:modelsLoading?t.app.modelsLoading:model}]} onModel={setModel} modelsLoading={modelsLoading} onRefreshModels={()=>void refreshModels(true)}
    effort={effort} efforts={currentModel?.effortLevels.length?[{value:"",label:t.app.effortDefault},...currentModel.effortLevels.map(l=>({value:l,label:t.app.effort(t.app.effortLevels[l]??l)}))]:[]} onEffort={setEffort}
    connectors={chat.incognito?[]:connectors.filter(c=>c.enabled).map(c=>({id:c.id,name:c.name}))} onManageConnectors={()=>setSettings("connectors")}
-   placeholder={chat.incognito?t.app.placeholder.incognito:fresh?t.app.placeholder.fresh:t.app.placeholder.reply} placement={fresh?"down":"up"}/>;
+   placeholder={chat.incognito?t.app.placeholder.incognito:fresh?t.app.placeholder.fresh:t.app.placeholder.reply} placement={fresh?"down":"up"}/></>;
  return <ArtifactContext.Provider value={setArtifact}><div className={"shell chatfont-"+prefs.chatFont+(sidebarOpen?"":" sidebar-closed")+" flex h-screen min-h-[600px]"+(prefs.chatFont==="sans"?" [--chat-font:var(--sans)]":prefs.chatFont==="system"?' [--chat-font:system-ui,-apple-system,"Segoe_UI","Hiragino_Sans","Yu_Gothic_UI",sans-serif]':"")}>
   <aside aria-hidden={!sidebarOpen} className={"flex min-h-0 shrink-0 flex-col overflow-hidden border-r bg-sidebar py-[22px] transition-[width,padding] duration-[220ms] ease-claude "+(sidebarOpen?"w-[264px] border-line px-[14px] max-[1000px]:w-[220px]":"w-0 border-transparent px-0")}>
    <div className="brand flex items-center gap-[10px] pt-0 pr-[2px] pb-[18px] pl-[6px]"><span className="mark grid size-[30px] shrink-0 place-items-center"><LogoMark size={30} title="Claude Continuity"/></span><b className="flex-1 whitespace-nowrap font-serif text-[15px] font-semibold text-ink-2">Claude Continuity</b>
