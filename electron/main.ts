@@ -506,6 +506,13 @@ ipcMain.handle("memory:delete", async (_event, virtualPath: string) => {
   return true;
 });
 
+ipcMain.handle("memory:write", async (_event, virtualPath: string, text: string) => {
+  // Same path rules as Claude's memory tool: only under /memories, no traversal or symlinks.
+  const result = await runMemoryCommand(memoryRoot(), { command: "create", path: String(virtualPath), file_text: String(text ?? "") });
+  if (result.isError) throw new Error(result.content);
+  return true;
+});
+
 // ---- Generated files ----
 ipcMain.handle("files:save", async (_event, payload: { fileId: string; name: string }) => {
   const fileId = String(payload?.fileId ?? "");

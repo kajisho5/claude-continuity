@@ -878,3 +878,7 @@ html,body{overflow:hidden}
 .artifact-entry .artifact-thumb{width:40px;height:40px}
 .artifact-entry b{font-family:var(--sans);font-size:14px}
 .artifact-panel header small{font-size:11px;color:var(--muted)}
+.memory-edit{flex:1;min-width:0;display:flex;flex-direction:column;gap:6px}
+.memory-edit code{font-size:10.5px;color:var(--muted)}
+.memory-edit.new{margin-top:10px;padding:10px;border:1px dashed var(--border-strong);border-radius:10px}
+.form-message.error{color:var(--danger)}

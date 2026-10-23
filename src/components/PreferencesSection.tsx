@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Plus, Sparkles, Trash2 } from "lucide-react";
+import { Pencil, Plus, Sparkles, Trash2 } from "lucide-react";
 import { formatBytes } from "./MessageItem";
 import { type CustomStyle, type Prefs } from "../lib/prefs";
 
@@ -57,6 +57,14 @@ type MemoryFile = { path: string; size: number; content: string };
 export default function PreferencesSection({ prefs, onSave, model, onUsage }: { prefs: Prefs; onSave: (prefs: Prefs) => Promise<void>; model: string; onUsage: (usage: Usage) => void }) {
   const [memory, setMemory] = useState<MemoryFile[] | null>(null);
   useEffect(() => { window.continuity.listMemory().then(setMemory).catch(() => setMemory([])); }, []);
+  const [editing, setEditing] = useState<{ path: string; text: string } | null>(null);
+  const [adding, setAdding] = useState<{ name: string; text: string } | null>(null);
+  const [memoryError, setMemoryError] = useState("");
+  async function write(path: string, text: string) {
+    setMemoryError("");
+    try { await window.continuity.writeMemory(path, text); setEditing(null); setMemory(await window.continuity.listMemory()); }
+    catch (e) { setMemoryError((e instanceof Error ? e.message : String(e)).replace(/^Error invoking remote method '[^']+': (Error: )?/, "")); }
+  }
   async function remove(path: string) {
     if (!window.confirm(`${path} を削除しますか？`)) return;
     await window.continuity.deleteMemory(path);
@@ -65,11 +73,24 @@ export default function PreferencesSection({ prefs, onSave, model, onUsage }: { 
   return <section className="credit-form">
     <StylesEditor prefs={prefs} onSave={onSave} model={model} onUsage={onUsage} />
     <h3 className="spaced">メモリ</h3>
-    <p className="muted">メモリをオンにした会話で Claude が保存した内容です。</p>
-    {memory === null ? <p className="hint">読み込み中…</p> : memory.length === 0 ? <p className="hint">保存されたメモリはありません。</p> :
+    <p className="muted">メモリをオンにした会話で Claude が読み書きする内容です。ここで直接直したり、覚えておいてほしいことを書き足したりできます。</p>
+    {memory === null ? <p className="hint">読み込み中…</p> : memory.length === 0 && !adding ? <p className="hint">保存されたメモリはありません。</p> :
       <ul className="memory-list">{memory.map(file => <li key={file.path}>
-        <details><summary><code>{file.path}</code><small>{formatBytes(file.size)}</small></summary><pre>{file.content}</pre></details>
+        {editing?.path === file.path
+          ? <div className="memory-edit"><code>{file.path}</code>
+            <textarea className="text-input tall" value={editing.text} onChange={e => setEditing({ ...editing, text: e.target.value })} aria-label={`${file.path} の内容`} />
+            <div className="form-actions start"><button className="btn-primary small" onClick={() => void write(file.path, editing.text)}>保存</button><button className="btn-text" onClick={() => setEditing(null)}>キャンセル</button></div></div>
+          : <details><summary><code>{file.path}</code><small>{formatBytes(file.size)}</small></summary><pre>{file.content}</pre></details>}
+        {editing?.path !== file.path && <button className="icon-btn" onClick={() => setEditing({ path: file.path, text: file.content })} aria-label={`${file.path} を編集`}><Pencil size={14} /></button>}
         <button className="icon-btn" onClick={() => void remove(file.path)} aria-label={`${file.path} を削除`}><Trash2 size={14} /></button>
       </li>)}</ul>}
+    {adding
+      ? <div className="memory-edit new">
+        <input className="text-input" value={adding.name} onChange={e => setAdding({ ...adding, name: e.target.value })} placeholder="ファイル名（例: 好み.md）" aria-label="メモリのファイル名" />
+        <textarea className="text-input tall" value={adding.text} onChange={e => setAdding({ ...adding, text: e.target.value })} placeholder="例: 数字は千円単位で表示する。会議資料は A4 横で作る。" aria-label="メモリの内容" />
+        <div className="form-actions start"><button className="btn-primary small" disabled={!adding.name.trim() || !adding.text.trim()} onClick={() => void write("/memories/" + adding.name.trim().replace(/[\\/]/g, "_"), adding.text).then(() => setAdding(null))}>追加</button>
+          <button className="btn-text" onClick={() => setAdding(null)}>キャンセル</button></div></div>
+      : <div className="form-actions start"><button className="btn-secondary small" onClick={() => setAdding({ name: "", text: "" })}><Plus size={13} />メモリを書き足す</button></div>}
+    {memoryError && <p className="form-message error">{memoryError}</p>}
   </section>;
 }

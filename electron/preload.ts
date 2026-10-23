@@ -40,6 +40,7 @@ contextBridge.exposeInMainWorld("continuity", {
   attachmentPreview: (id: string) => ipcRenderer.invoke("attachments:preview", id),
   listMemory: () => ipcRenderer.invoke("memory:list"),
   deleteMemory: (path: string) => ipcRenderer.invoke("memory:delete", path),
+  writeMemory: (path: string, text: string) => ipcRenderer.invoke("memory:write", path, text),
   saveGeneratedFile: (fileId: string, name: string) => ipcRenderer.invoke("files:save", { fileId, name }),
   mcpInfo: () => ipcRenderer.invoke("mcp:info"),
   pickMcpFolders: () => ipcRenderer.invoke("mcp:pickFolder"),

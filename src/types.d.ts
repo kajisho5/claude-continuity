@@ -69,6 +69,7 @@ declare global {
       attachmentPreview: (id: string) => Promise<string | null>;
       listMemory: () => Promise<{ path: string; size: number; content: string }[]>;
       deleteMemory: (path: string) => Promise<boolean>;
+      writeMemory: (path: string, text: string) => Promise<boolean>;
       saveGeneratedFile: (fileId: string, name: string) => Promise<{ canceled: boolean; filePath?: string }>;
       mcpInfo: () => Promise<{ serverPath: string; runtimePath: string; dataDir: string; platform: string }>;
       pickMcpFolders: () => Promise<string[]>;
