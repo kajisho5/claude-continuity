@@ -57,6 +57,8 @@ export function parseDesktopConfig(json: unknown): { name: string; command: stri
 
 /** Where Claude Desktop keeps its config (https://modelcontextprotocol.io/docs/develop/connect-local-servers). */
 export function desktopConfigPath(platform: NodeJS.Platform, env: NodeJS.ProcessEnv, home: string): string {
+  // An explicit location wins (a non-standard install, and the end-to-end tests on every OS).
+  if (env.CONTINUITY_DESKTOP_CONFIG) return env.CONTINUITY_DESKTOP_CONFIG;
   if (platform === "win32") return path.win32.join(env.APPDATA || path.win32.join(home, "AppData", "Roaming"), "Claude", "claude_desktop_config.json");
   if (platform === "darwin") return path.posix.join(home, "Library", "Application Support", "Claude", "claude_desktop_config.json");
   return path.posix.join(env.XDG_CONFIG_HOME || path.posix.join(home, ".config"), "Claude", "claude_desktop_config.json");

@@ -9,7 +9,7 @@ async function send(w, msg) { await w.fill(".composer textarea", msg); await w.k
 const lastReply = w => w.locator(".message.assistant").last().innerText();
 
 module.exports = async function localMcp(ctx) {
-  const { w } = await launch(ctx, { env: { XDG_CONFIG_HOME: makeDesktopConfig(ctx.tmp) } });
+  const { w } = await launch(ctx, { env: { CONTINUITY_DESKTOP_CONFIG: require("node:path").join(makeDesktopConfig(ctx.tmp), "Claude", "claude_desktop_config.json") } });
   await onboard(w);
   await w.click(".new-chat"); await w.click(".tools .round-btn"); await w.click(".tools-menu .menu-item:last-child");
   await w.waitForSelector(".settings .connector-list");

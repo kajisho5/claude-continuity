@@ -13,7 +13,9 @@ module.exports = async function skills(ctx) {
   assert.deepEqual(await w.locator(".skill-list li b").allTextContents(), ["weekly-report"]);
   assert.equal(await w.locator(".skill-list input").isChecked(), true);
   const files = ctx.mock.log.find(l => l.startsWith("skill files "));
-  assert.equal(files, 'skill files ["weekly-report/SKILL.md","weekly-report/build.py"]', "the folder is uploaded with its files");
+  assert.ok(files, "the folder is uploaded");
+  // Directory listing order differs between file systems (NTFS lists build.py first).
+  assert.deepEqual(JSON.parse(files.slice("skill files ".length)).sort(), ["weekly-report/SKILL.md", "weekly-report/build.py"], "the folder is uploaded with its files");
 
   await w.keyboard.press("Escape"); await w.click(".new-chat"); await ask(w, "週報を作って");
   const container = ctx.mock.log.find(l => l.startsWith("container "));
