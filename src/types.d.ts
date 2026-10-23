@@ -51,7 +51,11 @@ declare global {
       openDataFolder: () => Promise<boolean>;
       focusWindow: () => Promise<boolean>;
       listConnectors: () => Promise<ContinuityConnector[]>;
-      saveConnector: (input: { id?: string; name: string; url: string; enabled?: boolean; token?: string | null }) => Promise<ContinuityConnector[]>;
+      saveConnector: (input: { id?: string; name: string; enabled?: boolean; transport?: "remote" | "local"; url?: string; token?: string | null; command?: string; args?: string; env?: string | null }) => Promise<ContinuityConnector[]>;
+      importDesktopConnectors: () => Promise<{ list: ContinuityConnector[]; added: number; found: number; file: string }>;
+      resetAllowedTools: (id: string) => Promise<ContinuityConnector[]>;
+      answerApproval: (approvalId: string, decision: import("./lib/connectors").ApprovalDecision) => Promise<boolean>;
+      onApproval: (listener: (approval: import("./lib/connectors").ToolApproval) => void) => () => void;
       deleteConnector: (id: string) => Promise<ContinuityConnector[]>;
       testConnector: (id: string) => Promise<{ tools: string[] }>;
       styleFromSample: (payload: { sample: string; model: string }) => Promise<{ prompt: string; usage: Omit<ContinuityUsage, "createdAt"> }>;

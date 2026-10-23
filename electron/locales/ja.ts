@@ -26,6 +26,23 @@ export const ja = {
     tokenStorageUnavailable: "この環境ではトークンを安全に保存できません。",
     connectFailed: (message: string) => `接続できませんでした: ${message}`
   },
+  localMcp: {
+    commandRequired: "コマンドを入力してください。",
+    badEnv: (key: string) => `環境変数の名前が正しくありません: ${key}`,
+    truncated: "\n…（長いため省略）",
+    emptyResult: "（結果なし）",
+    startTimeout: "60 秒以内に起動しませんでした。",
+    startFailed: (name: string, message: string, stderr: string) => `${name} を起動できませんでした: ${message}${stderr ? `\n${stderr}` : ""}`,
+    denied: "ユーザーがこのツールの実行を許可しませんでした。",
+    callFailed: (message: string) => `ツールの実行に失敗しました: ${message}`,
+    unavailable: (name: string, message: string) => `ローカル MCP サーバー「${name}」を使えませんでした（${message}）`,
+    configNotFound: (file: string) => `Claude Desktop の設定ファイルが見つかりません: ${file}`,
+    configInvalid: "Claude Desktop の設定ファイルを読み取れませんでした（JSON の形式が正しくありません）。",
+    envStorageUnavailable: "この環境では環境変数を安全に保存できません。",
+    starting: (name: string) => `${name} を起動しています…`,
+    usingTool: (server: string, tool: string) => `${server} の ${tool} を使っています…`,
+    waitingApproval: (server: string, tool: string) => `${server} の ${tool} の実行許可を待っています…`
+  },
   memory: {
     viewTruncated: "\n…（長いため省略。view_range で続きを表示してください）"
   },

@@ -4,6 +4,7 @@ A local-first Electron desktop app for importing Claude conversation exports and
 
 ## Implemented in the repository
 
+- Local (stdio) MCP servers, in the same format as Claude Desktop's `mcpServers` (Settings → Connectors → Local, or "Import from Claude Desktop"). The app starts them on this PC, offers their tools to Claude, and asks before each tool runs (allow once / always allow / deny), like Claude Desktop. Environment variables are stored encrypted.
 - Japanese and English UI (Settings → General → Language; "Match system" follows the OS language). English wording follows Claude's own English UI where the screen has a Claude equivalent.
 
 ## GUI preview

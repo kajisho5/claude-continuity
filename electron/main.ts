@@ -13,6 +13,7 @@ import { formatHits, searchPastChats } from "./pastChats";
 import { setupUpdater } from "./updater";
 import { getMainLocale, mainT, resolveMainLocale, setMainLocale } from "./i18n";
 import { connectorRequest, MCP_CONNECTOR_BETA, serverName, validateConnector, type Connector, type ConnectorView } from "./connectors";
+import { desktopConfigPath, LocalMcpPool, parseDesktopConfig, parseEnv, toolDefinitions, toToolResult, validateLocal, type LocalServer, type LocalToolRef } from "./localMcp";
 import { HANDOFF_PREFIX, fitsHandoff } from "../src/lib/handoff";
 import { activityLabel, buildMessages, historyBudget, buildSystem, buildTools, extractFileIds, extractSteps, extractText, type ChatTurn, type Project, type StyleId, type ToolFlags } from "./request";
 
@@ -52,6 +53,10 @@ app.whenReady().then(async () => {
   app.on("activate", () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
 });
 app.on("window-all-closed", () => { if (process.platform !== "darwin") app.quit(); });
+app.on("will-quit", () => { void localPool.closeAll(); });
+
+const localPool = new LocalMcpPool({ name: "claude-continuity", version: app.getVersion() });
+const localServer = (c: Connector): LocalServer => ({ id: c.id, name: c.name, command: c.command ?? "", args: c.args ?? [], env: c.env ?? {} });
 
 type NormalizedMessage = { role: "user" | "assistant"; content: string };
 type NormalizedConversation = { id: string; title: string; messages: NormalizedMessage[]; source: string; updatedAt?: string };
@@ -532,51 +537,113 @@ ipcMain.handle("memory:write", async (_event, virtualPath: string, text: string)
   return true;
 });
 
-// ---- Connectors (remote MCP servers via the API's MCP connector) ----
+// ---- Connectors (remote MCP servers via the API's MCP connector, local stdio servers run here) ----
 const connectorsFile = () => path.join(dataDir(), "connectors.json");
-type StoredConnector = Omit<Connector, "token"> & { tokenEnc?: string };
+type StoredConnector = {
+  id: string; name: string; enabled?: boolean; transport?: "remote" | "local";
+  url?: string; tokenEnc?: string;
+  command?: string; args?: string[]; envEnc?: string; envKeys?: string[]; allowedTools?: string[];
+};
+const isLocal = (c: { transport?: string }) => c.transport === "local";
 async function readStoredConnectors(): Promise<StoredConnector[]> {
   try {
     const raw = JSON.parse(await fs.readFile(connectorsFile(), "utf8"));
-    return Array.isArray(raw) ? raw.filter((c: any) => c && typeof c.id === "string" && typeof c.url === "string").slice(0, 30) : [];
+    return Array.isArray(raw) ? raw.filter((c: any) => c && typeof c.id === "string" && (isLocal(c) ? typeof c.command === "string" : typeof c.url === "string")).slice(0, 30) : [];
   } catch { return []; }
 }
-/** Tokens are encrypted with the OS key store like the API key and only decrypted when a request needs them. */
+const writeStoredConnectors = (list: StoredConnector[]) => fs.writeFile(connectorsFile(), JSON.stringify(list), "utf8");
+const decrypt = (value?: string) => {
+  try { if (value && safeStorage.isEncryptionAvailable()) return safeStorage.decryptString(Buffer.from(value, "base64")); } catch {}
+  return undefined;
+};
+const encrypt = (value: string, unavailable: string) => {
+  if (!safeStorage.isEncryptionAvailable()) throw new Error(unavailable);
+  return safeStorage.encryptString(value).toString("base64");
+};
+/** Tokens and environment variables are encrypted with the OS key store like the API key and only decrypted when needed. */
 async function loadConnectors(): Promise<Connector[]> {
   return (await readStoredConnectors()).map(c => {
-    let token: string | undefined;
-    try { if (c.tokenEnc && safeStorage.isEncryptionAvailable()) token = safeStorage.decryptString(Buffer.from(c.tokenEnc, "base64")); } catch {}
-    return { id: c.id, name: String(c.name ?? ""), url: c.url, enabled: c.enabled !== false, ...(token ? { token } : {}) };
+    const token = decrypt(c.tokenEnc);
+    let env: Record<string, string> = {};
+    try { env = c.envEnc ? JSON.parse(decrypt(c.envEnc) ?? "{}") : {}; } catch {}
+    return {
+      id: c.id, name: String(c.name ?? ""), enabled: c.enabled !== false, transport: isLocal(c) ? "local" as const : "remote" as const,
+      url: c.url ?? "", ...(token ? { token } : {}),
+      ...(isLocal(c) ? { command: c.command, args: Array.isArray(c.args) ? c.args.map(String) : [], env, allowedTools: c.allowedTools ?? [] } : {})
+    };
   });
 }
-const viewOf = (c: StoredConnector): ConnectorView => ({ id: c.id, name: String(c.name ?? ""), url: c.url, enabled: c.enabled !== false, hasToken: !!c.tokenEnc });
+const viewOf = (c: StoredConnector): ConnectorView => ({
+  id: c.id, name: String(c.name ?? ""), enabled: c.enabled !== false, transport: isLocal(c) ? "local" : "remote", url: c.url ?? "", hasToken: !!c.tokenEnc,
+  ...(isLocal(c) ? { command: c.command, args: c.args ?? [], envKeys: c.envKeys ?? [], allowedTools: c.allowedTools ?? [] } : {})
+});
 ipcMain.handle("connectors:list", async () => (await readStoredConnectors()).map(viewOf));
-ipcMain.handle("connectors:save", async (_event, input: { id?: string; name: string; url: string; enabled?: boolean; token?: string | null }) => {
-  const { name, url } = validateConnector(input ?? {});
+type ConnectorInput = { id?: string; name: string; enabled?: boolean; transport?: "remote" | "local"; url?: string; token?: string | null; command?: string; args?: string | string[]; env?: string | null };
+ipcMain.handle("connectors:save", async (_event, input: ConnectorInput) => {
   const list = await readStoredConnectors();
   const id = typeof input?.id === "string" && list.some(c => c.id === input.id) ? input.id : randomUUID().replace(/-/g, "").slice(0, 12);
   const previous = list.find(c => c.id === id);
-  let tokenEnc = previous?.tokenEnc;
-  // undefined keeps the saved token, "" or null clears it, any other string replaces it.
-  if (input?.token === "" || input?.token === null) tokenEnc = undefined;
-  else if (typeof input?.token === "string") {
-    if (!safeStorage.isEncryptionAvailable()) throw new Error(mainT().connectors.tokenStorageUnavailable);
-    tokenEnc = safeStorage.encryptString(input.token.trim().slice(0, 8000)).toString("base64");
+  let next: StoredConnector;
+  if (input?.transport === "local") {
+    const { name, command, args } = validateLocal(input);
+    let { envEnc, envKeys } = previous ?? {};
+    // undefined keeps the saved variables, "" or null clears them, any other string replaces them.
+    if (input.env === "" || input.env === null) { envEnc = undefined; envKeys = undefined; }
+    else if (typeof input.env === "string") {
+      const env = parseEnv(input.env);
+      envKeys = Object.keys(env);
+      envEnc = envKeys.length ? encrypt(JSON.stringify(env), mainT().localMcp.envStorageUnavailable) : undefined;
+    }
+    // A changed command may be a different program: forget its "always allow" choices.
+    const same = previous && isLocal(previous) && previous.command === command && JSON.stringify(previous.args ?? []) === JSON.stringify(args);
+    next = { id, name, enabled: input.enabled !== false, transport: "local", command, args, ...(envEnc ? { envEnc, envKeys } : {}), ...(same && previous?.allowedTools?.length ? { allowedTools: previous.allowedTools } : {}) };
+    await localPool.close(id);
+  } else {
+    const { name, url } = validateConnector({ name: input?.name, url: input?.url });
+    let tokenEnc = previous?.tokenEnc;
+    // undefined keeps the saved token, "" or null clears it, any other string replaces it.
+    if (input?.token === "" || input?.token === null) tokenEnc = undefined;
+    else if (typeof input?.token === "string") tokenEnc = encrypt(input.token.trim().slice(0, 8000), mainT().connectors.tokenStorageUnavailable);
+    next = { id, name, url, enabled: input?.enabled !== false, ...(tokenEnc ? { tokenEnc } : {}) };
   }
-  const next: StoredConnector = { id, name, url, enabled: input?.enabled !== false, ...(tokenEnc ? { tokenEnc } : {}) };
   const saved = previous ? list.map(c => c.id === id ? next : c) : [...list, next];
-  await fs.writeFile(connectorsFile(), JSON.stringify(saved), "utf8");
+  await writeStoredConnectors(saved);
   return saved.map(viewOf);
+});
+/** Adds the stdio servers from Claude Desktop's config that are not registered yet (same name and command). */
+ipcMain.handle("connectors:importDesktop", async () => {
+  const file = desktopConfigPath(process.platform, process.env, app.getPath("home"));
+  let raw: string;
+  try { raw = await fs.readFile(file, "utf8"); } catch { throw new Error(mainT().localMcp.configNotFound(file)); }
+  let servers;
+  try { servers = parseDesktopConfig(JSON.parse(raw)); } catch { throw new Error(mainT().localMcp.configInvalid); }
+  const list = await readStoredConnectors();
+  let added = 0;
+  for (const server of servers) {
+    if (list.length >= 30) break;
+    if (list.some(c => isLocal(c) && c.name === server.name && c.command === server.command)) continue;
+    const envKeys = Object.keys(server.env);
+    list.push({ id: randomUUID().replace(/-/g, "").slice(0, 12), name: server.name, enabled: true, transport: "local", command: server.command, args: server.args,
+      ...(envKeys.length ? { envEnc: encrypt(JSON.stringify(server.env), mainT().localMcp.envStorageUnavailable), envKeys } : {}) });
+    added++;
+  }
+  await writeStoredConnectors(list);
+  return { list: list.map(viewOf), added, found: servers.length, file };
 });
 ipcMain.handle("connectors:delete", async (_event, id: string) => {
   const saved = (await readStoredConnectors()).filter(c => c.id !== String(id));
-  await fs.writeFile(connectorsFile(), JSON.stringify(saved), "utf8");
+  await writeStoredConnectors(saved);
+  await localPool.close(String(id));
   return saved.map(viewOf);
 });
 ipcMain.handle("connectors:test", async (_event, id: string) => {
   // Lists the server's tools from this PC to confirm the URL and token; the API itself connects from Anthropic's side.
   const connector = (await loadConnectors()).find(c => c.id === String(id));
   if (!connector) throw new Error(mainT().connectors.notFound);
+  if (connector.transport === "local") {
+    await localPool.close(connector.id);
+    return { tools: (await localPool.tools(localServer(connector))).map(t => t.name) };
+  }
   const { Client } = await import("@modelcontextprotocol/sdk/client/index.js");
   const { StreamableHTTPClientTransport } = await import("@modelcontextprotocol/sdk/client/streamableHttp.js");
   const { SSEClientTransport } = await import("@modelcontextprotocol/sdk/client/sse.js");
@@ -624,6 +691,36 @@ function sanitizeTurns(list: unknown): ChatTurn[] {
   return list.filter((m: any) => m && (m.role === "user" || m.role === "assistant") && typeof m.content === "string")
     .map((m: any) => ({ role: m.role, content: m.content.slice(0, 2_000_000), ...(m.role === "user" ? { attachments: sanitizeAttachments(m.attachments) } : {}) }));
 }
+// ---- Approval for local MCP tools (asked in the chat, like Claude Desktop) ----
+const approvals = new Map<string, (decision: ApprovalDecision) => void>();
+type ApprovalDecision = "once" | "always" | "deny";
+function requestApproval(sender: Electron.WebContents, requestId: string, ref: LocalToolRef, input: unknown, signal: AbortSignal): Promise<ApprovalDecision> {
+  return new Promise(resolve => {
+    const approvalId = randomUUID();
+    const done = (decision: ApprovalDecision) => { approvals.delete(approvalId); signal.removeEventListener("abort", onAbort); resolve(decision); };
+    const onAbort = () => done("deny");
+    approvals.set(approvalId, done);
+    signal.addEventListener("abort", onAbort);
+    if (sender.isDestroyed()) return done("deny");
+    const shown = JSON.stringify(input ?? {}, null, 2);
+    sender.send("claude:approval", { requestId, approvalId, server: ref.serverName, tool: ref.tool, input: shown.length > 4000 ? shown.slice(0, 4000) + "…" : shown });
+  });
+}
+ipcMain.handle("claude:approve", (_event, approvalId: string, decision: string) => {
+  const answer = approvals.get(String(approvalId));
+  answer?.(decision === "once" || decision === "always" ? decision : "deny");
+  return !!answer;
+});
+async function rememberAllowedTool(id: string, tool: string) {
+  const list = await readStoredConnectors();
+  await writeStoredConnectors(list.map(c => c.id === id ? { ...c, allowedTools: [...new Set([...(c.allowedTools ?? []), tool])].slice(0, 200) } : c));
+}
+ipcMain.handle("connectors:resetAllowed", async (_event, id: string) => {
+  const list = (await readStoredConnectors()).map(c => c.id === String(id) ? { ...c, allowedTools: [] } : c);
+  await writeStoredConnectors(list);
+  return list.map(viewOf);
+});
+
 async function pastChatsOutcome(input: { query?: unknown; max_results?: unknown }, chatId?: string, projectId?: string) {
   const query = typeof input?.query === "string" ? input.query.slice(0, 500) : "";
   if (!query.trim()) return { content: "Error: query is required", isError: true };
@@ -648,7 +745,9 @@ ipcMain.handle("claude:reply", async (event, payload: ReplyPayload) => {
   const flags: ToolFlags = { ...(payload.tools ?? {}), memory: !incognito && (payload.tools?.memory === true || project?.memory === true), pastChats: !incognito && prefs.searchPastChats };
   const { tools, skills, unavailable } = buildTools(flags, caps);
   const codeOn = tools.some(t => t.type === "code_execution_20250825");
-  const activeConnectors = incognito ? [] : (await loadConnectors()).filter(c => c.enabled && (payload.tools?.connectors ?? []).includes(c.id));
+  const chosenConnectors = incognito ? [] : (await loadConnectors()).filter(c => c.enabled && (payload.tools?.connectors ?? []).includes(c.id));
+  const activeConnectors = chosenConnectors.filter(c => c.transport !== "local");
+  const localConnectors = chosenConnectors.filter(c => c.transport === "local");
   const mcp = activeConnectors.length ? connectorRequest(activeConnectors) : null;
   const connectorNames = new Map(activeConnectors.map(c => [serverName(c), c.name] as const));
   const connectorLabel = (server?: string) => (server && connectorNames.get(server)) || server || mainT().main.externalTool;
@@ -679,6 +778,34 @@ ipcMain.handle("claude:reply", async (event, payload: ReplyPayload) => {
   const send = (kind: "text" | "thinking" | "activity", delta: string) => {
     if (!event.sender.isDestroyed()) event.sender.send("claude:stream", { requestId, kind, delta });
   };
+  // Local servers are started (or reused) before the first request so their tools can be offered.
+  const localNotices: string[] = [];
+  const localLists: { server: LocalServer; tools: Awaited<ReturnType<LocalMcpPool["tools"]>> }[] = [];
+  for (const c of localConnectors) {
+    send("activity", mainT().localMcp.starting(c.name));
+    try { localLists.push({ server: localServer(c), tools: await localPool.tools(localServer(c)) }); }
+    catch (error) { localNotices.push(mainT().localMcp.unavailable(c.name, String((error as Error)?.message ?? error).split("\n")[0].slice(0, 200))); }
+  }
+  const local = toolDefinitions(localLists);
+  const runLocalTool = async (block: { id: string; name: string; input: unknown }, ref: LocalToolRef) => {
+    const connector = localConnectors.find(c => c.id === ref.serverId)!;
+    const allowed = (await readStoredConnectors()).find(c => c.id === ref.serverId)?.allowedTools ?? [];
+    if (!allowed.includes(ref.tool)) {
+      send("activity", mainT().localMcp.waitingApproval(ref.serverName, ref.tool));
+      const decision = await requestApproval(event.sender, requestId, ref, block.input, controller.signal);
+      if (decision === "deny") return { content: mainT().localMcp.denied, text: mainT().localMcp.denied, isError: true };
+      if (decision === "always") await rememberAllowedTool(ref.serverId, ref.tool);
+    }
+    send("activity", mainT().localMcp.usingTool(ref.serverName, ref.tool));
+    try {
+      const result = toToolResult(await localPool.call(localServer(connector), ref.tool, block.input, controller.signal));
+      return { content: result.content as any[], text: result.text, isError: result.isError };
+    } catch (error) {
+      if (controller.signal.aborted) throw error;
+      const text = mainT().localMcp.callFailed(String((error as Error)?.message ?? error).slice(0, 500));
+      return { content: text, text, isError: true };
+    }
+  };
   const totals = { input: 0, output: 0, cacheCreate: 0, cacheRead: 0, searches: 0 };
   const addUsage = (u: any) => {
     if (!u) return;
@@ -700,7 +827,7 @@ ipcMain.handle("claude:reply", async (event, payload: ReplyPayload) => {
       const params = {
         model, max_tokens: info?.maxTokens ?? 8192, messages,
         ...(system ? { system } : {}),
-        ...(tools.length || mcp ? { tools: [...tools, ...(mcp?.tools ?? [])] } : {}),
+        ...(tools.length || mcp || local.tools.length ? { tools: [...tools, ...local.tools, ...(mcp?.tools ?? [])] } : {}),
         ...(mcp ? { mcp_servers: mcp.mcp_servers } : {}),
         ...(skills.length || container ? { container: { ...(container ? { id: container.id } : {}), ...(skills.length ? { skills: skills.map(skill_id => ({ type: "anthropic" as const, skill_id, version: "latest" })) } : {}) } } : {}),
         // Newer models default to display "omitted" (empty thinking text); ask for the readable summary instead.
@@ -720,7 +847,8 @@ ipcMain.handle("claude:reply", async (event, payload: ReplyPayload) => {
         finalModel = snapshot.model || model;
         if (e.type === "content_block_start") {
           const block = e.content_block as { type: string; name?: string; server_name?: string };
-          const label = block.type === "mcp_tool_use" ? mainT().main.usingConnector(connectorLabel(block.server_name)) : activityLabel(block.name);
+          const ref = block.name ? local.refs.get(block.name) : undefined;
+          const label = block.type === "mcp_tool_use" ? mainT().main.usingConnector(connectorLabel(block.server_name)) : ref ? mainT().localMcp.usingTool(ref.serverName, ref.tool) : activityLabel(block.name);
           if (label && (block.type === "server_tool_use" || block.type === "tool_use" || block.type === "mcp_tool_use")) send("activity", label);
         }
       });
@@ -740,6 +868,13 @@ ipcMain.handle("claude:reply", async (event, payload: ReplyPayload) => {
         const results = [];
         for (const block of final.content) {
           if (block.type !== "tool_use") continue;
+          const ref = local.refs.get(block.name);
+          if (ref) {
+            const outcome = await runLocalTool(block, ref);
+            clientResults.set(block.id, { content: outcome.text, isError: outcome.isError });
+            results.push({ type: "tool_result" as const, tool_use_id: block.id, content: outcome.content, ...(outcome.isError ? { is_error: true } : {}) });
+            continue;
+          }
           const outcome = block.name === "memory"
             ? await runMemoryCommand(memoryRoot(), (block.input ?? {}) as Record<string, unknown>)
             : block.name === "search_past_chats"
@@ -777,8 +912,8 @@ ipcMain.handle("claude:reply", async (event, payload: ReplyPayload) => {
     } catch { files.push({ fileId, name: fileId }); }
   }
   // "pause_turn"/"tool_use" here mean the loop limit cut the turn short; the UI offers to continue.
-  const steps = extractSteps(turnBlocks, clientResults, Object.fromEntries(connectorNames));
-  return { text, thinking, aborted, usage, citations, files, container, steps, ...(stopReason && stopReason !== "end_turn" && stopReason !== "stop_sequence" && !aborted ? { stopReason } : {}), notices: [...(built.omitted ? [mainT().main.noticeOmitted(built.omitted)] : []), ...built.skipped.map(s => mainT().main.noticeSkipped(s)), ...unavailable.map(u => mainT().main.noticeUnavailable(u))] };
+  const steps = extractSteps(turnBlocks, clientResults, Object.fromEntries(connectorNames), Object.fromEntries([...local.refs].map(([name, ref]) => [name, { server: ref.serverName, tool: ref.tool }])));
+  return { text, thinking, aborted, usage, citations, files, container, steps, ...(stopReason && stopReason !== "end_turn" && stopReason !== "stop_sequence" && !aborted ? { stopReason } : {}), notices: [...localNotices, ...(built.omitted ? [mainT().main.noticeOmitted(built.omitted)] : []), ...built.skipped.map(s => mainT().main.noticeSkipped(s)), ...unavailable.map(u => mainT().main.noticeUnavailable(u))] };
 });
 
 // ---- Hand off to the Claude apps (claude://claude.ai/new?q=…, prefilled, never auto-sent) ----

@@ -143,9 +143,10 @@ export const settings: typeof Ja = {
     testing: "Checking…",
     testResult: (count: number, tools: string, more: boolean) => `Connected · ${count} ${count === 1 ? "tool" : "tools"}${count ? ` (${tools}${more ? " and more" : ""})` : ""}`,
     heading: "Connectors",
-    intro: "Register remote MCP servers (Notion, Asana, internal tools and so on) and turn them on per chat from the \"Tools\" menu for Claude to use. Anthropic's API connects directly to the registered server.",
+    intro: "Register MCP servers and turn them on per chat from the \"Tools\" menu for Claude to use. Anthropic's API connects directly to remote servers (Notion, Asana, internal tools and so on); local servers are started on this computer.",
     notes: [
-      "Only MCP servers published over https:// (Streamable HTTP / SSE) work. MCP servers running on your PC cannot be used this way.",
+      "Remote servers must be published over https:// (Streamable HTTP / SSE).",
+      "Local MCP servers (the same format as Claude Desktop's mcpServers) ask for your permission before each tool runs. The command runs with your account's permissions, so only add servers you trust.",
       "For servers that need OAuth, paste the access token you obtained (paste it again when it expires). Tokens are stored encrypted in the OS's secure storage.",
       "This feature is in beta, and exchanged content is retained under Anthropic's standard data retention policy (not covered by zero data retention)."
     ],
@@ -161,6 +162,21 @@ export const settings: typeof Ja = {
     keepToken: "(use the saved token)",
     change: "Change",
     tokenPlaceholder: "Leave blank to connect without a token",
-    add: "Add custom connector"
+    add: "Add custom connector",
+    transportRemote: "Remote (URL)",
+    transportLocal: "Local (command)",
+    localBadge: "Local",
+    command: "Command",
+    commandPlaceholder: "e.g. npx",
+    args: "Arguments",
+    argsHint: "Separate with spaces; wrap arguments that contain spaces in \"…\"",
+    env: "Environment variables (optional)",
+    envPlaceholder: "One per line, KEY=value",
+    keepEnv: (keys: string) => `(use the saved variables: ${keys})`,
+    envCount: (n: number) => ` · ${n} environment ${n === 1 ? "variable" : "variables"}`,
+    allowedCount: (n: number) => `${n} ${n === 1 ? "tool" : "tools"} always allowed`,
+    resetAllowed: "Reset permissions",
+    importDesktop: "Import from Claude Desktop",
+    imported: (added: number, found: number) => found === 0 ? "No local MCP servers found to import." : added === 0 ? (found === 1 ? "That server is already added." : `All ${found} servers are already added.`) : `Added ${added} local MCP ${added === 1 ? "server" : "servers"}.`
   }
 };

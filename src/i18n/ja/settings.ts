@@ -141,9 +141,10 @@ export const settings = {
     testing: "確認しています…",
     testResult: (count: number, tools: string, more: boolean) => `接続できました · ツール ${count} 個${count ? `（${tools}${more ? " ほか" : ""}）` : ""}`,
     heading: "コネクタ",
-    intro: "リモートの MCP サーバー（Notion・Asana・社内ツールなど）を登録すると、会話ごとに「ツール」メニューからオンにして Claude に使わせられます。Anthropic の API が登録先のサーバーへ直接接続します。",
+    intro: "MCP サーバーを登録すると、会話ごとに「ツール」メニューからオンにして Claude に使わせられます。リモートのサーバー（Notion・Asana・社内ツールなど）には Anthropic の API が直接接続し、ローカルのサーバーはこの PC で起動します。",
     notes: [
-      "使えるのは https:// で公開された MCP サーバー（Streamable HTTP / SSE）だけです。PC 内で動く MCP サーバーはこの方式では使えません。",
+      "リモートで使えるのは https:// で公開された MCP サーバー（Streamable HTTP / SSE）だけです。",
+      "ローカルの MCP サーバー（Claude Desktop の mcpServers と同じ形式）は、ツールを実行する前に毎回確認します。コマンドはあなたの PC の権限で動くので、信頼できるものだけを登録してください。",
       "OAuth が必要なサーバーは、取得したアクセストークンを貼り付けてください（期限が切れたら貼り直しが必要です）。トークンは OS の安全な保存領域で暗号化して保存します。",
       "この機能はベータ版で、やり取りした内容は Anthropic の標準のデータ保持ポリシーに従って保存されます（ゼロデータ保持の対象外）。"
     ],
@@ -159,6 +160,21 @@ export const settings = {
     keepToken: "（保存済みのトークンを使う）",
     change: "変更",
     tokenPlaceholder: "空欄ならトークンなしで接続",
-    add: "コネクタを追加"
+    add: "コネクタを追加",
+    transportRemote: "リモート（URL）",
+    transportLocal: "ローカル（コマンド）",
+    localBadge: "ローカル",
+    command: "コマンド",
+    commandPlaceholder: "例: npx",
+    args: "引数",
+    argsHint: "空白で区切ります。空白を含むものは \"…\" で囲んでください",
+    env: "環境変数（任意）",
+    envPlaceholder: "1 行に 1 つ、KEY=値",
+    keepEnv: (keys: string) => `（保存済みの環境変数を使う: ${keys}）`,
+    envCount: (n: number) => ` · 環境変数 ${n} 個`,
+    allowedCount: (n: number) => `常に許可したツール ${n} 個`,
+    resetAllowed: "許可をリセット",
+    importDesktop: "Claude Desktop から読み込む",
+    imported: (added: number, found: number) => found === 0 ? "読み込めるローカル MCP サーバーはありませんでした。" : added === 0 ? `${found} 個のサーバーはすべて登録済みです。` : `${added} 個のローカル MCP サーバーを追加しました。`
   }
 };

@@ -20,6 +20,14 @@ contextBridge.exposeInMainWorld("continuity", {
   saveConnector: (input: unknown) => ipcRenderer.invoke("connectors:save", input),
   deleteConnector: (id: string) => ipcRenderer.invoke("connectors:delete", id),
   testConnector: (id: string) => ipcRenderer.invoke("connectors:test", id),
+  importDesktopConnectors: () => ipcRenderer.invoke("connectors:importDesktop"),
+  resetAllowedTools: (id: string) => ipcRenderer.invoke("connectors:resetAllowed", id),
+  answerApproval: (approvalId: string, decision: string) => ipcRenderer.invoke("claude:approve", approvalId, decision),
+  onApproval: (listener: (approval: unknown) => void) => {
+    const handler = (_event: IpcRendererEvent, payload: unknown) => listener(payload);
+    ipcRenderer.on("claude:approval", handler);
+    return () => { ipcRenderer.removeListener("claude:approval", handler); };
+  },
   styleFromSample: (payload: unknown) => ipcRenderer.invoke("style:fromSample", payload),
   attachmentText: (id: string) => ipcRenderer.invoke("attachments:text", id),
   openAttachmentPdf: (id: string, name: string) => ipcRenderer.invoke("attachments:openPdf", id, name),

@@ -201,7 +201,7 @@ const clip = (value: unknown, max = 4000) => {
  * Tool calls made while answering, paired with their results, for the expandable "what Claude did" view.
  * Server tools (web search/fetch, code execution) come back as content blocks; client memory results are passed in.
  */
-export function extractSteps(blocks: unknown[], clientResults: Map<string, { content: string; isError?: boolean }> = new Map(), connectorNames: Record<string, string> = {}): ToolStep[] {
+export function extractSteps(blocks: unknown[], clientResults: Map<string, { content: string; isError?: boolean }> = new Map(), connectorNames: Record<string, string> = {}, localTools: Record<string, { server: string; tool: string }> = {}): ToolStep[] {
   const t = mainT().request;
   const results = new Map<string, any>();
   for (const b of blocks as any[]) if (b && typeof b.tool_use_id === "string" && typeof b.type === "string" && b.type.endsWith("_tool_result")) results.set(b.tool_use_id, b);
@@ -215,6 +215,13 @@ export function extractSteps(blocks: unknown[], clientResults: Map<string, { con
     }
     if (!b || (b.type !== "server_tool_use" && b.type !== "tool_use")) continue;
     const input = b.input ?? {};
+    // Tools of local MCP servers run on this PC; their results were recorded as client results.
+    const localTool = b.type === "tool_use" ? localTools[b.name] : undefined;
+    if (localTool) {
+      const own = clientResults.get(b.id);
+      steps.push({ kind: "connector", label: `${localTool.server}: ${localTool.tool}`, detail: clip(input, 2000), ...(own ? { output: clip(own.content), ...(own.isError ? { error: true } : {}) } : {}) });
+      continue;
+    }
     const result = results.get(b.id)?.content;
     const errorCode = result && typeof result === "object" && !Array.isArray(result) && typeof result.error_code === "string" ? result.error_code : undefined;
     if (b.name === "web_search") {

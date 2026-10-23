@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { ConnectorView } from "./lib/connectors";
+import type { ApprovalDecision, ConnectorView, ToolApproval } from "./lib/connectors";
+import ToolApprovalCard from "./components/ToolApprovalCard";
 import { ArrowDown, ArrowUpRight, Ghost, Plus, Shapes, FileUp, FolderOpen, MessagesSquare, PanelLeftClose, PanelLeftOpen, Search } from "lucide-react";
 import CreditCard from "./components/CreditCard";
 import LogoMark, { LogoGlyph } from "./components/LogoMark";
@@ -36,7 +37,7 @@ import { editUserMessage, selectUserVersion } from "./lib/versions";
 type Attachment = NonNullable<Msg["attachments"]>[number];
 type Chat = { id: string; title: string; messages: Msg[]; source?: string; projectId?: string; starred?: boolean; updatedAt?: string; incognito?: boolean; style?: string; tools?: Tools; container?: { id: string; expiresAt?: string } };
 type Model = { id: string; displayName: string; createdAt?: string; maxTokens?: number; effortLevels: string[]; adaptiveThinking: boolean; imageInput: boolean; pdfInput: boolean };
-type Pending = { chatId: string; requestId: string; text: string; thinking: string; activity: string; startedAt: number; firstTextAt?: number };
+type Pending = { chatId: string; requestId: string; text: string; thinking: string; activity: string; startedAt: number; firstTextAt?: number; approval?: ToolApproval };
 type Reply = Omit<Msg, "role" | "attachments" | "alternates" | "altIndex">;
 const welcomeChat = (t: Messages): Chat => ({ id: "welcome", title: t.app.welcomeTitle, messages: [{ role: "assistant", content: t.app.welcomeContent }] });
 const STYLE_IDS = ["standard", "concise", "detailed", "explanatory"] as const;
@@ -141,10 +142,21 @@ export default function App() {
      const next=event.kind==="activity"?{...current,activity:event.delta}:{...current,[event.kind]:current[event.kind]+event.delta,...(event.kind==="text"?{activity:"",firstTextAt:current.firstTextAt??Date.now()}:{})};
      pendingRef.current=next;setPending(next);
    });
+   const offApproval=window.continuity.onApproval(approval=>{
+     const current=pendingRef.current;
+     if(!current||current.requestId!==approval.requestId){void window.continuity.answerApproval(approval.approvalId,"deny");return;}
+     const next={...current,approval};pendingRef.current=next;setPending(next);
+   });
    const offUpdate=window.continuity.onUpdateStatus(setUpdate);
    window.continuity.listConnectors().then(setConnectors).catch(()=>{});
-   return ()=>{window.clearInterval(timer);unsubscribe();offUpdate();};
+   return ()=>{window.clearInterval(timer);unsubscribe();offApproval();offUpdate();};
  },[]);
+ function answerApproval(decision:ApprovalDecision){
+   const current=pendingRef.current;
+   if(!current?.approval)return;
+   void window.continuity.answerApproval(current.approval.approvalId,decision);
+   const next={...current,approval:undefined};pendingRef.current=next;setPending(next);
+ }
  async function refreshModels(announce=false){
    if(!configured){setSettings("api");setStatus(t.app.status.setKeyFirst);return;}
    setModelsLoading(true);
@@ -496,6 +508,7 @@ export default function App() {
            {(pending.thinking||!pending.text)&&<ThinkingBlock text={pending.thinking} live={!pending.text} seconds={pending.firstTextAt?(pending.firstTextAt-pending.startedAt)/1000:undefined}/>}
            {pending.activity&&<p className="activity my-[6px] text-[12.5px] text-muted before:mr-[7px] before:inline-block before:size-[7px] before:animate-pulse-dot before:rounded-full before:bg-accent before:content-['']">{pending.activity}</p>}
            {pending.text&&<Markdown text={pending.text} className="mt-0 font-chat text-[16px] leading-[1.78] text-ink-3 [&_code]:font-mono [&_h1]:text-ink [&_h2]:text-ink [&_h3]:text-ink [&_pre]:font-mono [&_table]:font-sans"/>}
+           {pending.approval&&<ToolApprovalCard approval={pending.approval} onAnswer={decision=>answerApproval(decision)}/>}
            <div className="msg-actions working mt-[6px] flex items-center gap-[2px] opacity-100 transition-opacity duration-200 ease-[ease]"><LogoGlyph size={24} working/></div>
          </article>}
         </div>

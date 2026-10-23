@@ -37,5 +37,13 @@ export const message: typeof Ja = {
     other: (n: number) => times(n, "other call", "other calls"),
     hasErrors: "Has errors",
     error: "Error"
+  },
+  approval: {
+    title: (tool: string, server: string) => `Claude wants to use ${tool} from ${server}`,
+    hint: "This tool runs on your computer. Review it before allowing.",
+    input: "Input",
+    allowOnce: "Allow once",
+    allowAlways: "Always allow",
+    deny: "Deny"
   }
 };

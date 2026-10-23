@@ -35,5 +35,13 @@ export const message = {
     other: (n: number) => `その他 ${n} 回`,
     hasErrors: "エラーあり",
     error: "エラー"
+  },
+  approval: {
+    title: (tool: string, server: string) => `Claude が ${server} の「${tool}」を使おうとしています`,
+    hint: "このツールはこの PC で実行されます。内容を確認してから許可してください。",
+    input: "入力",
+    allowOnce: "今回だけ許可",
+    allowAlways: "常に許可",
+    deny: "拒否"
   }
 };

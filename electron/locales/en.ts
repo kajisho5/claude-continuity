@@ -27,6 +27,23 @@ export const en: typeof Ja = {
     tokenStorageUnavailable: "Tokens cannot be stored securely in this environment.",
     connectFailed: (message: string) => `Could not connect: ${message}`
   },
+  localMcp: {
+    commandRequired: "Enter a command.",
+    badEnv: (key: string) => `Invalid environment variable name: ${key}`,
+    truncated: "\n…(truncated)",
+    emptyResult: "(no result)",
+    startTimeout: "The server didn't start within 60 seconds.",
+    startFailed: (name: string, message: string, stderr: string) => `Couldn't start ${name}: ${message}${stderr ? `\n${stderr}` : ""}`,
+    denied: "The user did not allow this tool to run.",
+    callFailed: (message: string) => `The tool failed: ${message}`,
+    unavailable: (name: string, message: string) => `Couldn't use the local MCP server "${name}" (${message})`,
+    configNotFound: (file: string) => `Claude Desktop config file not found: ${file}`,
+    configInvalid: "Couldn't read the Claude Desktop config file (invalid JSON).",
+    envStorageUnavailable: "Environment variables can't be stored securely on this system.",
+    starting: (name: string) => `Starting ${name}…`,
+    usingTool: (server: string, tool: string) => `Using ${tool} from ${server}…`,
+    waitingApproval: (server: string, tool: string) => `Waiting for permission to run ${tool} from ${server}…`
+  },
   memory: {
     viewTruncated: "\n…(truncated because it is long; use view_range to see the rest)"
   },

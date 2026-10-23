@@ -1,8 +1,21 @@
 import { mainT } from "./i18n";
 
-/** Remote MCP servers that Claude can call through the Messages API MCP connector (beta). */
-export type Connector = { id: string; name: string; url: string; enabled: boolean; token?: string };
-export type ConnectorView = Omit<Connector, "token"> & { hasToken: boolean };
+/**
+ * MCP servers Claude can use. "remote" ones are called by the API through the MCP connector (beta);
+ * "local" ones are stdio servers started on this PC (see localMcp.ts).
+ */
+export type Connector = {
+  id: string; name: string; enabled: boolean; transport: "remote" | "local";
+  url: string; token?: string;
+  command?: string; args?: string[]; env?: Record<string, string>;
+  /** Local tools the user chose "always allow" for. */
+  allowedTools?: string[];
+};
+export type ConnectorView = {
+  id: string; name: string; enabled: boolean; transport: "remote" | "local";
+  url: string; hasToken: boolean;
+  command?: string; args?: string[]; envKeys?: string[]; allowedTools?: string[];
+};
 export const MCP_CONNECTOR_BETA = "mcp-client-2025-11-20";
 
 /** Server names must be unique identifiers; derive one from the display name. */
@@ -24,7 +37,7 @@ export function validateConnector(input: { name?: unknown; url?: unknown }): { n
 }
 
 /** Request pieces for the active connectors: mcp_servers plus one mcp_toolset per server. */
-export function connectorRequest(connectors: Connector[]): { mcp_servers: object[]; tools: object[] } {
+export function connectorRequest(connectors: Pick<Connector, "id" | "name" | "url" | "token">[]): { mcp_servers: object[]; tools: object[] } {
   const mcp_servers = connectors.map(c => ({ type: "url", url: c.url, name: serverName(c), ...(c.token ? { authorization_token: c.token } : {}) }));
   const tools = connectors.map(c => ({ type: "mcp_toolset", mcp_server_name: serverName(c) }));
   return { mcp_servers, tools };
