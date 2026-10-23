@@ -12,10 +12,13 @@ module.exports = async function quick(ctx) {
   assert.equal(await registered(app, DEFAULT), true, "the default shortcut is registered");
 
   await w.click(".composer .screenshot");
-  await w.waitForSelector(".attachment-row", { timeout: 15000 });
-  const chips = await w.locator(".attachment-row").allTextContents();
-  assert.equal(chips.length, 1);
-  assert.match(chips[0], /^screenshot-\d{8}-\d{6}\.png画像 · \d+KB/);
+  // macOS needs Screen Recording permission, which CI runners don't grant: then the app explains how to allow it.
+  await w.waitForFunction(() => document.querySelector(".attachment-row") || document.body.innerText.includes("画面収録"), null, { timeout: 15000 });
+  if (process.platform !== "darwin" || await w.locator(".attachment-row").count()) {
+    const chips = await w.locator(".attachment-row").allTextContents();
+    assert.equal(chips.length, 1);
+    assert.match(chips[0], /^screenshot-\d{8}-\d{6}\.png画像 · \d+KB/);
+  }
 
   await openSettings(w);
   await w.selectOption(".quick-shortcut select", OTHER);
