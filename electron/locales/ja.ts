@@ -145,6 +145,7 @@ export const ja = {
     zipOpenFailed: "ZIP ファイルを開けませんでした。",
     mcpFolderTitle: "MCP サーバーに読ませてよいフォルダ",
     keyStorageUnavailable: "この環境では安全なキー保存を利用できません。",
+    reloadingAfterRestore: "データを復元したため、画面を読み込み直しています。",
     badKey: "Anthropic APIキーの形式を確認してください。",
     secureStorageUnavailable: "安全なキー保存が利用できません。",
     badKeyPrefix: "Anthropic APIキーの形式を確認してください（sk-ant- で始まります）。",

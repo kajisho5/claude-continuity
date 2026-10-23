@@ -174,7 +174,11 @@ export class LocalMcpPool {
     this.live.delete(id);
     await entry?.client.close().catch(() => {});
   }
-  async closeAll() { await Promise.all([...this.live.keys()].map(id => this.close(id))); }
+  async closeAll() {
+    // Servers still starting are waited for (they end up in live) so they are shut down too.
+    await Promise.all([...this.starting.values()].map(s => s.promise.catch(() => undefined)));
+    await Promise.all([...this.live.keys()].map(id => this.close(id)));
+  }
 }
 
 const describe = (error: unknown) => String((error as Error)?.message ?? error).slice(0, 300);

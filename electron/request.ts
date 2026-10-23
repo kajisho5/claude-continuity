@@ -11,6 +11,7 @@ export type StyleId = "standard" | "concise" | "detailed" | "explanatory" | "cus
 export const stylePrompts = (): Record<Exclude<StyleId, "standard" | "custom">, string> => mainT().request.stylePrompts;
 import { pastChatsTool } from "./pastChats";
 import { mainT } from "./i18n";
+import { sniffImage } from "./attachments";
 export const ANTHROPIC_SKILLS = ["xlsx", "docx", "pptx", "pdf"];
 
 export type Profile = { name?: string; preferences?: string };
@@ -27,14 +28,26 @@ export function buildSystem(style: StyleId | undefined, customStyle: string, pro
   return parts.length ? parts.join("\n\n") : undefined;
 }
 
-/** Keeps a recent contiguous suffix within a character budget that starts with a user turn. */
+// An image costs at most about 1,600 tokens (https://platform.claude.com/docs/en/build-with-claude/vision).
+const IMAGE_COST = 1_600;
+/** Rough share of the character budget an attachment takes (text files by size; PDFs are not counted). */
+export function attachmentCost(turn: ChatTurn): number {
+  return (turn.attachments ?? []).reduce((sum, a) => sum + (a.kind === "text" ? a.size : a.kind === "image" ? IMAGE_COST : 0), 0);
+}
+
+/**
+ * Keeps a recent contiguous suffix within a character budget that starts with a user turn. Text and image
+ * attachments count toward the budget, so a large file in an old turn drops out instead of being resent
+ * (and overflowing the context) with every later request.
+ */
 export function selectHistory(turns: ChatTurn[], maxChars = 120_000): ChatTurn[] {
   const picked: ChatTurn[] = [];
   let remaining = maxChars;
   for (let i = turns.length - 1; i >= 0 && remaining > 0; i--) {
     const turn = turns[i];
     if (!turn.content && !turn.attachments?.length) continue;
-    if (turn.content.length <= remaining) { picked.push(turn); remaining -= turn.content.length; }
+    const cost = turn.content.length + attachmentCost(turn);
+    if (cost <= remaining) { picked.push(turn); remaining -= cost; }
     else if (picked.length === 0) { picked.push({ ...turn, content: turn.content.slice(-remaining) }); remaining = 0; }
     else break;
   }
@@ -56,8 +69,10 @@ export async function attachmentBlocks(attachments: Attachment[], loader: Attach
   for (const att of attachments) {
     if (att.kind === "image") {
       if (!opts.caps.imageInput) { skipped.push(t.imageUnsupported(att.name)); continue; }
-      const data = (await loader.read(att)).toString("base64");
-      blocks.push({ type: "image", source: { type: "base64", media_type: att.mediaType as "image/png", data } });
+      const bytes = await loader.read(att);
+      // Attachments saved before the type was taken from the contents may carry the extension's type.
+      const mediaType = sniffImage(bytes) ?? att.mediaType;
+      blocks.push({ type: "image", source: { type: "base64", media_type: mediaType as "image/png", data: bytes.toString("base64") } });
     } else if (att.kind === "pdf") {
       if (!opts.caps.pdfInput) { skipped.push(t.pdfUnsupported(att.name)); continue; }
       const data = (await loader.read(att)).toString("base64");

@@ -11,6 +11,14 @@ export type UpdateStatus =
   | { state: "error"; message: string };
 
 const message = (error: unknown) => String((error as Error)?.message ?? error).slice(0, 300);
+/**
+ * The newest release lacks this platform's feed (e.g. its build failed while Windows published): there is
+ * nothing to install yet, so this is "no update" rather than an error.
+ */
+export function isMissingFeed(error: unknown): boolean {
+  const text = String((error as Error)?.message ?? error);
+  return /latest(-mac|-linux)?\.yml/.test(text) && /\b404\b|Cannot find/i.test(text);
+}
 const CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
 
 /** Release notes arrive as HTML (GitHub) or a list of versions; keep plain text for the UI. */
@@ -69,7 +77,7 @@ export function setupUpdater(getWindow: () => BrowserWindow | null, opts: { enab
       // null means the updater is inactive for this build (e.g. an unpacked folder rather than an installer).
       const result = await updater.checkForUpdates();
       if (!result) emit({ state: "error", message: mainT().updater.unsupportedFormat });
-    } catch (error) { emit({ state: "error", message: message(error) }); }
+    } catch (error) { emit(isMissingFeed(error) ? { state: "none" } : { state: "error", message: message(error) }); }
     return status;
   };
   ipcMain.handle("app:version", () => app.getVersion());
@@ -105,7 +113,7 @@ export function setupUpdater(getWindow: () => BrowserWindow | null, opts: { enab
       emit({ state: "ready", version: info.version, ...(notes ? { notes } : {}) });
       notify(`ready-${info.version}`, mainT().updater.readyTitle, mainT().updater.readyBody(info.version));
     });
-    updater.on("error", error => emit({ state: "error", message: message(error) }));
+    updater.on("error", error => emit(isMissingFeed(error) ? { state: "none" } : { state: "error", message: message(error) }));
   } catch (error) {
     updater = null;
     status = { state: "error", message: message(error) };

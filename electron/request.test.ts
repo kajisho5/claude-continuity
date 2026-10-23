@@ -40,6 +40,13 @@ describe("selectHistory", () => {
     expect(selectHistory(turns, 25).map(t => t.content[0])).toEqual(["a", "b", "c"]);
     expect(selectHistory(turns, 15).map(t => t.content[0])).toEqual(["c"]);
   });
+  it("counts text and image attachments, so a large old file drops out", () => {
+    const big = { ...att("text", "big.csv"), size: 50_000 };
+    const turns = [{ role: "user" as const, content: "old", attachments: [big] }, { role: "assistant" as const, content: "ok" }, { role: "user" as const, content: "new" }];
+    expect(selectHistory(turns, 10_000).map(t => t.content)).toEqual(["new"]);
+    expect(selectHistory(turns, 60_000).map(t => t.content)).toEqual(["old", "ok", "new"]);
+    expect(selectHistory([{ role: "user", content: "x", attachments: [att("image", "a.png")] }], 1_000)).toHaveLength(1);
+  });
 });
 
 describe("buildMessages", () => {

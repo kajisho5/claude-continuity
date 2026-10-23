@@ -12,7 +12,7 @@ import { createBackup, readBackup, restoreEntries } from "./backup";
 import { formatHits, searchPastChats } from "./pastChats";
 import { setupUpdater } from "./updater";
 import { getMainLocale, mainT, resolveMainLocale, setMainLocale } from "./i18n";
-import { readJsonFile, saveFile, withFileLock, writeFileAtomic } from "./fileStore";
+import { readJsonFile, saveFile, withFileLock, withFileLocks, writeFileAtomic } from "./fileStore";
 import { connectorRequest, MCP_CONNECTOR_BETA, serverName, validateConnector, type Connector, type ConnectorView } from "./connectors";
 import { containerSkills, readSkillSource } from "./skills";
 import { buildIndex, formatKnowledgeHits, knowledgeTool, pdfText, searchKnowledge, type KnowledgeIndex } from "./knowledge";
@@ -359,12 +359,24 @@ ipcMain.handle("data:restore", async event => {
   await fs.writeFile(safetyPath, (await createBackup(dataDir(), app.getVersion())).zip.toBuffer());
   const sender = event.sender;
   staleWindows.add(sender);
+  // Replies in flight would record usage and attachment ids into files that are about to be replaced.
+  for (const controller of activeReplies.values()) controller.abort();
+  const attachmentIndex = path.join(dataDir(), "attachments", "index.json");
+  const locked = [chatsFile(), prefsFile(), projectsFile(), creditFile(), usageFile(), attachmentIndex + ":update", attachmentIndex];
   try {
-    // Let saves already queued finish first, so none of them lands after the restored files.
-    await Promise.all([chatsFile(), prefsFile(), projectsFile(), creditFile(), usageFile()].map(f => withFileLock(f, async () => {})));
-    await restoreEntries(dataDir(), entries);
+    // The files' locks are held while they are replaced, so no save lands in the middle of the restore.
+    await withFileLocks(locked, async () => {
+      try { await restoreEntries(dataDir(), entries); }
+      catch (error) {
+        // A restore that fails partway would leave a mix of old and new data; put the previous state back.
+        await restoreEntries(dataDir(), readBackup(new AdmZip(safetyPath))).catch(() => {});
+        throw error;
+      }
+    });
   } catch (error) { staleWindows.delete(sender); throw error; }
   sender.once("did-finish-load", () => staleWindows.delete(sender));
+  // Files API ids in the restored data may belong to another key's workspace; they are uploaded again when used.
+  await attachments().clearFileIds().catch(() => {});
   const restoredPrefs = await loadPrefs();
   nativeTheme.themeSource = restoredPrefs.theme;
   applyLanguage(restoredPrefs.language);
@@ -379,15 +391,23 @@ ipcMain.handle("mcp:info", () => {
 });
 // ---- Custom Skills (Skills API; uploaded to the API organization, used through code execution) ----
 const skillsClient = async () => new Anthropic({ apiKey: await getApiKey() });
-ipcMain.handle("skills:list", async () => {
+ipcMain.handle("skills:list", () => listSkills());
+/** The organization's custom Skills; turned-on ids that no longer exist for this key are dropped from prefs. */
+async function listSkills() {
   const client = await skillsClient();
   const out: { id: string; name: string; updatedAt: string }[] = [];
   for await (const skill of client.beta.skills.list({ source: "custom" })) {
     out.push({ id: skill.id, name: skill.display_name, updatedAt: skill.updated_at });
     if (out.length >= 100) break;
   }
+  // A Skill deleted in the Console (or from another workspace) would make every request fail; drop it.
+  const prefs = await loadPrefs();
+  const known = new Set(out.map(s => s.id));
+  if (out.length < 100 && prefs.enabledSkills.some(id => !known.has(id))) {
+    await saveFile(prefsFile(), JSON.stringify(sanitizePrefs({ ...prefs, enabledSkills: prefs.enabledSkills.filter(id => known.has(id)) })));
+  }
   return out;
-});
+}
 /** Picks a skill folder, SKILL.md or .zip/.skill archive and uploads it; the new skill is turned on. */
 ipcMain.handle("skills:upload", async (_event, kind: "folder" | "file") => {
   const result = await dialog.showOpenDialog(kind === "folder"
@@ -433,7 +453,12 @@ function recordUsage(entry: UsageEntry) {
 ipcMain.handle("key:save", async (_event, apiKey: string) => {
   if (!safeStorage.isEncryptionAvailable()) throw new Error(mainT().main.keyStorageUnavailable);
   if (!apiKey || !apiKey.startsWith("sk-ant-")) throw new Error(mainT().main.badKey);
-  await saveFile(keyFile(), safeStorage.encryptString(apiKey)); return true;
+  await saveFile(keyFile(), safeStorage.encryptString(apiKey));
+  // Uploaded files and custom Skills belong to the key's workspace: files are uploaded again when used, and
+  // turned-on Skills the new key cannot see are dropped.
+  await attachments().clearFileIds().catch(() => {});
+  await listSkills().catch(() => {});
+  return true;
 });
 ipcMain.handle("key:status", async () => {
   try {
@@ -497,7 +522,7 @@ ipcMain.handle("credit:load", async () => {
   try { return JSON.parse(await fs.readFile(creditFile(), "utf8")); } catch { return null; }
 });
 ipcMain.handle("credit:save", async (event, value: any) => {
-  if (staleWindows.has(event.sender)) return false;
+  if (staleWindows.has(event.sender)) throw new Error(mainT().main.reloadingAfterRestore);
   if (!value || typeof value !== "object") throw new Error(mainT().main.badCredit);
   const plan = value.plan == null ? null : String(value.plan);
   if (plan !== null && !PLANS.includes(plan)) throw new Error(mainT().main.badPlan);
@@ -570,7 +595,7 @@ function applyLanguage(language: Language) {
 }
 ipcMain.handle("prefs:load", () => loadPrefs());
 ipcMain.handle("prefs:save", async (event, value: unknown) => {
-  if (staleWindows.has(event.sender)) return false;
+  if (staleWindows.has(event.sender)) throw new Error(mainT().main.reloadingAfterRestore);
   const prefs = sanitizePrefs(value);
   await saveFile(prefsFile(), JSON.stringify(prefs));
   nativeTheme.themeSource = prefs.theme;
@@ -587,7 +612,7 @@ async function loadProjects(): Promise<Project[]> {
 }
 ipcMain.handle("projects:load", () => loadProjects());
 ipcMain.handle("projects:save", async (event, list: unknown) => {
-  if (staleWindows.has(event.sender)) return false;
+  if (staleWindows.has(event.sender)) throw new Error(mainT().main.reloadingAfterRestore);
   if (!Array.isArray(list)) throw new Error(mainT().main.badProjects);
   const projects: Project[] = list.slice(0, 200).map((p: any) => ({
     id: String(p?.id ?? randomUUID()).slice(0, 100),
@@ -868,16 +893,18 @@ function requestApproval(sender: Electron.WebContents, requestId: string, ref: L
     const approvalId = randomUUID();
     const done = (decision: ApprovalDecision) => {
       approvals.delete(approvalId); signal.removeEventListener("abort", onAbort);
-      sender.off("destroyed", onGone); sender.off("render-process-gone", onGone);
+      sender.off("destroyed", onGone); sender.off("render-process-gone", onGone); sender.off("did-start-navigation", onNavigate);
       resolve(decision);
     };
     const onAbort = () => done("deny");
-    // A closed window (macOS keeps the app running) can no longer answer.
+    // A closed or reloaded window (macOS keeps the app running; a restore reloads it) can no longer answer.
     const onGone = () => done("deny");
+    const onNavigate = (details: { isMainFrame?: boolean; isSameDocument?: boolean }) => { if (details?.isMainFrame && !details.isSameDocument) done("deny"); };
     approvals.set(approvalId, done);
     signal.addEventListener("abort", onAbort);
     sender.once("destroyed", onGone);
     sender.once("render-process-gone", onGone);
+    sender.on("did-start-navigation", onNavigate);
     const shown = JSON.stringify(input ?? {}, null, 2);
     sender.send("claude:approval", { requestId, approvalId, server: ref.serverName, tool: ref.tool, input: shown.length > 4000 ? shown.slice(0, 4000) + "…" : shown });
   });
@@ -1027,15 +1054,10 @@ ipcMain.handle("claude:reply", async (event, payload: ReplyPayload) => {
   try {
     for (let iteration = 0; iteration < (research ? RESEARCH_MAX_LOOP : MAX_LOOP); iteration++) {
       // Thinking counts toward max_tokens, so allow the model's full output budget; streaming keeps long replies within SDK limits.
-      // Research's search and page-read budgets are per turn, while max_uses counts per request; give each
-      // continuation only what is left.
-      const roundTools = research ? tools.map(t =>
-        t.type === "web_search_20250305" ? { ...t, max_uses: Math.max(1, RESEARCH_MAX_USES - progress.searches) }
-        : t.type === "web_fetch_20250910" ? { ...t, max_uses: Math.max(1, RESEARCH_MAX_USES - progress.fetches) } : t) : tools;
       const params = {
         model, max_tokens: info?.maxTokens ?? 8192, messages,
         ...(system ? { system } : {}),
-        ...(roundTools.length || mcp || local.tools.length ? { tools: [...roundTools, ...local.tools, ...(mcp?.tools ?? [])] } : {}),
+        ...(tools.length || mcp || local.tools.length ? { tools: [...tools, ...local.tools, ...(mcp?.tools ?? [])] } : {}),
         ...(mcp ? { mcp_servers: mcp.mcp_servers } : {}),
         ...(skills.length || customSkills.length || container ? { container: { ...(container ? { id: container.id } : {}), ...(skills.length || customSkills.length ? { skills: containerSkills(skills, customSkills) } : {}) } } : {}),
         // Newer models default to display "omitted" (empty thinking text); ask for the readable summary instead.
@@ -1075,8 +1097,9 @@ ipcMain.handle("claude:reply", async (event, payload: ReplyPayload) => {
       if (final.container?.id) container = { id: final.container.id, expiresAt: final.container.expires_at };
       stopReason = final.stop_reason;
       if (final.stop_reason === "pause_turn") {
-        // With both research budgets spent, stop here; the reply offers to continue.
-        if (research && progress.searches >= RESEARCH_MAX_USES && progress.fetches >= RESEARCH_MAX_USES) break;
+        // max_uses counts per request, so a research turn stops continuing once either budget is spent (the reply
+        // offers to continue). The tool definitions stay the same every round so the prompt cache keeps working.
+        if (research && (progress.searches >= RESEARCH_MAX_USES || progress.fetches >= RESEARCH_MAX_USES)) break;
         messages.push({ role: "assistant", content: final.content });
         continue;
       }

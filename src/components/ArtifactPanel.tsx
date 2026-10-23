@@ -16,8 +16,10 @@ export function previewDocument(artifact: { language: "html" | "svg"; code: stri
   }
   // The policy goes first, ahead of any markup or script in the code: the parser puts a leading <meta> into
   // the head even when the code brings its own <html>/<head>, so nothing runs before the policy applies.
+  // The code's own doctype is moved ahead of it: a doctype after the <meta> is ignored and the page would
+  // render in quirks mode.
   return /<(html|head)[\s>]/i.test(artifact.code)
-    ? `${meta}${artifact.code}`
+    ? `<!doctype html>${meta}${artifact.code.replace(/^\uFEFF?\s*(<!doctype[^>]*>)?/i, "")}`
     : `<!doctype html><html><head>${meta}</head><body>${artifact.code}</body></html>`;
 }
 

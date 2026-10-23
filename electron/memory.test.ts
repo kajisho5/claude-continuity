@@ -21,6 +21,10 @@ describe("resolveMemoryPath", () => {
     expect(resolveMemoryPath(root, "/memories/a\\..\\..\\x")).toBeNull();
     expect(resolveMemoryPath(root, 42)).toBeNull();
   });
+  it("keeps names with a literal % as written", () => {
+    expect(resolveMemoryPath(root, "/memories/50%_off.md")).toBe(path.join(root, "50%_off.md"));
+    expect(resolveMemoryPath(root, "/memories/a%20b.md")).toBe(path.join(root, "a%20b.md"));
+  });
 });
 
 describe("runMemoryCommand", () => {

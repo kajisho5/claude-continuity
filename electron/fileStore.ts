@@ -43,6 +43,11 @@ async function renameWithRetry(from: string, to: string) {
 
 export const saveFile = (file: string, data: string | Uint8Array) => withFileLock(file, () => writeFileAtomic(file, data));
 
+/** Holds the locks of several files at once (each acquired in turn), e.g. while a restore replaces them. */
+export function withFileLocks<T>(files: string[], fn: () => Promise<T>): Promise<T> {
+  return files.length ? withFileLock(files[0], () => withFileLocks(files.slice(1), fn)) : fn();
+}
+
 /**
  * Reads a JSON file. A missing file gives `fallback`. A file that cannot be parsed is moved aside as
  * "<name>.corrupt-<time>" (kept for recovery, never overwritten) and gives `fallback`. Any other read
@@ -57,7 +62,8 @@ export async function readJsonFile<T>(file: string, fallback: T): Promise<T> {
   }
   try { return JSON.parse(raw) as T; }
   catch {
-    await fs.rename(file, `${file}.corrupt-${Date.now()}`).catch(() => {});
+    // If it cannot be moved aside (a locked file on Windows), report the error rather than let it be overwritten.
+    await fs.rename(file, `${file}.corrupt-${Date.now()}`);
     return fallback;
   }
 }

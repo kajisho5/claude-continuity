@@ -17,11 +17,13 @@ function fail(content: string): MemoryResult { return { content, isError: true }
 /** Maps a /memories path onto the real root, rejecting anything that escapes it. */
 export function resolveMemoryPath(root: string, virtualPath: unknown): string | null {
   if (typeof virtualPath !== "string") return null;
+  // Names are used as written ("50%_off.md" is a valid name); the decoded form is only checked so that
+  // URL-encoded traversal such as %2e%2e is still refused.
   let decoded = virtualPath;
-  try { decoded = decodeURIComponent(virtualPath); } catch { return null; }
-  if (decoded !== VIRTUAL_ROOT && !decoded.startsWith(VIRTUAL_ROOT + "/")) return null;
-  if (decoded.split(/[\\/]/).some(part => part === ".." || part === ".")) return null;
-  const relative = decoded.slice(VIRTUAL_ROOT.length).replace(/^\/+/, "");
+  try { decoded = decodeURIComponent(virtualPath); } catch { /* a literal % */ }
+  if (virtualPath !== VIRTUAL_ROOT && !virtualPath.startsWith(VIRTUAL_ROOT + "/")) return null;
+  if ([virtualPath, decoded].some(p => p.split(/[\\/]/).some(part => part === ".." || part === "."))) return null;
+  const relative = virtualPath.slice(VIRTUAL_ROOT.length).replace(/^\/+/, "");
   const resolved = path.resolve(root, relative);
   const rootResolved = path.resolve(root);
   if (resolved !== rootResolved && !resolved.startsWith(rootResolved + path.sep)) return null;

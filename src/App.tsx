@@ -97,6 +97,8 @@ export default function App() {
  // Empty means ready: the footer then shows the disclaimer.
  const [status,setStatus]=useState("");
  const [loaded,setLoaded]=useState(false);
+ // Loading failed: nothing is saved (settings, projects and the credit card included) until the app restarts.
+ const [loadFailed,setLoadFailed]=useState(false);
  const [lastUsage,setLastUsage]=useState<{inputTokens:number;outputTokens:number;costUsd:number|null}|null>(null);
  const [usageRows,setUsageRows]=useState<UsageRow[]>([]);
  const [credit,setCredit]=useState<CreditSettings|null>(null);
@@ -136,7 +138,7 @@ export default function App() {
    Promise.all([window.continuity.keyStatus(),window.continuity.loadChats(),window.continuity.loadUsage(),window.continuity.loadCredit(),window.continuity.loadProjects(),window.continuity.loadPrefs()])
     .then(([s,saved,usage,savedCredit,savedProjects,savedPrefs])=>{setConfigured(s.configured); if(saved.length){setChats(saved as Chat[]);setActive(saved[0].id);} setUsageRows(toUsageRows(usage)); setCredit(savedCredit); setOnboarding(!savedCredit?.onboardingDone); setProjects(savedProjects); setPrefs(savedPrefs); setLoaded(true);})
     // Saving stays off when loading failed, so the empty window does not overwrite the history on disk.
-    .catch(e=>{setStatus(t.app.status.loadFailedNoSave+err(e));});
+    .catch(e=>{setLoadFailed(true);setStatus(t.app.status.loadFailedNoSave+err(e));});
    // Re-evaluate the credit cycle as time passes (day boundaries, expiry).
    const timer=window.setInterval(()=>setNow(Date.now()),60_000);
    const unsubscribe=window.continuity.onStream(event=>{
@@ -250,9 +252,11 @@ export default function App() {
    window.setTimeout(()=>setToasts(list=>list.filter(t=>t.id!==id)),kind==="error"?6000:3200);
  }
  async function saveKey(apiKey:string){ await window.continuity.saveApiKey(apiKey);setConfigured(true);setStatus(t.app.status.keySaved);toast(t.app.toast.keySaved); }
- async function saveCredit(next:CreditSettings){ setCredit(await window.continuity.saveCredit(next)); }
- async function savePrefs(next:Prefs){ setPrefs(await window.continuity.savePrefs(next)); }
- async function saveProjects(next:Project[]){ setProjects(await window.continuity.saveProjects(next)); }
+ // While loading has failed, the defaults in memory must not be written over the files on disk.
+ const savingBlocked=()=>!loaded;
+ async function saveCredit(next:CreditSettings){ if(savingBlocked())return; setCredit(await window.continuity.saveCredit(next)); }
+ async function savePrefs(next:Prefs){ if(savingBlocked())return; setPrefs(await window.continuity.savePrefs(next)); }
+ async function saveProjects(next:Project[]){ if(savingBlocked())return; setProjects(await window.continuity.saveProjects(next)); }
  async function finishOnboarding(next:CreditSettings,apiKey?:string){
    if(apiKey){await window.continuity.saveApiKey(apiKey);setConfigured(true);}
    await saveCredit(next);
@@ -307,7 +311,8 @@ export default function App() {
      patchChat(target.id,c=>({...c,messages:[...kept,next],updatedAt:new Date().toISOString(),...(response.container?{container:response.container}:{})}));
      setAtBottom(true);
      if(response.usage.inputTokens||response.usage.outputTokens){
-       setUsageRows(rows=>[...rows,{...response.usage,createdAt:new Date().toISOString()}]);
+       // Main records each API request of the turn as its own row; read them back so the card matches the ledger.
+       window.continuity.loadUsage().then(rows=>setUsageRows(toUsageRows(rows))).catch(()=>{});
        setLastUsage({inputTokens:response.usage.inputTokens,outputTokens:response.usage.outputTokens,costUsd:cost});
      }
      const costText=cost!=null?t.app.status.cost(formatUsd(cost,4)):"";
@@ -321,6 +326,8 @@ export default function App() {
      }
      if(mode.kind==="append"&&mode.retitle&&prefs.autoTitle&&!target.incognito&&response.text&&!response.aborted) void autoTitle(target.id,history[history.length-1].content,response.text,target.title);
    }catch(e){
+     // Rounds that finished before the failure were still recorded.
+     window.continuity.loadUsage().then(rows=>setUsageRows(toUsageRows(rows))).catch(()=>{});
      // A failed regeneration keeps the previous answer; a failed new turn shows the error in place of a reply.
      const tooLong=/prompt is too long|too many (input )?tokens|context (window|length)/i.test(err(e));
      const hint=tooLong?t.app.error.tooLong:t.app.error.checkConsole;
@@ -455,7 +462,8 @@ export default function App() {
  const fresh=chat.messages.length===0&&!showPending;
  // A tool approval asked in another chat would otherwise be invisible while the reply waits on it.
  const approvalElsewhere=pending?.approval&&pending.chatId!==chat.id?pending:null;
- const composer=(variant:"welcome"|"footer")=><>{approvalElsewhere&&<div className="approval-elsewhere mx-auto mb-[8px] flex w-full max-w-[760px] items-center gap-[10px] rounded-[10px] border border-line-strong bg-surface-2 px-[12px] py-[8px] text-[12.5px] text-ink-3">
+ const composer=(variant:"welcome"|"footer")=><>{loadFailed&&<div role="alert" className="load-failed mx-auto mb-[8px] w-full max-w-[760px] rounded-[10px] border border-danger px-[12px] py-[8px] text-[12.5px] text-danger">{t.app.status.loadFailedNoSave.replace(/[:：]\s*$/,"")}</div>}
+  {approvalElsewhere&&<div className="approval-elsewhere mx-auto mb-[8px] flex w-full max-w-[760px] items-center gap-[10px] rounded-[10px] border border-line-strong bg-surface-2 px-[12px] py-[8px] text-[12.5px] text-ink-3">
    <span className="min-w-0 flex-1">{t.app.approvalElsewhere(chats.find(c=>c.id===approvalElsewhere.chatId)?.title??"")}</span>
    <button className="btn-secondary small" onClick={()=>{setActive(approvalElsewhere.chatId);setView("chat");}}>{t.app.openChat}</button></div>}
   <Composer ref={composerRef} variant={variant} incognito={!!chat.incognito} draft={draft} onDraft={setDraft} attachments={pendingAttachments}

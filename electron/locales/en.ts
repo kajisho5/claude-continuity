@@ -146,6 +146,7 @@ export const en: typeof Ja = {
     zipOpenFailed: "Could not open the ZIP file.",
     mcpFolderTitle: "Choose folders the MCP server can read",
     keyStorageUnavailable: "Secure key storage is not available in this environment.",
+    reloadingAfterRestore: "The data was just restored; the window is reloading.",
     badKey: "Check the format of your Anthropic API key.",
     secureStorageUnavailable: "Secure key storage is not available.",
     badKeyPrefix: "Check the format of your Anthropic API key (it starts with sk-ant-).",
