@@ -7,7 +7,7 @@ Max プランなどに付く**月間 API クレジット**を、Claude アプリ
 
 ![会話画面](docs/screenshots/chat.png)
 
-<sub>スクリーンショットは、テスト用のモック API に接続して撮ったものです。</sub>
+<sub>スクリーンショットはすべて v0.1.6 時点の画面を、テスト用のモック API に接続して撮ったものです（回答の中身はダミーです）。</sub>
 
 ## できること
 
@@ -51,9 +51,11 @@ Max プランなどに付く**月間 API クレジット**を、Claude アプリ
 - **スクリーンショットの添付**：入力欄のカメラボタンで、マウスのある画面を取り込んで添付します（macOS は「画面収録」の許可が必要）。
 - **返信の通知**、キーボードショートカット（`Ctrl/⌘ + Shift + ?` で一覧）
 
-| React アーティファクト | ローカル MCP の実行確認 | 英語 UI |
+| ツールメニュー（リサーチ） | リサーチの結果と調べた手順 | React アーティファクト |
 |---|---|---|
-| ![](docs/screenshots/react-artifact.png) | ![](docs/screenshots/local-mcp-approval.png) | ![](docs/screenshots/english-home.png) |
+| ![](docs/screenshots/tools-menu.png) | ![](docs/screenshots/research.png) | ![](docs/screenshots/react-artifact.png) |
+| **ローカル MCP の実行確認** | **独自スキル** | **英語 UI** |
+| ![](docs/screenshots/local-mcp-approval.png) | ![](docs/screenshots/skills.png) | ![](docs/screenshots/english-home.png) |
 
 ## 料金についての注意
 
@@ -192,10 +194,12 @@ Claude Continuity is an unofficial desktop app (Electron + React) for continuing
 
 **Features**
 - Streaming chat with thinking, edits and versions, attachments, styles, projects and memory.
-- Web search and fetch, code execution, file creation (Skills), and searching past chats.
+- Research mode (repeated searches and page reads, then a cited report), web search and fetch, code execution, file creation, custom Skills uploads, and searching past chats.
+- Projects whose large text knowledge is searched instead of sent whole.
 - Artifacts (HTML, SVG, Markdown, Mermaid and sandboxed React).
 - Remote and local MCP connectors. Local servers ask for approval before each tool call, like Claude Desktop, and can be imported from Claude Desktop's config.
 - Handoff to the Claude apps.
+- A quick-access global shortcut and screenshot attachments.
 - A credit tracker, backup and restore, and in-app updates.
 - A Japanese and English UI.
 
