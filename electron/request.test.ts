@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildMessages, buildSystem, buildTools, extractFileIds, extractText, selectHistory, type ModelCaps } from "./request";
+import { buildMessages, buildSystem, buildTools, RESEARCH_MAX_USES, extractFileIds, extractText, selectHistory, type ModelCaps } from "./request";
 import type { Attachment } from "./attachments";
 
 const caps: ModelCaps = { webSearch: true, codeExecution: true, imageInput: true, pdfInput: true };
@@ -131,5 +131,22 @@ describe("extractSteps", () => {
     ], new Map([["m1", { content: "Directory: /memories" }]]));
     expect(steps[0]).toEqual({ kind: "memory", label: "メモリを確認: /memories", output: "Directory: /memories" });
     expect(steps[1]).toMatchObject({ kind: "code", error: true, output: "[stderr]\nboom" });
+  });
+});
+
+describe("research mode", () => {
+  const caps = { webSearch: true, codeExecution: true, imageInput: true, pdfInput: true };
+  it("turns on search and fetch with the research budget", () => {
+    const { tools } = buildTools({ research: true }, caps);
+    expect(tools.map(t => (t as { name: string; max_uses?: number }).name)).toEqual(["web_search", "web_fetch"]);
+    for (const t of tools) expect((t as { max_uses?: number }).max_uses).toBe(RESEARCH_MAX_USES);
+    expect((buildTools({ webSearch: true }, caps).tools[0] as { max_uses?: number }).max_uses).toBe(5);
+  });
+  it("reports research as unavailable once when the model has no web tools", () => {
+    expect(buildTools({ research: true }, { ...caps, webSearch: false }).unavailable).toEqual(["リサーチ"]);
+  });
+  it("adds the research instructions to the system prompt", () => {
+    expect(buildSystem(undefined, "", null, undefined, { research: true })).toContain("# リサーチモード");
+    expect(buildSystem(undefined, "", null)).toBeUndefined();
   });
 });

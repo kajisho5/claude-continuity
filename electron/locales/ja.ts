@@ -67,7 +67,18 @@ export const ja = {
     pdfUnsupported: (name: string) => `${name}（このモデルは PDF に未対応）`,
     fileNeedsCode: (name: string) => `${name}（「データ分析」か「ファイル作成」をオンにすると読み込めます）`,
     attachmentsOnly: "（添付ファイルのみ）",
-    unavailable: { webSearch: "Web 検索", webFetch: "URL の読み込み", files: "ファイル作成", analysis: "データ分析" },
+    researchPrompt: [
+      "# リサーチモード",
+      "ユーザーはリサーチを依頼しています。Web 検索とページの読み込みを繰り返して、徹底的に調べてから答えてください。",
+      "- 最初に、答えに必要な観点を洗い出し、観点ごとに検索の言葉を変えて複数回検索してください。",
+      "- 検索結果の要約だけで判断せず、信頼できる一次情報（公式サイト、公式ドキュメント、論文、公的機関の資料など）のページを読み込んで中身を確かめてください。",
+      "- 情報源どうしで食い違いがあれば、その旨と両方の内容を書いてください。確認できないことは推測で埋めず「確認できなかった」と書いてください。",
+      "- 日付が重要な情報は、いつ時点の情報かを書いてください。",
+      "- 調べ終えたら、見出し付きのレポートにまとめてください：冒頭に結論と要点、続いて観点ごとの詳細、最後に残る不確実な点。",
+      "- 主張には出典を付けてください。"
+    ].join("\n"),
+    researchProgress: (searches: number, fetches: number) => `リサーチ中… 検索 ${searches} 回 · ページ ${fetches} 件`,
+    unavailable: { research: "リサーチ", webSearch: "Web 検索", webFetch: "URL の読み込み", files: "ファイル作成", analysis: "データ分析" },
     activity: {
       webSearch: "Web を検索しています…",
       webFetch: "ページを読み込んでいます…",

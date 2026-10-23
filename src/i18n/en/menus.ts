@@ -33,6 +33,9 @@ export const menus: typeof Ja = {
   },
   tools: {
     tools: "Tools",
+    researchTitle: "Research",
+    researchDesc: "Reads many sources for a cited report (minutes; more credit)",
+    researchChip: "Research",
     webSearchTitle: "Web search",
     webSearchDesc: "Search the web for up-to-date info, with citations · $10 per 1,000 searches",
     webSearchChip: "Web search",

@@ -228,7 +228,7 @@ ipcMain.handle("chats:save", async (_event, chats: unknown[]) => {
     ...isoDate(chat.updatedAt),
     ...(typeof chat.style === "string" ? { style: chat.style.slice(0, 60) } : {}),
     ...(chat.tools && typeof chat.tools === "object" ? { tools: {
-      ...Object.fromEntries(["webSearch", "webFetch", "files", "analysis", "memory"].map(k => [k, chat.tools[k] === true])),
+      ...Object.fromEntries(["research", "webSearch", "webFetch", "files", "analysis", "memory"].map(k => [k, chat.tools[k] === true])),
       ...(Array.isArray(chat.tools.connectors) ? { connectors: chat.tools.connectors.filter((c: unknown) => typeof c === "string").slice(0, 30).map((c: string) => c.slice(0, 40)) } : {})
     } } : {}),
     ...(chat.container && typeof chat.container.id === "string" ? { container: { id: chat.container.id.slice(0, 200), expiresAt: str(chat.container.expiresAt, 60) } } : {}),
@@ -682,6 +682,8 @@ type ReplyPayload = {
 };
 const activeReplies = new Map<string, AbortController>();
 const MAX_LOOP = 8;
+// Research runs many server-tool rounds; each pause_turn continues the same answer.
+const RESEARCH_MAX_LOOP = 24;
 ipcMain.handle("claude:abort", (_event, requestId: string) => {
   activeReplies.get(String(requestId))?.abort();
   return true;
@@ -770,7 +772,8 @@ ipcMain.handle("claude:reply", async (event, payload: ReplyPayload) => {
   const customId = payload.style === "custom" ? "custom" : payload.style?.startsWith("custom:") ? payload.style.slice(7) : null;
   const customPrompt = customId ? prefs.customStyles.find(st => st.id === customId)?.prompt ?? "" : "";
   const style = (customId ? "custom" : payload.style) as StyleId | undefined;
-  const system = buildSystem(style, customPrompt, project, { ...(prefs.shareName ? { name: prefs.displayName } : {}), preferences: prefs.preferences });
+  const research = flags.research === true;
+  const system = buildSystem(style, customPrompt, project, { ...(prefs.shareName ? { name: prefs.displayName } : {}), preferences: prefs.preferences }, { research });
   const containerId = typeof payload.containerId === "string" && payload.containerId ? payload.containerId : undefined;
 
   const controller = new AbortController();
@@ -807,6 +810,7 @@ ipcMain.handle("claude:reply", async (event, payload: ReplyPayload) => {
     }
   };
   const totals = { input: 0, output: 0, cacheCreate: 0, cacheRead: 0, searches: 0 };
+  const progress = { searches: 0, fetches: 0 };
   const addUsage = (u: any) => {
     if (!u) return;
     totals.input += u.input_tokens ?? 0; totals.output += u.output_tokens ?? 0;
@@ -822,7 +826,7 @@ ipcMain.handle("claude:reply", async (event, payload: ReplyPayload) => {
   let stopReason: string | null = null;
   const clientResults = new Map<string, { content: string; isError?: boolean }>();
   try {
-    for (let iteration = 0; iteration < MAX_LOOP; iteration++) {
+    for (let iteration = 0; iteration < (research ? RESEARCH_MAX_LOOP : MAX_LOOP); iteration++) {
       // Thinking counts toward max_tokens, so allow the model's full output budget; streaming keeps long replies within SDK limits.
       const params = {
         model, max_tokens: info?.maxTokens ?? 8192, messages,
@@ -848,7 +852,9 @@ ipcMain.handle("claude:reply", async (event, payload: ReplyPayload) => {
         if (e.type === "content_block_start") {
           const block = e.content_block as { type: string; name?: string; server_name?: string };
           const ref = block.name ? local.refs.get(block.name) : undefined;
-          const label = block.type === "mcp_tool_use" ? mainT().main.usingConnector(connectorLabel(block.server_name)) : ref ? mainT().localMcp.usingTool(ref.serverName, ref.tool) : activityLabel(block.name);
+          if (research && block.type === "server_tool_use") { if (block.name === "web_search") progress.searches++; else if (block.name === "web_fetch") progress.fetches++; }
+          const label = block.type === "mcp_tool_use" ? mainT().main.usingConnector(connectorLabel(block.server_name)) : ref ? mainT().localMcp.usingTool(ref.serverName, ref.tool)
+            : research && block.type === "server_tool_use" && (block.name === "web_search" || block.name === "web_fetch") ? mainT().request.researchProgress(progress.searches, progress.fetches) : activityLabel(block.name);
           if (label && (block.type === "server_tool_use" || block.type === "tool_use" || block.type === "mcp_tool_use")) send("activity", label);
         }
       });

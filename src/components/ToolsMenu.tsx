@@ -1,13 +1,14 @@
 import { useState } from "react";
-import { BarChart3, Brain, Check, ChevronRight, FileSpreadsheet, Globe, PenLine, Plug, Plus, Search, SlidersHorizontal } from "lucide-react";
+import { BarChart3, Brain, Check, ChevronRight, FileSpreadsheet, Globe, PenLine, Plug, Plus, Search, SlidersHorizontal, Telescope } from "lucide-react";
 import { usePopover } from "./Popover";
 import { useT, type Messages } from "../i18n";
 
-export type Tools = { webSearch?: boolean; webFetch?: boolean; files?: boolean; analysis?: boolean; memory?: boolean; connectors?: string[] };
+export type Tools = { research?: boolean; webSearch?: boolean; webFetch?: boolean; files?: boolean; analysis?: boolean; memory?: boolean; connectors?: string[] };
 export type ConnectorOption = { id: string; name: string };
 type Key = Exclude<keyof Tools, "connectors">;
 type Option = { value: string; label: string };
 const items = ({ menus: { tools: m } }: Messages): { key: Key; title: string; desc: string; icon: typeof Search; chip: string }[] => [
+  { key: "research", title: m.researchTitle, desc: m.researchDesc, icon: Telescope, chip: m.researchChip },
   { key: "webSearch", title: m.webSearchTitle, desc: m.webSearchDesc, icon: Search, chip: m.webSearchChip },
   { key: "webFetch", title: m.webFetchTitle, desc: m.webFetchDesc, icon: Globe, chip: m.webFetchChip },
   { key: "files", title: m.filesTitle, desc: m.filesDesc, icon: FileSpreadsheet, chip: m.filesChip },

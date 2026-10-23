@@ -68,7 +68,18 @@ export const en: typeof Ja = {
     pdfUnsupported: (name: string) => `${name} (this model does not support PDFs)`,
     fileNeedsCode: (name: string) => `${name} (turn on "Data analysis" or "File creation" to read it)`,
     attachmentsOnly: "(attachments only)",
-    unavailable: { webSearch: "Web search", webFetch: "URL fetching", files: "File creation", analysis: "Data analysis" },
+    researchPrompt: [
+      "# Research mode",
+      "The user asked for research. Investigate thoroughly with repeated web searches and page fetches before answering.",
+      "- First list the angles the answer needs, then search several times per angle with varied queries.",
+      "- Don't rely on search snippets: fetch and read reliable primary sources (official sites and documentation, papers, government or institutional material).",
+      "- Where sources disagree, say so and give both. Don't fill gaps with guesses; state what you could not confirm.",
+      "- For time-sensitive facts, say as of when they hold.",
+      "- When done, write a report with headings: the conclusion and key points first, then details per angle, then remaining uncertainties.",
+      "- Cite sources for your claims."
+    ].join("\n"),
+    researchProgress: (searches: number, fetches: number) => `Researching… ${searches} ${searches === 1 ? "search" : "searches"} · ${fetches} ${fetches === 1 ? "page" : "pages"}`,
+    unavailable: { research: "Research", webSearch: "Web search", webFetch: "URL fetching", files: "File creation", analysis: "Data analysis" },
     activity: {
       webSearch: "Searching the web…",
       webFetch: "Fetching page…",

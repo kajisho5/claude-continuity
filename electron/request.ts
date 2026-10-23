@@ -2,7 +2,7 @@ import type { ContentBlockParam, MessageParam, ToolUnion } from "@anthropic-ai/s
 import type { Attachment } from "./attachments";
 
 export type ChatTurn = { role: "user" | "assistant"; content: string; attachments?: Attachment[] };
-export type ToolFlags = { webSearch?: boolean; webFetch?: boolean; files?: boolean; analysis?: boolean; memory?: boolean; pastChats?: boolean; connectors?: string[] };
+export type ToolFlags = { research?: boolean; webSearch?: boolean; webFetch?: boolean; files?: boolean; analysis?: boolean; memory?: boolean; pastChats?: boolean; connectors?: string[] };
 export type ModelCaps = { webSearch: boolean; codeExecution: boolean; imageInput: boolean; pdfInput: boolean };
 export type Project = { id: string; name: string; instructions: string; knowledge: Attachment[]; memory: boolean };
 export type StyleId = "standard" | "concise" | "detailed" | "explanatory" | "custom";
@@ -15,7 +15,7 @@ export const ANTHROPIC_SKILLS = ["xlsx", "docx", "pptx", "pdf"];
 
 export type Profile = { name?: string; preferences?: string };
 
-export function buildSystem(style: StyleId | undefined, customStyle: string, project?: Project | null, profile?: Profile): string | undefined {
+export function buildSystem(style: StyleId | undefined, customStyle: string, project?: Project | null, profile?: Profile, options: { research?: boolean } = {}): string | undefined {
   const t = mainT().request;
   const parts: string[] = [];
   const about = [profile?.name?.trim() ? t.userName(profile.name.trim()) : "", profile?.preferences?.trim() ? t.userPreferences(profile.preferences.trim()) : ""].filter(Boolean);
@@ -23,6 +23,7 @@ export function buildSystem(style: StyleId | undefined, customStyle: string, pro
   if (style === "custom" && customStyle.trim()) parts.push(customStyle.trim());
   else if (style && style !== "standard" && style !== "custom") parts.push(t.stylePrompts[style]);
   if (project?.instructions.trim()) parts.push(t.projectInstructions(project.name, project.instructions.trim()));
+  if (options.research) parts.push(t.researchPrompt);
   return parts.length ? parts.join("\n\n") : undefined;
 }
 
@@ -109,17 +110,22 @@ export async function buildMessages(turns: ChatTurn[], knowledge: Attachment[], 
   return { messages, skipped: [...new Set(skipped)], omitted: Math.max(0, omitted) };
 }
 
+/** Per-request cap for web search and for web fetch in research mode (each search is billed; see the tools menu). */
+export const RESEARCH_MAX_USES = 20;
+
 export function buildTools(flags: ToolFlags, caps: ModelCaps): { tools: ToolUnion[]; skills: string[]; unavailable: string[] } {
   const t = mainT().request.unavailable;
   const tools: ToolUnion[] = [];
   const unavailable: string[] = [];
-  if (flags.webSearch) {
-    if (caps.webSearch) tools.push({ type: "web_search_20250305", name: "web_search", max_uses: 5 });
-    else unavailable.push(t.webSearch);
+  // Research turns both on with a larger budget: many searches, then reading the most useful pages.
+  const uses = flags.research ? RESEARCH_MAX_USES : 5;
+  if (flags.webSearch || flags.research) {
+    if (caps.webSearch) tools.push({ type: "web_search_20250305", name: "web_search", max_uses: uses });
+    else unavailable.push(flags.research ? t.research : t.webSearch);
   }
-  if (flags.webFetch) {
-    if (caps.webSearch) tools.push({ type: "web_fetch_20250910", name: "web_fetch", max_uses: 5 });
-    else unavailable.push(t.webFetch);
+  if (flags.webFetch || flags.research) {
+    if (caps.webSearch) tools.push({ type: "web_fetch_20250910", name: "web_fetch", max_uses: uses });
+    else if (!flags.research) unavailable.push(t.webFetch);
   }
   const wantsCode = flags.files || flags.analysis;
   if (wantsCode) {

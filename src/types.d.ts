@@ -15,7 +15,7 @@ type ContinuityMessage = ContinuityReply & {
   alternates?: ContinuityReply[];
   altIndex?: number;
 };
-type ContinuityTools = { webSearch?: boolean; webFetch?: boolean; files?: boolean; analysis?: boolean; memory?: boolean; connectors?: string[] };
+type ContinuityTools = { research?: boolean; webSearch?: boolean; webFetch?: boolean; files?: boolean; analysis?: boolean; memory?: boolean; connectors?: string[] };
 type ContinuityConversation = {
   id: string; title: string; messages: ContinuityMessage[]; source?: string;
   projectId?: string; style?: string; tools?: ContinuityTools; container?: { id: string; expiresAt?: string };

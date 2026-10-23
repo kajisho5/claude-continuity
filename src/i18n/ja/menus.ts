@@ -31,6 +31,9 @@ export const menus = {
   },
   tools: {
     tools: "ツール",
+    researchTitle: "リサーチ",
+    researchDesc: "何度も検索・読み込みして出典付きレポートに（数分・クレジット多め）",
+    researchChip: "リサーチ",
     webSearchTitle: "Web 検索",
     webSearchDesc: "出典付きで最新情報を調べる · 1,000回 $10",
     webSearchChip: "Web検索",
