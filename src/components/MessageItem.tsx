@@ -1,11 +1,14 @@
 import { useEffect, useState } from "react";
 import { ChevronLeft, ChevronRight, Download, FileText, Image as ImageIcon, Pencil, RefreshCw } from "lucide-react";
-import LogoMark from "./LogoMark";
 import { CopyButton, Markdown, ThinkingBlock, linkCitations } from "./MessageContent";
+import { LogoGlyph } from "./LogoMark";
 import { formatUsd } from "../lib/pricing";
 
 type Attachment = { id: string; name: string; mediaType: string; size: number; kind: "image" | "pdf" | "text" | "file" };
-type Reply = { content: string; thinking?: string; model?: string; costUsd?: number; aborted?: boolean; citations?: { url: string; title: string }[]; files?: { fileId: string; name: string; size?: number }[] };
+type Reply = {
+  content: string; thinking?: string; thinkingSeconds?: number; model?: string; costUsd?: number; aborted?: boolean;
+  citations?: { url: string; title: string }[]; files?: { fileId: string; name: string; size?: number }[];
+};
 export type Msg = Reply & { role: "user" | "assistant"; attachments?: Attachment[]; alternates?: Reply[]; altIndex?: number };
 
 export function formatBytes(bytes: number): string {
@@ -56,23 +59,25 @@ export default function MessageItem({ message: m, isLast, busy, onRegenerate, on
   const alternates = m.alternates?.length ?? 0;
   const altIndex = m.altIndex ?? Math.max(0, alternates - 1);
   if (m.role === "user") {
-    return <article className="message user"><div className="avatar">You</div><div className="msgbody">
-      <b>あなた</b>
+    return <article className="message user">
       {!!m.attachments?.length && <div className="attachment-row">{m.attachments.map(a => <AttachmentChip key={a.id} attachment={a} />)}</div>}
       {editing
         ? <div className="edit-box">
-          <textarea value={draft} onChange={e => setDraft(e.target.value)} autoFocus />
+          <textarea value={draft} onChange={e => setDraft(e.target.value)} autoFocus aria-label="メッセージを編集"
+            onKeyDown={e => { if (e.key === "Escape") { setEditing(false); setDraft(m.content); } }} />
           <div className="edit-actions"><span>保存すると、このメッセージ以降の回答を新しい回答に置き換えます。</span>
-            <button className="btn-secondary" onClick={() => { setEditing(false); setDraft(m.content); }}>キャンセル</button>
-            <button className="btn-primary" disabled={!draft.trim() || busy} onClick={() => { setEditing(false); onEdit(draft.trim()); }}>保存して送信</button></div>
+            <button className="btn-secondary small" onClick={() => { setEditing(false); setDraft(m.content); }}>キャンセル</button>
+            <button className="btn-primary small" disabled={!draft.trim() || busy} onClick={() => { setEditing(false); onEdit(draft.trim()); }}>保存して送信</button></div>
         </div>
-        : <p className="user-text">{m.content}</p>}
-      {!editing && <div className="msg-actions"><CopyButton text={m.content} /><button className="copy-btn" disabled={busy} onClick={() => { setDraft(m.content); setEditing(true); }}><Pencil size={13} />編集</button></div>}
-    </div></article>;
+        : m.content && <div className="user-bubble">{m.content}</div>}
+      {!editing && m.content && <div className="msg-actions">
+        <CopyButton text={m.content} iconOnly />
+        <button className="icon-action tip" data-tip="編集" aria-label="編集" disabled={busy} onClick={() => { setDraft(m.content); setEditing(true); }}><Pencil size={15} /></button>
+      </div>}
+    </article>;
   }
-  return <article className="message assistant"><div className="avatar brand-avatar"><LogoMark size={31} /></div><div className="msgbody">
-    <b>Claude{m.model && <span className="msg-meta">{m.model}{m.costUsd != null ? ` · ${formatUsd(m.costUsd, 4)}` : ""}</span>}</b>
-    {m.thinking && <ThinkingBlock text={m.thinking} />}
+  return <article className={"message assistant" + (isLast ? " last" : "")}>
+    {(m.thinking || m.thinkingSeconds) && <ThinkingBlock text={m.thinking ?? ""} seconds={m.thinkingSeconds} />}
     <Markdown text={linkCitations(m.content, m.citations)} />
     {m.aborted && <p className="msg-note">応答を途中で停止しました</p>}
     {!!m.files?.length && <div className="file-cards">{m.files.map(f => {
@@ -84,17 +89,19 @@ export default function MessageItem({ message: m, isLast, busy, onRegenerate, on
       </div>;
     })}</div>}
     {!!m.citations?.length && <div className="sources"><span>出典</span>{m.citations.map((c, i) =>
-      <a key={c.url} href={c.url} target="_blank" rel="noreferrer" className="source"><em>[{i + 1}]</em><span>{c.title}</span><small>{hostOf(c.url)}</small></a>)}</div>}
+      <a key={c.url} href={c.url} target="_blank" rel="noreferrer" className="source"><em>{i + 1}</em><span>{c.title}</span><small>{hostOf(c.url)}</small></a>)}</div>}
     <div className="msg-actions">
-      {m.content && <CopyButton text={m.content} />}
-      {isLast && <button className="copy-btn" disabled={busy} onClick={onRegenerate}><RefreshCw size={13} />再生成</button>}
+      {isLast && <span className="end-mark"><LogoGlyph size={22} /></span>}
+      {m.content && <CopyButton text={m.content} iconOnly />}
+      {isLast && <button className="icon-action tip" data-tip="再生成" aria-label="再生成" disabled={busy} onClick={onRegenerate}><RefreshCw size={15} /></button>}
       {alternates > 1 && <span className="alt-switch">
-        <button className="icon-btn" disabled={busy || altIndex === 0} onClick={() => onSelectAlternate(altIndex - 1)} aria-label="前の回答"><ChevronLeft size={14} /></button>
+        <button className="icon-action" disabled={busy || altIndex === 0} onClick={() => onSelectAlternate(altIndex - 1)} aria-label="前の回答"><ChevronLeft size={15} /></button>
         {altIndex + 1} / {alternates}
-        <button className="icon-btn" disabled={busy || altIndex >= alternates - 1} onClick={() => onSelectAlternate(altIndex + 1)} aria-label="次の回答"><ChevronRight size={14} /></button>
+        <button className="icon-action" disabled={busy || altIndex >= alternates - 1} onClick={() => onSelectAlternate(altIndex + 1)} aria-label="次の回答"><ChevronRight size={15} /></button>
       </span>}
+      {m.model && <span className="msg-meta">{m.model}{m.costUsd != null ? ` · ${formatUsd(m.costUsd, 4)}` : ""}</span>}
     </div>
-  </div></article>;
+  </article>;
 }
 
 function hostOf(url: string): string {

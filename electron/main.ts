@@ -162,6 +162,7 @@ function sanitizeReply(m: any) {
   return {
     content: String(m.content ?? "").slice(0, 2_000_000),
     ...(typeof m.thinking === "string" && m.thinking ? { thinking: m.thinking.slice(0, 500_000) } : {}),
+    ...(typeof m.thinkingSeconds === "number" && Number.isFinite(m.thinkingSeconds) ? { thinkingSeconds: Math.max(0, m.thinkingSeconds) } : {}),
     ...(typeof m.model === "string" ? { model: m.model.slice(0, 200) } : {}),
     ...(typeof m.costUsd === "number" && Number.isFinite(m.costUsd) ? { costUsd: m.costUsd } : {}),
     ...(m.aborted === true ? { aborted: true } : {}),

@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { KeyRound, MessageSquare, Plus, Send, Settings2, ShieldCheck, FileUp, Download, Trash2, Square, RefreshCw, ExternalLink, Paperclip, FolderOpen, Pencil } from "lucide-react";
+import { ArrowDown, MessageSquare, Plus, Settings2, ShieldCheck, FileUp, Download, Trash2, ExternalLink, FolderOpen, Pencil, PanelLeftClose, PanelLeftOpen, Search } from "lucide-react";
 import CreditCard from "./components/CreditCard";
-import LogoMark from "./components/LogoMark";
+import LogoMark, { LogoGlyph } from "./components/LogoMark";
 import CreditSettingsForm from "./components/CreditSettingsForm";
 import OnboardingWizard from "./components/OnboardingWizard";
 import { ArtifactContext, Markdown, ThinkingBlock, type ArtifactRequest } from "./components/MessageContent";
-import MessageItem, { AttachmentChip, type Msg } from "./components/MessageItem";
-import ToolsMenu, { type Tools } from "./components/ToolsMenu";
+import MessageItem, { type Msg } from "./components/MessageItem";
+import Composer, { type ComposerHandle } from "./components/Composer";
+import { type Tools } from "./components/ToolsMenu";
 import ProjectModal, { type Project } from "./components/ProjectModal";
 import PreferencesSection from "./components/PreferencesSection";
 import McpSection from "./components/McpSection";
@@ -17,7 +18,7 @@ import { costOf, formatUsd, priceHint } from "./lib/pricing";
 type Attachment = NonNullable<Msg["attachments"]>[number];
 type Chat = { id: string; title: string; messages: Msg[]; source?: string; projectId?: string; style?: string; tools?: Tools; container?: { id: string; expiresAt?: string } };
 type Model = { id: string; displayName: string; createdAt?: string; maxTokens?: number; effortLevels: string[]; adaptiveThinking: boolean; imageInput: boolean; pdfInput: boolean };
-type Pending = { chatId: string; requestId: string; text: string; thinking: string; activity: string };
+type Pending = { chatId: string; requestId: string; text: string; thinking: string; activity: string; startedAt: number; firstTextAt?: number };
 type Prefs = { autoTitle: boolean; customStyle: string };
 type Reply = Omit<Msg, "role" | "attachments" | "alternates" | "altIndex">;
 const welcome: Chat = { id: "welcome", title: "はじめに", messages: [{ role: "assistant", content: "Claude Continuityへようこそ。APIキーを設定するとClaude APIと会話できます。左側からClaudeのエクスポートを読み込むと、対応する会話をこの画面で開けます。\n\n注意：インポートした会話は、続きを送信した時点で選択した文脈がAnthropic APIへ送信されます。" }] };
@@ -26,6 +27,19 @@ const STYLES: { id: string; label: string }[] = [
   { id: "standard", label: "標準" }, { id: "concise", label: "簡潔" }, { id: "detailed", label: "詳しく" }, { id: "explanatory", label: "説明調" }, { id: "custom", label: "カスタム" }
 ];
 const DEFAULT_TITLES = new Set(["新しい会話", "はじめに"]);
+const SUGGESTIONS = [
+  { label: "要約する", prompt: "次の文章を、要点を3つにまとめてください。\n\n" },
+  { label: "書く", prompt: "次の内容でメールの下書きを書いてください：" },
+  { label: "コード", prompt: "次の処理をするコードを書いてください：" },
+  { label: "学ぶ", prompt: "初心者向けに、次のことを例を交えて説明してください：" },
+  { label: "考える", prompt: "次のテーマについて、異なる視点からアイデアを5つ出してください：" }
+];
+const IS_MAC = typeof navigator !== "undefined" && /mac/i.test(navigator.platform);
+const KEYS = IS_MAC ? { newChat: "⇧⌘O", search: "⌘K" } : { newChat: "Ctrl+Shift+O", search: "Ctrl+K" };
+function greeting(date = new Date()): string {
+  const h = date.getHours();
+  return h < 5 ? "夜更かしですね" : h < 11 ? "おはようございます" : h < 18 ? "こんにちは" : "こんばんは";
+}
 
 function sortModels(models: Model[]): Model[] {
   const score = (id: string) => id.includes("opus") ? 0 : id.includes("sonnet") ? 1 : id.includes("haiku") ? 2 : 3;
@@ -70,7 +84,11 @@ export default function App() {
  const [prefs,setPrefs]=useState<Prefs>({autoTitle:true,customStyle:""});
  const [artifact,setArtifact]=useState<ArtifactRequest|null>(null);
  const [dragging,setDragging]=useState(false);
+ const [sidebarOpen,setSidebarOpen]=useState(true);
+ const [atBottom,setAtBottom]=useState(true);
  const pendingRef=useRef<Pending|null>(null);
+ const composerRef=useRef<ComposerHandle>(null);
+ const searchRef=useRef<HTMLInputElement>(null);
  const messagesRef=useRef<HTMLElement>(null);
  const busy=pending!==null;
  const chat=chats.find(c=>c.id===active)??chats[0]??welcome;
@@ -88,7 +106,7 @@ export default function App() {
    const unsubscribe=window.continuity.onStream(event=>{
      const current=pendingRef.current;
      if(!current||current.requestId!==event.requestId)return;
-     const next=event.kind==="activity"?{...current,activity:event.delta}:{...current,[event.kind]:current[event.kind]+event.delta,...(event.kind==="text"?{activity:""}:{})};
+     const next=event.kind==="activity"?{...current,activity:event.delta}:{...current,[event.kind]:current[event.kind]+event.delta,...(event.kind==="text"?{activity:"",firstTextAt:current.firstTextAt??Date.now()}:{})};
      pendingRef.current=next;setPending(next);
    });
    return ()=>{window.clearInterval(timer);unsubscribe();};
@@ -117,7 +135,25 @@ export default function App() {
    const timer=window.setTimeout(()=>{window.continuity.saveChats(chats).catch(e=>setStatus("ローカル保存エラー: "+err(e)));},350);
    return ()=>window.clearTimeout(timer);
  },[chats,loaded]);
- useEffect(()=>{ const el=messagesRef.current; if(el) el.scrollTop=el.scrollHeight; },[active,chat.messages.length,pending?.text,pending?.thinking]);
+ useEffect(()=>{ const el=messagesRef.current; if(el&&atBottom) el.scrollTop=el.scrollHeight; },[chat.messages.length,pending?.text,pending?.thinking]);
+ useEffect(()=>{ const el=messagesRef.current; if(el){el.scrollTop=el.scrollHeight;setAtBottom(true);} composerRef.current?.focus(); },[active]);
+ function scrollToBottom(){ const el=messagesRef.current; if(el) el.scrollTo({top:el.scrollHeight,behavior:"smooth"}); }
+ useEffect(()=>{
+   // Shortcuts modeled on the Claude apps: new chat, search, stop/close.
+   const onKey=(e:KeyboardEvent)=>{
+     const mod=e.metaKey||e.ctrlKey;
+     if(mod&&e.shiftKey&&e.key.toLowerCase()==="o"){e.preventDefault();newChat();}
+     else if(mod&&!e.shiftKey&&e.key.toLowerCase()==="k"){e.preventDefault();setSidebarOpen(true);setTimeout(()=>searchRef.current?.focus(),0);}
+     else if(mod&&e.key==="/"){e.preventDefault();composerRef.current?.focus();}
+     else if(e.key==="Escape"){
+       if(pendingRef.current) void window.continuity.abortReply(pendingRef.current.requestId);
+       else if(artifact) setArtifact(null);
+       else if(settings) setSettings(false);
+     }
+   };
+   window.addEventListener("keydown",onKey);
+   return ()=>window.removeEventListener("keydown",onKey);
+ });
 
  function patchChat(id:string,patch:(c:Chat)=>Chat){ setChats(cs=>cs.map(c=>c.id===id?patch(c):c)); }
  async function importExport(){
@@ -165,14 +201,15 @@ export default function App() {
  async function runReply(target:Chat,history:Msg[],mode:{kind:"append";retitle?:boolean}|{kind:"regenerate";previous:Msg}){
    if(!configured){setSettings(true);setStatus("先にAnthropic APIキーを設定してください");return;}
    const requestId=crypto.randomUUID();
-   const start:Pending={chatId:target.id,requestId,text:"",thinking:"",activity:""};
+   const start:Pending={chatId:target.id,requestId,text:"",thinking:"",activity:"",startedAt:Date.now()};
    pendingRef.current=start;setPending(start);setStatus("Claudeに問い合わせ中…");
    const container=target.container&&(!target.container.expiresAt||Date.parse(target.container.expiresAt)>Date.now())?target.container.id:undefined;
    try{
      const response=await window.continuity.reply({requestId,model,effort:effort||undefined,style:target.style,projectId:target.projectId,tools:target.tools,containerId:container,
        messages:history.slice(-60).map(m=>({role:m.role,content:m.content,...(m.attachments?.length?{attachments:m.attachments}:{})}))});
      const cost=costOf(response.usage.model,response.usage);
-     const reply:Reply={content:response.text,model:response.usage.model,...(response.thinking?{thinking:response.thinking}:{}),...(cost!=null?{costUsd:cost}:{}),...(response.aborted?{aborted:true}:{}),
+     const thoughtUntil=pendingRef.current?.firstTextAt??Date.now();
+     const reply:Reply={content:response.text,model:response.usage.model,...(response.thinking?{thinking:response.thinking,thinkingSeconds:(thoughtUntil-start.startedAt)/1000}:{}),...(cost!=null?{costUsd:cost}:{}),...(response.aborted?{aborted:true}:{}),
        ...(response.citations.length?{citations:response.citations}:{}),...(response.files.length?{files:response.files}:{})};
      let next:Msg={role:"assistant",...reply};
      if(mode.kind==="regenerate"){
@@ -180,6 +217,7 @@ export default function App() {
        next={...next,alternates:[...versions,reply],altIndex:versions.length};
      }
      patchChat(target.id,c=>({...c,messages:[...history,next],...(response.container?{container:response.container}:{})}));
+     setAtBottom(true);
      if(response.usage.inputTokens||response.usage.outputTokens){
        setUsageRows(rows=>[...rows,{...response.usage,createdAt:new Date().toISOString()}]);
        setLastUsage({inputTokens:response.usage.inputTokens,outputTokens:response.usage.outputTokens,costUsd:cost});
@@ -242,7 +280,13 @@ export default function App() {
  function stop(){ if(pending) void window.continuity.abortReply(pending.requestId); }
  async function exportChat(){try{const result=await window.continuity.exportChat({fileName:chat.title.replace(/[^\p{L}\p{N} _-]/gu,"").slice(0,80)||"conversation",data:JSON.stringify(chat,null,2)});if(!result.canceled)setStatus("会話をJSONにエクスポートしました");}catch(e){setStatus("エクスポートエラー: "+err(e));}}
  function deleteChat(){if(busy){setStatus("応答中は削除できません。");return;}if(chats.length<=1){setStatus("最後の会話は削除できません。");return;}if(!window.confirm("この会話を端末内の履歴から削除しますか？"))return;const remaining=chats.filter(c=>c.id!==active);setChats(remaining);setActive(remaining[0].id);setStatus("会話を削除しました");}
- function newChat(){const id="chat-"+Date.now();setChats(cs=>[{id,title:"新しい会話",messages:[],...(projectFilter?{projectId:projectFilter}:{})},...cs]);setActive(id);setArtifact(null);}
+ function newChat(){
+   // Reuse an untouched empty chat instead of stacking blank ones, as the Claude apps do.
+   const blank=chats.find(c=>c.messages.length===0&&c.title==="新しい会話"&&(c.projectId??null)===(projectFilter??null));
+   if(blank){setActive(blank.id);}
+   else{const id="chat-"+Date.now();setChats(cs=>[{id,title:"新しい会話",messages:[],...(projectFilter?{projectId:projectFilter}:{})},...cs]);setActive(id);}
+   setArtifact(null);setTimeout(()=>composerRef.current?.focus(),0);
+ }
  function newProject(){setProjectModal({project:{id:crypto.randomUUID(),name:"",instructions:"",knowledge:[],memory:false},isNew:true});}
  async function upsertProject(project:Project){ await saveProjects(projects.some(p=>p.id===project.id)?projects.map(p=>p.id===project.id?project:p):[...projects,project]); }
  function deleteProject(id:string){ void saveProjects(projects.filter(p=>p.id!==id)); setChats(cs=>cs.map(c=>c.projectId===id?{...c,projectId:undefined}:c)); if(projectFilter===id)setProjectFilter(null); }
@@ -252,68 +296,84 @@ export default function App() {
  const query=search.toLowerCase();
  const visibleChats=chats.filter(c=>(!projectFilter||c.projectId===projectFilter)&&(c.title.toLowerCase().includes(query)||c.messages.some(m=>m.content.toLowerCase().includes(query))));
  const lastAssistant=chat.messages.length-1;
- return <ArtifactContext.Provider value={setArtifact}><div className="shell">
-  <aside>
-   <div className="brand"><span className="mark"><LogoMark size={36} title="Claude Continuity"/></span><div><b>Claude Continuity</b><small>LOCAL WORKSPACE</small></div></div>
-   <button className="btn-primary new" onClick={newChat}><Plus size={16}/> 新しい会話</button>
-   <button className="nav" onClick={()=>void importExport()}><FileUp size={16}/> Claudeエクスポートを読み込む</button>
+ const fresh=chat.messages.length===0&&!showPending;
+ const composer=<Composer ref={composerRef} draft={draft} onDraft={setDraft} attachments={pendingAttachments}
+   onRemoveAttachment={id=>setPendingAttachments(list=>list.filter(x=>x.id!==id))} onPickFiles={()=>void window.continuity.pickAttachments().then(addAttachments)}
+   onPaste={e=>void onPaste(e)} onSend={()=>void send()} onStop={stop} busy={busy}
+   tools={chat.tools??{}} onTools={tools=>patchChat(chat.id,c=>({...c,tools}))} projectMemory={chatProject?.memory}
+   style={chat.style??"standard"} styles={STYLES.filter(s=>s.id!=="custom"||prefs.customStyle.trim()).map(s=>({value:s.id,label:s.label}))} onStyle={v=>patchChat(chat.id,c=>({...c,style:v}))}
+   model={model} models={availableModels.length?availableModels.map(m=>({value:m.id,label:m.displayName})):[{value:model,label:modelsLoading?"取得中…":model}]} onModel={setModel} modelsLoading={modelsLoading} onRefreshModels={()=>void refreshModels(true)}
+   effort={effort} efforts={currentModel?.effortLevels.length?[{value:"",label:"思考: 既定"},...currentModel.effortLevels.map(l=>({value:l,label:`思考: ${EFFORT_LABELS[l]??l}`}))]:[]} onEffort={setEffort}
+   placeholder={fresh?"今日はどんなお手伝いをしましょうか？":"返信…"}/>;
+ return <ArtifactContext.Provider value={setArtifact}><div className={"shell"+(sidebarOpen?"":" sidebar-closed")}>
+  <aside aria-hidden={!sidebarOpen}>
+   <div className="brand"><span className="mark"><LogoMark size={30} title="Claude Continuity"/></span><b>Claude Continuity</b>
+    <button className="ghost-btn tip tip-below" data-tip="サイドバーを閉じる" aria-label="サイドバーを閉じる" onClick={()=>setSidebarOpen(false)}><PanelLeftClose size={17}/></button></div>
+   <button className="new-chat" onClick={newChat}><span className="plus-dot"><Plus size={15} strokeWidth={2.6}/></span>新しい会話<kbd>{KEYS.newChat}</kbd></button>
+   <div className="search-box"><Search size={14}/><input ref={searchRef} className="chat-search" value={search} onChange={e=>setSearch(e.target.value)} placeholder="会話を検索" aria-label="会話を検索"/><kbd>{KEYS.search}</kbd></div>
    <CreditCard summary={summary} totals={usageTotal} onConfigure={()=>setOnboarding(true)}/>
-   <div className="label row">プロジェクト<button className="icon-btn" onClick={newProject} aria-label="プロジェクトを作成" title="プロジェクトを作成"><Plus size={14}/></button></div>
+   <div className="label row">プロジェクト<button className="ghost-btn tip" data-tip="プロジェクトを作成" onClick={newProject} aria-label="プロジェクトを作成"><Plus size={14}/></button></div>
    <div className="projectlist">
     {projects.length===0&&<p className="hint tight">指示とナレッジをまとめて、会話ごとに自動で付けられます。</p>}
     {projects.map(p=><div key={p.id} className={"projectlink "+(projectFilter===p.id?"active":"")}>
       <button className="chatlink" onClick={()=>setProjectFilter(f=>f===p.id?null:p.id)}><FolderOpen size={15}/><span>{p.name}</span><small>{chats.filter(c=>c.projectId===p.id).length}</small></button>
-      <button className="icon-btn" onClick={()=>setProjectModal({project:p,isNew:false})} aria-label={`${p.name} を編集`}><Pencil size={13}/></button>
+      <button className="ghost-btn" onClick={()=>setProjectModal({project:p,isNew:false})} aria-label={`${p.name} を編集`}><Pencil size={13}/></button>
     </div>)}
    </div>
-   <div className="label">{projectFilter?`${projects.find(p=>p.id===projectFilter)?.name??""} の会話`:"会話履歴"} · {visibleChats.length}</div>
-   <input className="chat-search" value={search} onChange={e=>setSearch(e.target.value)} placeholder="会話を検索…" aria-label="会話を検索"/>
+   <div className="label">{projectFilter?`${projects.find(p=>p.id===projectFilter)?.name??""} の会話`:"最近の会話"}</div>
    <div className="chatlist">{visibleChats.map(c=><button key={c.id} className={"chatlink "+(c.id===active?"active":"")} onClick={()=>{setActive(c.id);setArtifact(null);}}><MessageSquare size={15}/><span>{c.title}</span></button>)}</div>
-   <div className="bottom"><button className="nav" onClick={()=>setSettings(true)}><Settings2 size={16}/> API設定</button><div className="secure"><ShieldCheck size={15}/> ローカル優先設計</div></div>
+   <div className="bottom">
+    <button className="nav" onClick={()=>void importExport()}><FileUp size={16}/> Claudeエクスポートを読み込む</button>
+    <button className="nav" onClick={()=>setSettings(true)}><Settings2 size={16}/> 設定<span className={"dot "+(configured?"green":"")} title={configured?"API設定済み":"API未設定"}/></button>
+   </div>
   </aside>
   <main className={dragging?"dragging":""} onDragOver={e=>{e.preventDefault();setDragging(true);}} onDragLeave={e=>{if(e.currentTarget===e.target)setDragging(false);}} onDrop={e=>void onDrop(e)}>
-   <header><span className="crumbs">Workspace /
+   <header>
+    {!sidebarOpen&&<button className="ghost-btn tip tip-below" data-tip="サイドバーを開く" aria-label="サイドバーを開く" onClick={()=>setSidebarOpen(true)}><PanelLeftOpen size={17}/></button>}
+    <span className="crumbs">
      <select className="project-select" value={chat.projectId??""} onChange={e=>patchChat(chat.id,c=>({...c,projectId:e.target.value||undefined}))} aria-label="この会話のプロジェクト">
       <option value="">プロジェクトなし</option>{projects.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select>
-     / <b>{chat.title}</b></span>
-    <div className="header-actions"><button className="nav" onClick={()=>void exportChat()} title="会話をJSONで保存"><Download size={15}/> JSON保存</button><button className="nav" onClick={deleteChat} title="この会話を削除"><Trash2 size={15}/></button><button className="nav header-status" onClick={()=>setSettings(true)}><span className={"dot "+(configured?"green":"")}/>{configured?"API設定済み":"API未設定"} <Settings2 size={16}/></button></div></header>
+     {!fresh&&<b>{chat.title}</b>}</span>
+    <div className="header-actions">
+     {!fresh&&<button className="ghost-btn tip tip-below" data-tip="JSONで保存" aria-label="JSONで保存" onClick={()=>void exportChat()}><Download size={16}/></button>}
+     {!fresh&&<button className="ghost-btn tip tip-below" data-tip="会話を削除" aria-label="会話を削除" onClick={deleteChat}><Trash2 size={16}/></button>}
+     {!configured&&<button className="btn-secondary small" onClick={()=>setSettings(true)}><span className="dot"/>APIキーを設定</button>}
+    </div></header>
    <div className="workspace">
-    <div className="conversation">
-     <section className="messages" ref={messagesRef}>
-      {chat.messages.length===0&&!showPending&&<div className="empty"><LogoMark size={64}/><h1>{chatProject?chatProject.name:"会話を続ける"}</h1><p>{chatProject?"このプロジェクトの指示とナレッジが自動で付きます。":"インポートした履歴を選ぶか、ここから新しい会話を始めます。"}</p>{!chatProject&&<button className="btn-secondary" onClick={()=>void importExport()}><FileUp size={16}/> Claudeのエクスポートを読み込む</button>}</div>}
-      {chat.messages.map((m,i)=><MessageItem key={`${chat.id}-${i}`} message={m} isLast={i===lastAssistant&&!showPending} busy={busy}
-        onRegenerate={()=>regenerate(i)} onEdit={text=>editAndResend(i,text)} onSelectAlternate={alt=>selectAlternate(i,alt)} onSaveFile={(id,name)=>void saveFile(id,name)}/>)}
-      {showPending&&<article className="message assistant pending"><div className="avatar brand-avatar"><LogoMark size={31}/></div><div className="msgbody"><b>Claude</b>
-        <ThinkingBlock text={pending.thinking} live={!pending.text}/>
-        {pending.activity&&<p className="activity">{pending.activity}</p>}
-        {pending.text?<Markdown text={pending.text}/>:!pending.thinking&&!pending.activity&&<p className="busy">Claudeが応答中…</p>}
-      </div></article>}
-     </section>
-     <footer><div className="composer">
-      {pendingAttachments.length>0&&<div className="attachment-row">{pendingAttachments.map(a=><AttachmentChip key={a.id} attachment={a} onRemove={()=>setPendingAttachments(list=>list.filter(x=>x.id!==a.id))}/>)}</div>}
-      <textarea value={draft} onChange={e=>setDraft(e.target.value)} onPaste={e=>void onPaste(e)} onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey&&!e.nativeEvent.isComposing){e.preventDefault();void send();}}} placeholder="Claudeにメッセージ…（Enterで送信、Shift+Enterで改行。ファイルはドラッグ＆ドロップか貼り付けでも添付できます）"/>
-      <div className="composer-toolbar">
-       <button className="btn-secondary small icon-only" onClick={()=>void window.continuity.pickAttachments().then(addAttachments)} disabled={busy} title="ファイルを添付" aria-label="ファイルを添付"><Paperclip size={14}/></button>
-       <ToolsMenu tools={chat.tools??{}} onChange={tools=>patchChat(chat.id,c=>({...c,tools}))} disabled={busy} projectMemory={chatProject?.memory}/>
-       <select id="style-select" aria-label="スタイル" value={chat.style??"standard"} onChange={e=>patchChat(chat.id,c=>({...c,style:e.target.value}))} disabled={busy}>
-        {STYLES.filter(s=>s.id!=="custom"||prefs.customStyle.trim()).map(s=><option key={s.id} value={s.id}>スタイル: {s.label}</option>)}</select>
-       <select id="model-select" aria-label="モデル" value={model} onChange={e=>setModel(e.target.value)} disabled={busy||modelsLoading}>{availableModels.length?availableModels.map(m=><option key={m.id} value={m.id}>{m.displayName}</option>):<option value={model}>{modelsLoading?"モデルを取得中…":model}</option>}</select>
-       {currentModel&&currentModel.effortLevels.length>0&&<select id="effort-select" aria-label="思考の深さ" value={effort} onChange={e=>setEffort(e.target.value)} disabled={busy} title="思考の深さ：深いほど回答の質が上がり、クレジットを多く使います">
-         <option value="">思考: 既定</option>
-         {currentModel.effortLevels.map(level=><option key={level} value={level}>思考: {EFFORT_LABELS[level]??level}</option>)}
-        </select>}
-       <button className="icon-btn" onClick={()=>void refreshModels(true)} disabled={modelsLoading||busy} title="APIキーで利用できるモデルを再取得" aria-label="モデル一覧を更新"><RefreshCw size={13}/></button>
-      </div>
-      <div className="composer-meta"><span><KeyRound size={12}/>{configured?"APIキー保存済み":"APIキーを設定してください"}</span>{hint&&<span>{hint}</span>}<span className="spacer"/>
-       {busy?<button className="btn-secondary" onClick={stop}><Square size={13}/> 停止</button>:<button className="btn-primary" onClick={()=>void send()} disabled={!draft.trim()&&!pendingAttachments.length}><Send size={15}/> 送信</button>}</div>
-     </div><div className="status"><span>{status}</span><span>{lastUsage?`直近の応答: ${(lastUsage.inputTokens+lastUsage.outputTokens).toLocaleString()} tokens${lastUsage.costUsd!=null?` · ${formatUsd(lastUsage.costUsd,4)}`:""}`:"会話はこの端末に自動保存されます"}</span></div></footer>
+    <div className={"conversation"+(fresh?" fresh":"")}>
+     {fresh
+      ? <section className="welcome">
+         <h1><LogoGlyph size={34}/>{chatProject?chatProject.name:greeting()}</h1>
+         {chatProject&&<p>このプロジェクトの指示とナレッジが自動で付きます。</p>}
+         {composer}
+         <div className="suggestions">{SUGGESTIONS.map(sg=><button key={sg.label} onClick={()=>{setDraft(sg.prompt);composerRef.current?.focus();}}>{sg.label}</button>)}</div>
+         {!chatProject&&<button className="link-btn" onClick={()=>void importExport()}><FileUp size={13}/> Claude のエクスポートから会話を続ける</button>}
+        </section>
+      : <>
+       <section className="messages" ref={messagesRef} onScroll={e=>{const el=e.currentTarget;setAtBottom(el.scrollHeight-el.scrollTop-el.clientHeight<120);}}>
+        <div className="thread">
+         {chat.messages.map((m,i)=><MessageItem key={`${chat.id}-${i}`} message={m} isLast={i===lastAssistant&&!showPending} busy={busy}
+           onRegenerate={()=>regenerate(i)} onEdit={text=>editAndResend(i,text)} onSelectAlternate={alt=>selectAlternate(i,alt)} onSaveFile={(id,name)=>void saveFile(id,name)}/>)}
+         {showPending&&<article className="message assistant pending">
+           {(pending.thinking||!pending.text)&&<ThinkingBlock text={pending.thinking} live={!pending.text} seconds={pending.firstTextAt?(pending.firstTextAt-pending.startedAt)/1000:undefined}/>}
+           {pending.activity&&<p className="activity">{pending.activity}</p>}
+           {pending.text&&<Markdown text={pending.text}/>}
+           <div className="msg-actions working"><LogoGlyph size={24} working/></div>
+         </article>}
+        </div>
+       </section>
+       {!atBottom&&<button className="to-bottom tip" data-tip="最新へ" aria-label="最新のメッセージへ" onClick={scrollToBottom}><ArrowDown size={16}/></button>}
+       <footer>{composer}
+        <div className="status"><span>{status}</span><span>{hint??""}</span></div>
+       </footer>
+      </>}
     </div>
     {artifact&&<ArtifactPanel artifact={artifact} onClose={()=>setArtifact(null)}/>}
    </div>
    {dragging&&<div className="drop-hint">ここにドロップして添付</div>}
   </main>
   {settings&&<div className="overlay" onClick={()=>setSettings(false)}><div className="modal" onClick={e=>e.stopPropagation()}><button className="close" onClick={()=>setSettings(false)} aria-label="閉じる">×</button>
-   <h2>Anthropic API設定</h2><p className="muted">Anthropic Consoleで発行したAPIキーを入力してください。</p>
+   <h2>設定</h2><p className="muted">Anthropic Consoleで発行したAPIキーを入力してください。</p>
    <label className="field"><span>API Key</span><input className="text-input" type="password" value={key} onChange={e=>setKey(e.target.value)} placeholder={configured?"保存済み。変更する場合のみ入力":"sk-ant-…"} autoComplete="off"/></label>
    <div className="hint"><ShieldCheck size={13}/> APIキーはOSの安全な保存領域に暗号化して保存します。 <a href="https://platform.claude.com/settings/keys" target="_blank" rel="noreferrer">キーを作成 <ExternalLink size={11}/></a></div>
    <div className="actions"><button className="btn-secondary" onClick={()=>setSettings(false)}>キャンセル</button><button className="btn-primary" disabled={!key.trim()} onClick={()=>void saveKey()}>保存</button></div>

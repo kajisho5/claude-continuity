@@ -17,15 +17,18 @@ export default function ToolsMenu({ tools, onChange, disabled, projectMemory }: 
   useEffect(() => {
     if (!open) return;
     const close = (e: MouseEvent) => { if (!ref.current?.contains(e.target as Node)) setOpen(false); };
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") { e.stopPropagation(); setOpen(false); } };
     document.addEventListener("mousedown", close);
-    return () => document.removeEventListener("mousedown", close);
+    document.addEventListener("keydown", onKey, true);
+    return () => { document.removeEventListener("mousedown", close); document.removeEventListener("keydown", onKey, true); };
   }, [open]);
   const active = ITEMS.filter(item => tools[item.key] || (item.key === "memory" && projectMemory));
   return <div className="tools" ref={ref}>
-    <button className="btn-secondary small" disabled={disabled} onClick={() => setOpen(v => !v)} aria-expanded={open}><SlidersHorizontal size={13} /> ツール</button>
-    {active.map(item => <button key={item.key} className="tool-chip" disabled={disabled || (item.key === "memory" && projectMemory)}
-      title={item.key === "memory" && projectMemory ? "プロジェクトの設定でオンになっています" : "クリックでオフ"} onClick={() => onChange({ ...tools, [item.key]: false })}>
-      <item.icon size={12} /> {item.chip}</button>)}
+    <button className={"round-btn tip" + (open ? " on" : "")} data-tip="ツール" aria-label="ツール" disabled={disabled} onClick={() => setOpen(v => !v)} aria-expanded={open}><SlidersHorizontal size={15} /></button>
+    {active.map(item => <button key={item.key} className="tool-chip tip" disabled={disabled || (item.key === "memory" && projectMemory)}
+      data-tip={item.key === "memory" && projectMemory ? `${item.chip}（プロジェクトの設定でオン）` : `${item.chip}（クリックでオフ）`} aria-label={item.chip}
+      onClick={() => onChange({ ...tools, [item.key]: false })}>
+      <item.icon size={12} /><span className="chip-label">{item.chip}</span></button>)}
     {open && <div className="tools-menu" role="menu">
       {ITEMS.map(item => {
         const on = !!tools[item.key] || (item.key === "memory" && !!projectMemory);

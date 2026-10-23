@@ -2,7 +2,7 @@ import { createContext, memo, useContext, useState, type ReactNode } from "react
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
-import { Check, Copy, Eye } from "lucide-react";
+import { Check, ChevronDown, Copy, Eye } from "lucide-react";
 
 export type ArtifactRequest = { title: string; language: "html" | "svg"; code: string };
 /** Lets code blocks open the artifact panel without threading a prop through react-markdown. */
@@ -25,10 +25,11 @@ function plainText(node: ReactNode): string {
   return "";
 }
 
-export function CopyButton({ text, label = "コピー" }: { text: string; label?: string }) {
+export function CopyButton({ text, label = "コピー", iconOnly = false }: { text: string; label?: string; iconOnly?: boolean }) {
   const [done, setDone] = useState(false);
-  return <button className="copy-btn" onClick={() => { void copyText(text).then(() => { setDone(true); setTimeout(() => setDone(false), 1500); }); }}>
-    {done ? <Check size={13} /> : <Copy size={13} />}{done ? "コピーしました" : label}
+  return <button className={(iconOnly ? "icon-action" : "copy-btn") + " tip"} data-tip={done ? "コピーしました" : label} aria-label={label}
+    onClick={() => { void copyText(text).then(() => { setDone(true); setTimeout(() => setDone(false), 1500); }); }}>
+    {done ? <Check size={iconOnly ? 15 : 13} /> : <Copy size={iconOnly ? 15 : 13} />}{!iconOnly && (done ? "コピーしました" : label)}
   </button>;
 }
 
@@ -58,7 +59,7 @@ export function linkCitations(text: string, citations: { url: string; title: str
   if (!citations?.length) return text;
   return text.split(/(```[\s\S]*?```)/g).map((part, i) => i % 2 === 1 ? part : part.replace(/\[(\d{1,3})\](?![(\[])/g, (match, n) => {
     const source = citations[Number(n) - 1];
-    return source ? `[\\[${n}\\]](${source.url.replace(/[()\s]/g, c => "%" + c.charCodeAt(0).toString(16).toUpperCase().padStart(2, "0"))} "${source.title.replace(/"/g, "'")}")` : match;
+    return source ? `[${n}](${source.url.replace(/[()\s]/g, c => "%" + c.charCodeAt(0).toString(16).toUpperCase().padStart(2, "0"))} "${source.title.replace(/"/g, "'")}")` : match;
   })).join("");
 }
 
@@ -74,10 +75,11 @@ function MarkdownBody({ text }: { text: string }) {
 }
 export const Markdown = memo(MarkdownBody);
 
-export function ThinkingBlock({ text, live }: { text: string; live?: boolean }) {
-  if (!text) return null;
-  return <details className="thinking" open={live}>
-    <summary>{live ? "考えています…" : "思考の要約"}</summary>
-    <div className="thinking-body">{text}</div>
+export function ThinkingBlock({ text, live, seconds }: { text: string; live?: boolean; seconds?: number }) {
+  if (!text && !live) return null;
+  const label = live ? "考えています…" : seconds != null && seconds >= 1 ? `${Math.round(seconds)}秒間考えました` : "思考プロセス";
+  return <details className={"thinking" + (live ? " live" : "")}>
+    <summary><span className={live ? "shimmer" : ""}>{label}</span><ChevronDown size={14} className="chev" /></summary>
+    {text && <div className="thinking-body">{text}</div>}
   </details>;
 }
