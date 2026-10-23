@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowDown, ArrowUpRight, Plus, FileUp, FolderOpen, MessagesSquare, PanelLeftClose, PanelLeftOpen, Search } from "lucide-react";
+import { ArrowDown, ArrowUpRight, Ghost, Plus, FileUp, FolderOpen, MessagesSquare, PanelLeftClose, PanelLeftOpen, Search } from "lucide-react";
 import CreditCard from "./components/CreditCard";
 import LogoMark, { LogoGlyph } from "./components/LogoMark";
 import OnboardingWizard from "./components/OnboardingWizard";
@@ -24,7 +24,7 @@ import { DEFAULT_PREFS, type Prefs } from "./lib/prefs";
 import { CONTINUE_PROMPT, mergeContinuation } from "./lib/continue";
 
 type Attachment = NonNullable<Msg["attachments"]>[number];
-type Chat = { id: string; title: string; messages: Msg[]; source?: string; projectId?: string; starred?: boolean; updatedAt?: string; style?: string; tools?: Tools; container?: { id: string; expiresAt?: string } };
+type Chat = { id: string; title: string; messages: Msg[]; source?: string; projectId?: string; starred?: boolean; updatedAt?: string; incognito?: boolean; style?: string; tools?: Tools; container?: { id: string; expiresAt?: string } };
 type Model = { id: string; displayName: string; createdAt?: string; maxTokens?: number; effortLevels: string[]; adaptiveThinking: boolean; imageInput: boolean; pdfInput: boolean };
 type Pending = { chatId: string; requestId: string; text: string; thinking: string; activity: string; startedAt: number; firstTextAt?: number };
 type Reply = Omit<Msg, "role" | "attachments" | "alternates" | "altIndex">;
@@ -153,11 +153,13 @@ export default function App() {
  useEffect(()=>{ if(effort&&currentModel&&!currentModel.effortLevels.includes(effort)) setEffort(""); },[currentModel,effort]);
  useEffect(()=>{
    if(!loaded)return;
-   const timer=window.setTimeout(()=>{window.continuity.saveChats(chats).catch(e=>setStatus("ローカル保存エラー: "+err(e)));},350);
+   const timer=window.setTimeout(()=>{window.continuity.saveChats(chats.filter(c=>!c.incognito)).catch(e=>setStatus("ローカル保存エラー: "+err(e)));},350);
    return ()=>window.clearTimeout(timer);
  },[chats,loaded]);
  useEffect(()=>{ const el=messagesRef.current; if(el&&atBottom) el.scrollTop=el.scrollHeight; },[chat.messages.length,pending?.text,pending?.thinking]);
  useEffect(()=>{ const el=messagesRef.current; if(el){el.scrollTop=el.scrollHeight;setAtBottom(true);} composerRef.current?.focus(); },[active]);
+ // An incognito chat exists only while it is open: leaving it discards it.
+ useEffect(()=>{ setChats(cs=>cs.some(c=>c.incognito&&c.id!==active)?cs.filter(c=>!c.incognito||c.id===active):cs); },[active]);
  function scrollToBottom(){ const el=messagesRef.current; if(el) el.scrollTo({top:el.scrollHeight,behavior:"smooth"}); }
  useEffect(()=>{
    // Shortcuts modeled on the Claude apps: new chat, search, stop/close.
@@ -230,7 +232,7 @@ export default function App() {
    pendingRef.current=start;setPending(start);setStatus("Claudeに問い合わせ中…");
    const container=target.container&&(!target.container.expiresAt||Date.parse(target.container.expiresAt)>Date.now())?target.container.id:undefined;
    try{
-     const response=await window.continuity.reply({requestId,model,effort:effort||undefined,style:target.style,projectId:target.projectId,tools:target.tools,containerId:container,
+     const response=await window.continuity.reply({requestId,model,effort:effort||undefined,style:target.style,projectId:target.projectId,tools:target.incognito?{...target.tools,memory:false}:target.tools,containerId:container,
        messages:history.slice(-60).map(m=>({role:m.role,content:m.content,...(m.attachments?.length?{attachments:m.attachments}:{})}))});
      const cost=costOf(response.usage.model,response.usage);
      const thoughtUntil=pendingRef.current?.firstTextAt??Date.now();
@@ -255,7 +257,7 @@ export default function App() {
      const searches=response.usage.webSearchRequests?` · 検索 ${response.usage.webSearchRequests}回`:"";
      const notices=response.notices.length?` · ${response.notices.join(" / ")}`:"";
      setStatus((response.aborted?`応答を停止しました${costText}`:`応答完了 · ${response.usage.inputTokens.toLocaleString()} input / ${response.usage.outputTokens.toLocaleString()} output tokens${searches}${costText}`)+notices);
-     if(mode.kind==="append"&&mode.retitle&&prefs.autoTitle&&response.text&&!response.aborted) void autoTitle(target.id,history[history.length-1].content,response.text);
+     if(mode.kind==="append"&&mode.retitle&&prefs.autoTitle&&!target.incognito&&response.text&&!response.aborted) void autoTitle(target.id,history[history.length-1].content,response.text);
    }catch(e){
      // A failed regeneration keeps the previous answer; a failed new turn shows the error in place of a reply.
      const fallback:Msg=mode.kind==="append"?{role:"assistant",content:"APIエラー: "+err(e)+"\n\nConsoleのクレジット残高、APIキー、利用可能モデルを確認してください。"}:mode.previous;
@@ -324,7 +326,7 @@ export default function App() {
  }
  function newChat(projectId?:string){
    // Reuse an untouched empty chat instead of stacking blank ones, as the Claude apps do.
-   const blank=chats.find(c=>c.messages.length===0&&c.title==="新しい会話"&&(c.projectId??null)===(projectId??null));
+   const blank=chats.find(c=>c.messages.length===0&&!c.incognito&&c.title==="新しい会話"&&(c.projectId??null)===(projectId??null));
    if(blank){setActive(blank.id);}
    else{const id="chat-"+Date.now();setChats(cs=>[{id,title:"新しい会話",messages:[],...(projectId?{projectId}:{})},...cs]);setActive(id);}
    setArtifact(null);setView("chat");setTimeout(()=>composerRef.current?.focus(),0);
@@ -341,8 +343,8 @@ export default function App() {
  const showPending=pending&&pending.chatId===chat.id;
  const query=search.toLowerCase();
  // Untouched new chats stay out of the lists until the first message, as in the Claude apps.
- const visibleChats=chats.filter(c=>c.messages.length>0&&(c.title.toLowerCase().includes(query)||c.messages.some(m=>m.content.toLowerCase().includes(query))));
- const chatRows=chats.filter(c=>c.messages.length>0).map(c=>({id:c.id,title:c.title,projectId:c.projectId,updatedAt:c.updatedAt,starred:c.starred,
+ const visibleChats=chats.filter(c=>c.messages.length>0&&!c.incognito&&(c.title.toLowerCase().includes(query)||c.messages.some(m=>m.content.toLowerCase().includes(query))));
+ const chatRows=chats.filter(c=>c.messages.length>0&&!c.incognito).map(c=>({id:c.id,title:c.title,projectId:c.projectId,updatedAt:c.updatedAt,starred:c.starred,
    preview:([...c.messages].reverse().find(m=>m.role==="assistant")?.content??c.messages[0]?.content??"").replace(/```[\s\S]*?(```|$)/g," ").replace(/\[(\d+)\]/g,"").replace(/[#>*`|_~]/g,"").replace(/\s+/g," ").trim().slice(0,140)}));
  const openProjectData=projects.find(p=>p.id===openProject)??null;
  const starredChats=visibleChats.filter(c=>c.starred);
@@ -356,11 +358,11 @@ export default function App() {
  const composer=<Composer ref={composerRef} draft={draft} onDraft={setDraft} attachments={pendingAttachments}
    onRemoveAttachment={id=>setPendingAttachments(list=>list.filter(x=>x.id!==id))} onPickFiles={()=>void window.continuity.pickAttachments().then(addAttachments)}
    onPaste={e=>void onPaste(e)} onSend={()=>void send()} onStop={stop} busy={busy}
-   tools={chat.tools??{}} onTools={tools=>patchChat(chat.id,c=>({...c,tools}))} projectMemory={chatProject?.memory}
+   tools={chat.incognito?{...chat.tools,memory:false}:chat.tools??{}} onTools={tools=>patchChat(chat.id,c=>({...c,tools}))} projectMemory={chatProject?.memory}
    style={chat.style??"standard"} styles={STYLES.filter(s=>s.id!=="custom"||prefs.customStyle.trim()).map(s=>({value:s.id,label:s.label}))} onStyle={v=>patchChat(chat.id,c=>({...c,style:v}))}
    model={model} models={availableModels.length?availableModels.map(m=>({value:m.id,label:m.displayName})):[{value:model,label:modelsLoading?"取得中…":model}]} onModel={setModel} modelsLoading={modelsLoading} onRefreshModels={()=>void refreshModels(true)}
    effort={effort} efforts={currentModel?.effortLevels.length?[{value:"",label:"思考: 既定"},...currentModel.effortLevels.map(l=>({value:l,label:`思考: ${EFFORT_LABELS[l]??l}`}))]:[]} onEffort={setEffort}
-   placeholder={fresh?"今日はどんなお手伝いをしましょうか？":"返信…"} placement={fresh?"down":"up"}/>;
+   placeholder={chat.incognito?"シークレットチャット（保存されません）":fresh?"今日はどんなお手伝いをしましょうか？":"返信…"} placement={fresh?"down":"up"}/>;
  return <ArtifactContext.Provider value={setArtifact}><div className={"shell font-"+prefs.chatFont+(sidebarOpen?"":" sidebar-closed")}>
   <aside aria-hidden={!sidebarOpen}>
    <div className="brand"><span className="mark"><LogoMark size={30} title="Claude Continuity"/></span><b>Claude Continuity</b>
@@ -384,11 +386,14 @@ export default function App() {
     {!sidebarOpen&&<button className="ghost-btn tip tip-below" data-tip="サイドバーを開く" aria-label="サイドバーを開く" onClick={()=>setSidebarOpen(true)}><PanelLeftOpen size={17}/></button>}
     <span className="crumbs">
      {view!=="chat"?null:fresh
-      ? <select className="project-select" value={chat.projectId??""} onChange={e=>patchChat(chat.id,c=>({...c,projectId:e.target.value||undefined}))} aria-label="この会話のプロジェクト">
+      ? chat.incognito?null:<select className="project-select" value={chat.projectId??""} onChange={e=>patchChat(chat.id,c=>({...c,projectId:e.target.value||undefined}))} aria-label="この会話のプロジェクト">
          <option value="">プロジェクトなし</option>{projects.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select>
       : <>{chatProject&&<><button className="crumb-project" onClick={()=>{setOpenProject(chatProject.id);setView("project");setArtifact(null);}}><FolderOpen size={14}/>{chatProject.name}</button><span className="crumb-sep">/</span></>}{chatMenu(chat,"title")}</>}
     </span>
     <div className="header-actions">
+     {view==="chat"&&fresh&&!chat.projectId&&<button className={"ghost-btn incognito-toggle tip tip-below"+(chat.incognito?" on":"")} aria-pressed={!!chat.incognito}
+       data-tip={chat.incognito?"シークレットチャットをやめる":"シークレットチャット（保存しない）"} aria-label="シークレットチャット" onClick={()=>patchChat(chat.id,c=>({...c,incognito:!c.incognito}))}><Ghost size={17}/></button>}
+     {view==="chat"&&!fresh&&chat.incognito&&<span className="incognito-badge"><Ghost size={13}/>シークレット · 保存されません</span>}
      {view==="chat"&&!fresh&&<button className="btn-secondary small handoff-btn tip tip-below" data-tip="Claude アプリの新しいチャットに文脈を渡す" onClick={()=>setHandoff(true)}><ArrowUpRight size={14}/>Claude で続ける</button>}
      {!configured&&<button className="btn-secondary small" onClick={()=>setSettings("api")}><span className="dot"/>APIキーを設定</button>}
     </div></header>
@@ -398,10 +403,12 @@ export default function App() {
    view==="chats"?<div className="workspace"><ChatsPage now={now} onNew={()=>newChat()} onOpen={id=>{setActive(id);setView("chat");}}
      chats={chatRows.map(c=>({...c,projectName:projects.find(p=>p.id===c.projectId)?.name}))}/></div>:
    <div className="workspace">
-    <div className={"conversation"+(fresh?" fresh":"")}>
+    <div className={"conversation"+(fresh?" fresh":"")+(chat.incognito?" incognito":"")}>
      {fresh
       ? <section className="welcome">
-         <h1><LogoGlyph size={34}/>{chatProject?chatProject.name:greeting()+(prefs.displayName?`、${prefs.displayName}さん`:"")}</h1>
+         {chat.incognito
+          ? <><h1 className="incognito-title"><Ghost size={32}/>シークレットチャット</h1><p>この会話は履歴に保存されず、メモリも使いません。ほかの会話に移ると消えます。</p></>
+          : <h1><LogoGlyph size={34}/>{chatProject?chatProject.name:greeting()+(prefs.displayName?`、${prefs.displayName}さん`:"")}</h1>}
          {chatProject&&<p>このプロジェクトの指示とナレッジが自動で付きます。</p>}
          {composer}
          <div className="suggestions">{SUGGESTIONS.map(sg=><button key={sg.label} onClick={()=>{setDraft(sg.prompt);composerRef.current?.focus();}}>{sg.label}</button>)}</div>

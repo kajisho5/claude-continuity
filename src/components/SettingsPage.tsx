@@ -36,6 +36,7 @@ type Props = {
 export default function SettingsPage(p: Props) {
   const [tab, setTab] = useState<SettingsTab>(p.initialTab ?? "general");
   const [name, setName] = useState(p.prefs.displayName);
+  const [about, setAbout] = useState(p.prefs.preferences);
   const [key, setKey] = useState("");
   const [keyMessage, setKeyMessage] = useState("");
   useEffect(() => {
@@ -62,9 +63,14 @@ export default function SettingsPage(p: Props) {
         {tab === "general" && <>
           <h3>プロフィール</h3>
           <label className="field"><span>表示名</span>
-            <input className="text-input" value={name} maxLength={40} placeholder="あいさつとサイドバーに表示します（この PC 内のみ）"
+            <input className="text-input" value={name} maxLength={40} placeholder="あいさつとサイドバーに表示します"
               onChange={e => setName(e.target.value)} onBlur={() => { if (name.trim() !== p.prefs.displayName) update({ displayName: name.trim() }); }}
               onKeyDown={e => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }} /></label>
+          <label className="toggle-row"><span><b>Claude にこの名前で呼んでもらう</b><small>オンにすると、表示名を毎回の会話で Claude に伝えます。オフのときはこの PC の画面表示にだけ使います。</small></span>
+            <input type="checkbox" className="switch" checked={p.prefs.shareName} disabled={!p.prefs.displayName} onChange={e => update({ shareName: e.target.checked })} /></label>
+          <label className="field"><span>Claude に知っておいてほしいこと <small className="muted inline">すべての会話に適用されます</small></span>
+            <textarea className="text-input" value={about} maxLength={4000} placeholder="例: 経営企画の仕事をしています。回答は結論から、数字には出典を付けてください。"
+              onChange={e => setAbout(e.target.value)} onBlur={() => { if (about !== p.prefs.preferences) update({ preferences: about }); }} /></label>
           <h3 className="spaced">外観</h3>
           <div className="theme-grid" role="radiogroup" aria-label="テーマ">
             {THEMES.map(t => <button key={t.id} role="radio" aria-checked={p.prefs.theme === t.id} className={"theme-card" + (p.prefs.theme === t.id ? " active" : "")} onClick={() => update({ theme: t.id })}>

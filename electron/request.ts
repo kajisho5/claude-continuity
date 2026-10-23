@@ -14,8 +14,12 @@ export const STYLE_PROMPTS: Record<Exclude<StyleId, "standard" | "custom">, stri
 };
 export const ANTHROPIC_SKILLS = ["xlsx", "docx", "pptx", "pdf"];
 
-export function buildSystem(style: StyleId | undefined, customStyle: string, project?: Project | null): string | undefined {
+export type Profile = { name?: string; preferences?: string };
+
+export function buildSystem(style: StyleId | undefined, customStyle: string, project?: Project | null, profile?: Profile): string | undefined {
   const parts: string[] = [];
+  const about = [profile?.name?.trim() ? `ユーザーの呼び名: ${profile.name.trim()}` : "", profile?.preferences?.trim() ? `ユーザーが全会話で考慮してほしいこと:\n${profile.preferences.trim()}` : ""].filter(Boolean);
+  if (about.length) parts.push(`# ユーザーについて\n${about.join("\n")}`);
   if (style === "custom" && customStyle.trim()) parts.push(customStyle.trim());
   else if (style && style !== "standard" && style !== "custom") parts.push(STYLE_PROMPTS[style]);
   if (project?.instructions.trim()) parts.push(`# プロジェクト「${project.name}」の指示\n${project.instructions.trim()}`);

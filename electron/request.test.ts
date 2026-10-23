@@ -7,6 +7,11 @@ const att = (kind: Attachment["kind"], name: string): Attachment => ({ id: name,
 const loader = { read: async () => Buffer.from("abc"), uploadForContainer: async (a: Attachment) => `file_${a.name}` };
 
 describe("buildSystem", () => {
+  it("adds the profile only when given", () => {
+    expect(buildSystem(undefined, "", null)).toBeUndefined();
+    expect(buildSystem(undefined, "", null, { name: " Shota ", preferences: "結論から" })).toBe("# ユーザーについて\nユーザーの呼び名: Shota\nユーザーが全会話で考慮してほしいこと:\n結論から");
+    expect(buildSystem("concise", "", null, { preferences: "敬語" })?.startsWith("# ユーザーについて")).toBe(true);
+  });
   it("orders style then project instructions", () => {
     const system = buildSystem("concise", "", { id: "p", name: "Q3", instructions: "円で表示", knowledge: [], memory: false });
     expect(system?.startsWith("回答は簡潔に")).toBe(true);
