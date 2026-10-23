@@ -391,8 +391,10 @@ const prefsFile = () => path.join(dataDir(), "prefs.json");
 type Theme = "system" | "light" | "dark";
 type ChatFont = "serif" | "sans" | "system";
 type CustomStyle = { id: string; name: string; prompt: string };
-type Prefs = { autoTitle: boolean; customStyle: string; customStyles: CustomStyle[]; displayName: string; theme: Theme; chatFont: ChatFont; shareName: boolean; preferences: string; searchPastChats: boolean; notifyOnReply: boolean; checkUpdates: boolean };
+type Prefs = { autoTitle: boolean; customStyle: string; customStyles: CustomStyle[]; displayName: string; theme: Theme; chatFont: ChatFont; shareName: boolean; preferences: string; searchPastChats: boolean; notifyOnReply: boolean; checkUpdates: boolean; language: Language };
+type Language = "system" | "ja" | "en";
 const THEMES: Theme[] = ["system", "light", "dark"];
+const LANGUAGES: Language[] = ["system", "ja", "en"];
 const FONTS: ChatFont[] = ["serif", "sans", "system"];
 function sanitizeStyles(raw: any): CustomStyle[] {
   if (Array.isArray(raw?.customStyles)) {
@@ -418,7 +420,8 @@ function sanitizePrefs(raw: any): Prefs {
     preferences: typeof raw?.preferences === "string" ? raw.preferences.slice(0, 4000) : "",
     searchPastChats: raw?.searchPastChats !== false,
     notifyOnReply: raw?.notifyOnReply !== false,
-    checkUpdates: raw?.checkUpdates !== false
+    checkUpdates: raw?.checkUpdates !== false,
+    language: LANGUAGES.includes(raw?.language) ? raw.language : "system"
   };
 }
 async function loadPrefs(): Promise<Prefs> {

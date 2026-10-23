@@ -26,6 +26,7 @@ import { ConfirmDialog, RenameDialog } from "./components/Dialog";
 import { PLAN_LABELS, summarizeCredit, type CreditSettings, type UsageRow } from "./lib/credit";
 import { costOf, formatUsd, priceHint } from "./lib/pricing";
 import { DEFAULT_PREFS, type Prefs } from "./lib/prefs";
+import { resolveLocale, setLocale } from "./i18n";
 import { CONTINUE_PROMPT, mergeContinuation } from "./lib/continue";
 import { plainPreview } from "./lib/time";
 import { editUserMessage, selectUserVersion } from "./lib/versions";
@@ -160,6 +161,7 @@ export default function App() {
    if(newest&&newest.code!==artifact.code) setArtifact(newest);
  // eslint-disable-next-line react-hooks/exhaustive-deps
  },[chatArtifacts.length]);
+ useEffect(()=>{setLocale(resolveLocale(prefs.language));},[prefs.language]);
  useEffect(()=>{
    // Resolve the theme here rather than trusting the OS bridge: "system" follows prefers-color-scheme, the others are fixed.
    const media=window.matchMedia("(prefers-color-scheme: dark)");
