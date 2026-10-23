@@ -352,6 +352,15 @@ export default function App() {
  }
  function stop(){ if(pending) void window.continuity.abortReply(pending.requestId); }
  async function exportChat(id=active){const target=chats.find(c=>c.id===id);if(!target)return;try{const result=await window.continuity.exportChat({fileName:target.title.replace(/[^\p{L}\p{N} _-]/gu,"").slice(0,80)||"conversation",data:JSON.stringify(target,null,2)});if(!result.canceled){setStatus("会話をJSONにエクスポートしました");toast("JSON に書き出しました");}}catch(e){setStatus("エクスポートエラー: "+err(e));toast("書き出しに失敗しました: "+err(e),"error");}}
+ async function exportHtml(id:string){
+   const target=chats.find(c=>c.id===id);if(!target)return;
+   try{
+     // Rendered on demand so react-dom/server is only loaded when someone exports.
+     const { chatToHtml }=await import("./lib/exportHtml");
+     const result=await window.continuity.exportChat({fileName:target.title.replace(/[^\p{L}\p{N} _-]/gu,"").slice(0,80)||"conversation",data:chatToHtml(target),format:"html"});
+     if(!result.canceled)toast("HTML に書き出しました。ブラウザで開いて共有できます");
+   }catch(e){toast("書き出しに失敗しました: "+err(e),"error");}
+ }
  function requestDelete(id:string){if(busy){setStatus("応答中は削除できません。");return;}if(chats.length<=1){setStatus("最後の会話は削除できません。");return;}setConfirmDelete(id);}
  function deleteChat(id:string){const remaining=chats.filter(c=>c.id!==id);if(!remaining.length)return;setChats(remaining);if(id===active){setActive(remaining[0].id);setArtifact(null);}setStatus("会話を削除しました");toast("会話を削除しました");}
  function deleteMany(ids:string[]){
@@ -365,7 +374,7 @@ export default function App() {
  }
  function chatMenu(c:Chat,variant:"row"|"title"){
    return <ChatMenu title={c.title} starred={!!c.starred} variant={variant} projects={projects} projectId={c.projectId}
-     onStar={()=>patchChat(c.id,x=>({...x,starred:!x.starred}))} onRename={()=>setRenaming(c.id)} onExport={()=>void exportChat(c.id)}
+     onStar={()=>patchChat(c.id,x=>({...x,starred:!x.starred}))} onRename={()=>setRenaming(c.id)} onExport={()=>void exportChat(c.id)} onExportHtml={()=>void exportHtml(c.id)}
      onDelete={()=>requestDelete(c.id)} onMoveProject={id=>patchChat(c.id,x=>({...x,projectId:id}))}/>;
  }
  function newChat(projectId?:string){

@@ -1,11 +1,11 @@
 import { useState, type CSSProperties } from "react";
-import { Check, ChevronDown, Download, FolderOpen, MoreHorizontal, Pencil, Star, Trash2 } from "lucide-react";
+import { Check, ChevronDown, Download, Share, FolderOpen, MoreHorizontal, Pencil, Star, Trash2 } from "lucide-react";
 import { usePopover } from "./Popover";
 
 type Props = {
   title: string; starred: boolean; variant: "row" | "title";
   projects: { id: string; name: string }[]; projectId?: string;
-  onStar: () => void; onRename: () => void; onExport: () => void; onDelete: () => void; onMoveProject: (id: string | undefined) => void;
+  onStar: () => void; onRename: () => void; onExport: () => void; onExportHtml: () => void; onDelete: () => void; onMoveProject: (id: string | undefined) => void;
 };
 
 /** Per-chat actions, opened from a sidebar row's "…" button or the header title, like the Claude apps. */
@@ -36,6 +36,7 @@ export default function ChatMenu(p: Props) {
         {p.projects.map(pr => <button key={pr.id} className="menu-item" onClick={run(() => p.onMoveProject(pr.id))}><span className="ellipsis">{pr.name}</span>{p.projectId === pr.id && <Check size={14} className="menu-check" />}</button>)}
       </div>}
       <button className="menu-item" role="menuitem" onClick={run(p.onExport)}><Download size={15} />JSON で書き出す</button>
+      <button className="menu-item" role="menuitem" onClick={run(p.onExportHtml)}><Share size={15} />HTML で書き出す（共有用）</button>
       <div className="menu-sep" />
       <button className="menu-item danger" role="menuitem" onClick={run(p.onDelete)}><Trash2 size={15} />削除</button>
     </div>}

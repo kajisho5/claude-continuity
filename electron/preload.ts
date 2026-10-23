@@ -2,7 +2,7 @@ import { contextBridge, ipcRenderer, webUtils, type IpcRendererEvent } from "ele
 type StreamEvent = { requestId: string; kind: "text" | "thinking" | "activity"; delta: string };
 contextBridge.exposeInMainWorld("continuity", {
   chooseExport: () => ipcRenderer.invoke("dialog:import-export"),
-  exportChat: (payload: { fileName: string; data: string }) => ipcRenderer.invoke("dialog:export-chat", payload),
+  exportChat: (payload: { fileName: string; data: string; format?: "json" | "html" }) => ipcRenderer.invoke("dialog:export-chat", payload),
   saveApiKey: (key: string) => ipcRenderer.invoke("key:save", key),
   testApiKey: (key: string) => ipcRenderer.invoke("key:test", key),
   keyStatus: () => ipcRenderer.invoke("key:status"),

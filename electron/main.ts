@@ -124,12 +124,13 @@ function parseExportText(text: string, source: string): NormalizedConversation[]
 }
 
 
-ipcMain.handle("dialog:export-chat", async (_event, payload: { fileName: string; data: string }) => {
+ipcMain.handle("dialog:export-chat", async (_event, payload: { fileName: string; data: string; format?: "json" | "html" }) => {
+  const ext = payload?.format === "html" ? "html" : "json";
   const safeName = String(payload?.fileName ?? "claude-conversation").replace(/[\\\\/:*?"<>|]/g, "_").slice(0, 100) || "claude-conversation";
   const result = await dialog.showSaveDialog({
-    title: "会話をJSONでエクスポート",
-    defaultPath: safeName.endsWith(".json") ? safeName : safeName + ".json",
-    filters: [{ name: "JSON", extensions: ["json"] }]
+    title: ext === "html" ? "会話を HTML で書き出す" : "会話をJSONでエクスポート",
+    defaultPath: safeName.endsWith("." + ext) ? safeName : safeName + "." + ext,
+    filters: [ext === "html" ? { name: "HTML", extensions: ["html"] } : { name: "JSON", extensions: ["json"] }]
   });
   if (result.canceled || !result.filePath) return { canceled: true };
   await fs.writeFile(result.filePath, String(payload?.data ?? ""), "utf8");
