@@ -119,6 +119,8 @@ export const settings = {
     error: (message: string) => `更新を確認できませんでした: ${message}`,
     version: "バージョン",
     download: "ダウンロード",
+    openPage: "ダウンロードページを開く",
+    manualHint: "この Mac 版は署名がないため自動では更新できません。ダウンロードページから新しい版を入れてください。",
     restart: "再起動して更新",
     check: "更新を確認",
     notes: "変更内容",

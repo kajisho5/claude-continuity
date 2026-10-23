@@ -64,6 +64,19 @@ Max プランなどの月間 API クレジットは請求サイクルの終わ�
 
 API キーは [Anthropic Console](https://console.anthropic.com/) で発行します。
 
+## インストール（macOS）
+
+1. [Releases](https://github.com/kajisho5/claude-continuity/releases) から、Mac に合ったファイルをダウンロードします。
+   - Apple シリコン（M1 以降）：`Claude-Continuity-<version>-arm64.dmg`
+   - Intel：`Claude-Continuity-<version>-x64.dmg`
+2. dmg を開き、アプリを「アプリケーション」フォルダにドラッグします。
+3. 今の配布版は Apple の Developer ID で署名していません（アドホック署名のみ）。初回は次のどちらかで開いてください。
+   - 開こうとして警告が出たら、システム設定 →「プライバシーとセキュリティ」→「このまま開く」を押す。
+   - それでも「壊れている」と表示される場合は、ターミナルで `xattr -cr "/Applications/Claude Continuity.app"` を実行する。
+4. 署名がないため、Mac 版は自動では更新できません。新しい版が出ると「ダウンロードページを開く」が表示されるので、そこから入れ直してください。
+
+> Developer ID の証明書を用意すれば、署名・公証付きで配布でき、自動更新も使えるようになります（[リリース](#リリースメンテナー向け)の節を参照）。
+
 ## コネクタ（MCP サーバー）
 
 設定 → コネクタ で登録し、会話ごとに入力欄の「ツール」メニューからオンにします。
@@ -118,7 +131,7 @@ API キーは [Anthropic Console](https://console.anthropic.com/) で発行し�
 - **長い会話**：入力上限を超える古い履歴は省きます（画面で知らせます）。自動での要約はしません。
 - **未対応の機能**：Research モード、独自スキルのアップロード、プロジェクトのナレッジを検索して使う仕組み（RAG）、音声入力、どこからでも呼び出せるショートカット、画面キャプチャ。
 - **API ではできないこと**：claude.ai との履歴の同期、claude.ai アカウント側のメモリの利用。
-- インストーラーに署名はありません。
+- Windows のインストーラーには署名がありません。Mac 版はアドホック署名のみで、公証もしていません。
 
 ## 開発
 
@@ -149,9 +162,20 @@ npm start        # ビルド済みのアプリを起動
 1. `package.json` の `version` を上げてコミットします。
 2. 次のどちらかでタグを付けます。
    - `git tag v<version> && git push origin v<version>`
-   - GitHub の Actions で「Package Windows installer」を実行し、`release_tag` に `v<version>` を入れます。選んだブランチの先頭にタグを付けてリリースまで行います。
-3. `.github/workflows/release.yml` がテストとビルドをして、インストーラー（`.exe`）、`.blockmap`、`latest.yml` をリリースに公開します。タグと `version` が一致しないと失敗します。
+   - GitHub の Actions で「Package installers」を実行し、`release_tag` に `v<version>` を入れます。選んだブランチの先頭にタグを付けてリリースまで行います。
+3. `.github/workflows/release.yml` が下書きのリリースを作り、Windows と macOS を並行してビルドしてアップロードします。Windows のビルドが成功したら公開します。タグと `version` が一致しないと失敗します。
+   - Windows：`.exe`、`.blockmap`、`latest.yml`
+   - macOS：arm64 と x64 の `.dmg` と `.zip`、`latest-mac.yml`
 4. インストール済みのアプリは、起動の約15秒後と、その後6時間ごとに `latest.yml` を確認し、新しい版を案内します。
+
+**macOS の署名と公証（任意）**：リポジトリの secret に次を設定すると、Developer ID で署名して公証し、Mac 版も自動で更新できるようになります（[electron-builder の公証の説明](https://www.electron.build/docs/notarization)）。証明書には Apple Developer Program（有料）への登録が必要です。
+
+| secret | 内容 |
+|---|---|
+| `CSC_LINK` / `CSC_KEY_PASSWORD` | 「Developer ID Application」証明書（.p12）を base64 にしたものと、そのパスワード |
+| `APPLE_API_KEY` / `APPLE_API_KEY_ID` / `APPLE_API_ISSUER` | App Store Connect の API キー（.p8 を base64 にしたもの）と、その ID |
+| または `APPLE_ID` / `APPLE_APP_SPECIFIC_PASSWORD` | Apple ID と App 用パスワード |
+| `APPLE_TEAM_ID` | チーム ID |
 
 自動更新は Releases を認証なしで読みます。そのため、配布先のリポジトリは公開されている必要があります。配布専用のリポジトリを使う場合は、Actions の変数 `RELEASES_REPO` と secret `RELEASES_TOKEN` を設定してください。
 
@@ -172,7 +196,11 @@ Claude Continuity is an unofficial desktop app (Electron + React) for continuing
 
 **Billing:** API credit is separate from Claude subscription usage; this app only uses the API.
 
-**Get it:** download the Windows installer from [Releases](https://github.com/kajisho5/claude-continuity/releases). The installer is unsigned.
+**Get it:**
+- Download the Windows installer or the macOS dmg (arm64 or x64) from [Releases](https://github.com/kajisho5/claude-continuity/releases).
+- The Windows installer is unsigned.
+- The Mac app is signed ad hoc only. Allow it in System Settings → Privacy & Security on first launch; it updates by opening the download page.
+- Developer ID signing and notarization turn on when the secrets described in the release section are set.
 
 **Develop:** `npm install`, then `npm run dev`. `npm test` runs the unit tests, and `npm run build` type-checks and builds the app.
 

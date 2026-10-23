@@ -525,7 +525,7 @@ export default function App() {
      <span className="update-banner-text flex min-w-0 flex-col gap-px"><b className="text-[13px] text-ink">{update.state==="ready"?t.app.update.ready:t.app.update.available}</b>{statusText(update)}</span>
      {update.state==="downloading"&&<span className="update-progress block h-[6px] w-[140px] shrink-0 overflow-hidden rounded-[3px] bg-line" aria-label={`${update.percent}%`}><i className="block h-full bg-accent transition-[width] duration-300 ease-[ease]" style={{width:`${update.percent}%`}}/></span>}
      {update.state!=="downloading"&&"notes" in update&&update.notes&&<button className="link text-[12px] whitespace-nowrap no-underline" onClick={()=>setSettings("about")}>{t.app.update.notes}</button>}
-     {update.state==="available"&&<button className="btn-primary small" onClick={()=>void window.continuity.downloadUpdate()}>{t.app.update.download}</button>}
+     {update.state==="available"&&<button className="btn-primary small" onClick={()=>void window.continuity.downloadUpdate()}>{update.manual?t.app.update.openPage:t.app.update.download}</button>}
      {update.state==="ready"&&<button className="btn-primary small" onClick={()=>void window.continuity.installUpdate()}>{t.app.update.restart}</button>}
      {update.state!=="downloading"&&<button className="btn-text px-[8px] py-[6px] whitespace-nowrap" onClick={()=>setUpdateDismissed(update.state+update.version)}>{t.app.update.later}</button>}
    </div>}

@@ -1,6 +1,6 @@
 {
   "name": "claude-continuity",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "private": true,
   "description": "Local-first desktop app for importing Claude conversation exports and continuing them with the Anthropic API.",
   "main": "dist-electron/main.js",
@@ -89,10 +89,26 @@
     },
     "mac": {
       "target": [
-        "dmg"
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        }
       ],
-      "category": "public.app-category.productivity"
+      "artifactName": "Claude-Continuity-${version}-${arch}.${ext}",
+      "category": "public.app-category.productivity",
+      "hardenedRuntime": true
     },
+    "afterPack": "build/adhoc-sign.cjs",
     "linux": {
       "target": [
         "AppImage"

@@ -96,7 +96,7 @@ export const app = {
   toBottomTip: "最新へ",
   toBottom: "最新のメッセージへ",
   disclaimer: "Claude は間違えることがあります。回答は必ずご確認ください。",
-  update: { ready: "アップデートの準備ができました", available: "アップデートがあります", notes: "変更内容", download: "ダウンロード", restart: "再起動して更新", later: "あとで" },
+  update: { ready: "アップデートの準備ができました", available: "アップデートがあります", notes: "変更内容", download: "ダウンロード", openPage: "ダウンロードページを開く", restart: "再起動して更新", later: "あとで" },
   dropHint: "ここにドロップして添付",
   confirmDelete: { title: "会話を削除しますか？", body: (title: string) => `「${title}」を端末内の履歴から削除します。元に戻せません。` },
   confirmBulk: { title: (n: number) => `${n} 件の会話を削除しますか？`, body: "選んだ会話を端末内の履歴から削除します。元に戻せません（バックアップがあれば復元できます）。" }

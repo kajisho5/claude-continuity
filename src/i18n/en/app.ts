@@ -100,7 +100,7 @@ export const app: typeof Ja = {
   toBottomTip: "Latest",
   toBottom: "Jump to the latest message",
   disclaimer: "Claude can make mistakes. Please double-check responses.",
-  update: { ready: "The update is ready", available: "An update is available", notes: "What's new", download: "Download", restart: "Restart to update", later: "Later" },
+  update: { ready: "The update is ready", available: "An update is available", notes: "What's new", download: "Download", openPage: "Open download page", restart: "Restart to update", later: "Later" },
   dropHint: "Drop here to attach",
   confirmDelete: { title: "Delete this chat?", body: (title: string) => `"${title}" will be deleted from the history on this device. This can't be undone.` },
   confirmBulk: { title: (n: number) => `Delete ${chats(n)}?`, body: "The selected chats will be deleted from the history on this device. This can't be undone (you can restore them from a backup if you have one)." }

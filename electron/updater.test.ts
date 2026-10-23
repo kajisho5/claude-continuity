@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 vi.mock("electron", () => ({ app: {}, ipcMain: {}, Notification: class {} }));
 vi.mock("electron-updater", () => ({ autoUpdater: {} }));
-const { notesText } = await import("./updater");
+const { notesText, releasePageUrl } = await import("./updater");
 
 describe("notesText", () => {
   it("turns GitHub HTML notes into plain text", () => {
@@ -11,5 +11,12 @@ describe("notesText", () => {
     expect(notesText([{ version: "0.2.0", note: "<p>二つ目</p>" }, { version: "0.1.1", note: "一つ目" }])).toBe("二つ目\n一つ目");
     expect(notesText(null)).toBeUndefined();
     expect(notesText("   ")).toBeUndefined();
+  });
+});
+
+describe("releasePageUrl", () => {
+  it("builds the release page from app-update.yml", () => {
+    expect(releasePageUrl("owner: kajisho5\nrepo: claude-continuity\nprovider: github\n", "0.2.0")).toBe("https://github.com/kajisho5/claude-continuity/releases/tag/v0.2.0");
+    expect(releasePageUrl("provider: github\n", "0.2.0")).toBeNull();
   });
 });

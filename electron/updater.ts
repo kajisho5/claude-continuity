@@ -1,10 +1,12 @@
-import { app, ipcMain, Notification, type BrowserWindow } from "electron";
+import { app, ipcMain, Notification, shell, type BrowserWindow } from "electron";
+import fs from "node:fs";
+import path from "node:path";
 import { autoUpdater, type AppUpdater } from "electron-updater";
 import { mainT } from "./i18n";
 
 export type UpdateStatus =
   | { state: "idle" | "checking" | "none" }
-  | { state: "available" | "ready"; version: string; notes?: string }
+  | { state: "available" | "ready"; version: string; notes?: string; manual?: boolean }
   | { state: "downloading"; version: string; percent: number }
   | { state: "error"; message: string };
 
@@ -16,6 +18,22 @@ export function notesText(notes: unknown): string | undefined {
   const raw = Array.isArray(notes) ? notes.map(n => (n && typeof n === "object" && "note" in n ? String((n as { note: unknown }).note ?? "") : "")).join("\n") : typeof notes === "string" ? notes : "";
   const text = raw.replace(/<li[^>]*>/gi, "- ").replace(/<br\s*\/?>|<\/(p|li|h\d)>/gi, "\n").replace(/<[^>]+>/g, "").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/[ \t]+\n/g, "\n").replace(/\n{2,}/g, "\n").trim();
   return text ? text.slice(0, 2000) : undefined;
+}
+
+/**
+ * Squirrel.Mac only installs updates into a Developer ID–signed app. Release builds made with a certificate
+ * add "macSigned": true to the packaged package.json; other Mac copies get a link to the release page instead.
+ */
+function needsManualUpdate(): boolean {
+  if (process.platform !== "darwin") return false;
+  try { return String(JSON.parse(fs.readFileSync(path.join(app.getAppPath(), "package.json"), "utf8")).macSigned) !== "true"; }
+  catch { return true; }
+}
+/** owner/repo of the update feed, from the app-update.yml electron-builder writes next to the app. */
+export function releasePageUrl(appUpdateYml: string, version: string): string | null {
+  const owner = /^owner:\s*['"]?([\w.-]+)/m.exec(appUpdateYml)?.[1];
+  const repo = /^repo:\s*['"]?([\w.-]+)/m.exec(appUpdateYml)?.[1];
+  return owner && repo ? `https://github.com/${owner}/${repo}/releases/tag/v${encodeURIComponent(version)}` : null;
 }
 
 /**
@@ -57,7 +75,18 @@ export function setupUpdater(getWindow: () => BrowserWindow | null, opts: { enab
   ipcMain.handle("app:version", () => app.getVersion());
   ipcMain.handle("update:status", () => status);
   ipcMain.handle("update:check", () => check(false));
-  ipcMain.handle("update:download", async () => { if (updater && status.state === "available") await updater.downloadUpdate(); return status; });
+  const manual = app.isPackaged && needsManualUpdate();
+  ipcMain.handle("update:download", async () => {
+    if (!updater || status.state !== "available") return status;
+    if (manual) {
+      let url: string | null = null;
+      try { url = releasePageUrl(fs.readFileSync(path.join(process.resourcesPath, "app-update.yml"), "utf8"), status.version); } catch {}
+      if (url) await shell.openExternal(url);
+      return status;
+    }
+    await updater.downloadUpdate();
+    return status;
+  });
   ipcMain.handle("update:install", () => { if (updater && status.state === "ready") updater.quitAndInstall(false, true); return status; });
   if (!app.isPackaged) return;
   try {
@@ -68,7 +97,7 @@ export function setupUpdater(getWindow: () => BrowserWindow | null, opts: { enab
     updater.on("update-not-available", () => emit({ state: "none" }));
     updater.on("update-available", info => {
       version = info.version; notes = notesText(info.releaseNotes);
-      emit({ state: "available", version, ...(notes ? { notes } : {}) });
+      emit({ state: "available", version, ...(notes ? { notes } : {}), ...(manual ? { manual: true } : {}) });
       notify(`available-${version}`, mainT().updater.availableTitle, mainT().updater.availableBody(version));
     });
     updater.on("download-progress", p => emit({ state: "downloading", version, percent: Math.round(p.percent) }));

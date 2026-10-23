@@ -1,7 +1,7 @@
-name: Package Windows installer
-# Without a release tag: builds the installer as a workflow artifact (kept 14 days).
+name: Package installers
+# Without a release tag: builds the Windows installer as a workflow artifact (kept 14 days).
 # With a release tag (e.g. v0.2.0, matching package.json "version"): tags the selected commit and publishes
-# the release through release.yml. Tags pushed by this workflow's token do not start release.yml a second time.
+# the Windows and macOS release through release.yml. Tags pushed by this workflow's token do not start release.yml a second time.
 on:
   workflow_dispatch:
     inputs:

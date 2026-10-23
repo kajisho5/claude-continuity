@@ -121,6 +121,8 @@ export const settings: typeof Ja = {
     error: (message: string) => `Could not check for updates: ${message}`,
     version: "Version",
     download: "Download",
+    openPage: "Open download page",
+    manualHint: "This Mac build isn't signed, so it can't update itself. Install the new version from the download page.",
     restart: "Restart to update",
     check: "Check for updates",
     notes: "What's new",
