@@ -137,8 +137,16 @@ jobs:
           asc decrypt-key "$src/devid.key.enc" "$dir/devid.key"
           p12pass="$(uuidgen)"
           echo "::add-mask::$p12pass"
-          openssl x509 -inform DER -in "$src/developer_id_application.cer" -out "$dir/devid.pem"
-          openssl pkcs12 -export -inkey "$dir/devid.key" -in "$dir/devid.pem" -name devid -out "$dir/devid.p12" -passout "pass:$p12pass"
+          # macOS's `security import` rejects PKCS#12 files using OpenSSL 3's default AES/SHA-256 MAC
+          # ("MAC verification failed ... wrong password?"), so write it with the SHA-1/3DES algorithms it accepts.
+          /usr/bin/openssl x509 -inform DER -in "$src/developer_id_application.cer" -out "$dir/devid.pem"
+          /usr/bin/openssl pkcs12 -export -inkey "$dir/devid.key" -in "$dir/devid.pem" -name devid -out "$dir/devid.p12" -passout "pass:$p12pass" \
+            -keypbe PBE-SHA1-3DES -certpbe PBE-SHA1-3DES -macalg sha1
+          # Fail here, with a clear step name, if the keychain still cannot read it.
+          kc="$dir/check.keychain-db"
+          security create-keychain -p "$p12pass" "$kc"
+          security import "$dir/devid.p12" -k "$kc" -P "$p12pass" -T /usr/bin/codesign > /dev/null
+          security delete-keychain "$kc"
           link="$(base64 -i "$dir/devid.p12" | tr -d '\n')"
           echo "::add-mask::$link"
           key="$(asc write-key)"
