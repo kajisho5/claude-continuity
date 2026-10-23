@@ -410,13 +410,14 @@ export default function App() {
  const openProjectData=projects.find(p=>p.id===openProject)??null;
  const starredChats=visibleChats.filter(c=>c.starred);
  const recentChats=visibleChats.filter(c=>!c.starred);
- const chatRow=(c:Chat)=><div key={c.id} className={"chatrow"+(c.id===active&&view==="chat"?" active":"")}>
-   <button className="chatlink" onClick={()=>{setActive(c.id);setArtifact(null);setView("chat");}} title={c.title}><span>{c.title}</span></button>
+ const chatRow=(c:Chat)=>{const on=c.id===active&&view==="chat";return <div key={c.id} className={"chatrow group/row relative flex items-center rounded-[8px]"+(on?" active":"")}>
+   <button className={"chatlink flex w-full min-w-0 flex-1 items-center gap-[9px] rounded-[8px] border-0 px-[10px] py-[7px] text-left text-[12.5px] group-hover/row:bg-line group-hover/row:text-ink group-has-[.chat-menu.open]/row:bg-line group-has-[.chat-menu.open]/row:text-ink "+(on?"bg-line text-ink":"bg-transparent text-ink-4")} onClick={()=>{setActive(c.id);setArtifact(null);setView("chat");}} title={c.title}>
+    <span className={"flex-1 overflow-hidden text-clip whitespace-nowrap group-hover/row:[mask-image:linear-gradient(90deg,#000_calc(100%_-_46px),transparent_calc(100%_-_22px))] group-has-[.chat-menu.open]/row:[mask-image:linear-gradient(90deg,#000_calc(100%_-_46px),transparent_calc(100%_-_22px))]"+(on?" [mask-image:linear-gradient(90deg,#000_calc(100%_-_46px),transparent_calc(100%_-_22px))]":"")}>{c.title}</span></button>
    {chatMenu(c,"row")}
- </div>;
+ </div>;};
  const lastAssistant=chat.messages.length-1;
  const fresh=chat.messages.length===0&&!showPending;
- const composer=<Composer ref={composerRef} draft={draft} onDraft={setDraft} attachments={pendingAttachments}
+ const composer=(variant:"welcome"|"footer")=><Composer ref={composerRef} variant={variant} incognito={!!chat.incognito} draft={draft} onDraft={setDraft} attachments={pendingAttachments}
    onRemoveAttachment={id=>setPendingAttachments(list=>list.filter(x=>x.id!==id))} onPickFiles={()=>void window.continuity.pickAttachments().then(addAttachments)}
    onPaste={e=>void onPaste(e)} onSend={()=>void send()} onStop={stop} busy={busy}
    tools={chat.incognito?{...chat.tools,memory:false}:chat.tools??{}} onTools={tools=>patchChat(chat.id,c=>({...c,tools}))} projectMemory={chatProject?.memory}
@@ -425,89 +426,89 @@ export default function App() {
    effort={effort} efforts={currentModel?.effortLevels.length?[{value:"",label:"思考: 既定"},...currentModel.effortLevels.map(l=>({value:l,label:`思考: ${EFFORT_LABELS[l]??l}`}))]:[]} onEffort={setEffort}
    connectors={chat.incognito?[]:connectors.filter(c=>c.enabled).map(c=>({id:c.id,name:c.name}))} onManageConnectors={()=>setSettings("connectors")}
    placeholder={chat.incognito?"シークレットチャット（保存されません）":fresh?"今日はどんなお手伝いをしましょうか？":"返信…"} placement={fresh?"down":"up"}/>;
- return <ArtifactContext.Provider value={setArtifact}><div className={"shell font-"+prefs.chatFont+(sidebarOpen?"":" sidebar-closed")}>
-  <aside aria-hidden={!sidebarOpen}>
-   <div className="brand"><span className="mark"><LogoMark size={30} title="Claude Continuity"/></span><b>Claude Continuity</b>
+ return <ArtifactContext.Provider value={setArtifact}><div className={"shell chatfont-"+prefs.chatFont+(sidebarOpen?"":" sidebar-closed")+" flex h-screen min-h-[600px]"+(prefs.chatFont==="sans"?" [--chat-font:var(--sans)]":prefs.chatFont==="system"?' [--chat-font:system-ui,-apple-system,"Segoe_UI","Hiragino_Sans","Yu_Gothic_UI",sans-serif]':"")}>
+  <aside aria-hidden={!sidebarOpen} className={"flex min-h-0 shrink-0 flex-col overflow-hidden border-r bg-sidebar py-[22px] transition-[width,padding] duration-[220ms] ease-claude "+(sidebarOpen?"w-[264px] border-line px-[14px] max-[1000px]:w-[220px]":"w-0 border-transparent px-0")}>
+   <div className="brand flex items-center gap-[10px] pt-0 pr-[2px] pb-[18px] pl-[6px]"><span className="mark grid size-[30px] shrink-0 place-items-center"><LogoMark size={30} title="Claude Continuity"/></span><b className="flex-1 whitespace-nowrap font-serif text-[15px] font-semibold text-ink-2">Claude Continuity</b>
     <button className="ghost-btn tip tip-below" data-tip="サイドバーを閉じる" aria-label="サイドバーを閉じる" onClick={()=>setSidebarOpen(false)}><PanelLeftClose size={17}/></button></div>
-   <button className="new-chat" onClick={()=>newChat()}><span className="plus-dot"><Plus size={15} strokeWidth={2.6}/></span>新しい会話<kbd>{KEYS.newChat}</kbd></button>
-   <div className="search-box"><Search size={14}/><input ref={searchRef} className="chat-search" value={search} onChange={e=>setSearch(e.target.value)} placeholder="会話を検索" aria-label="会話を検索"/><kbd>{KEYS.search}</kbd></div>
-   <button className={"side-nav"+(view==="chats"?" active":"")} onClick={()=>{setView("chats");setArtifact(null);}}><MessagesSquare size={16}/>チャット</button>
-   <button className={"side-nav"+(view==="artifacts"?" active":"")} onClick={()=>{setView("artifacts");setArtifact(null);}}><Shapes size={16}/>アーティファクト</button>
-   <button className={"side-nav"+(view==="projects"||view==="project"?" active":"")} onClick={()=>{setView("projects");setArtifact(null);}}><FolderOpen size={16}/>プロジェクト</button>
-   <div className="side-scroll">
-    {starredChats.length>0&&<><div className="label">スター付き</div>
-     <div className="chatlist">{starredChats.map(c=>chatRow(c))}</div></>}
-    <div className="label">最近の会話</div>
-    <div className="chatlist">{recentChats.map(c=>chatRow(c))}{recentChats.length===0&&<p className="hint tight">{search?"一致する会話はありません。":"まだ会話はありません。"}</p>}</div>
+   <button className="new-chat group/new flex w-full items-center gap-[10px] rounded-[9px] border-0 bg-transparent px-[8px] py-[7px] text-left text-[13px] font-semibold text-ink-2 hover:bg-line" onClick={()=>newChat()}><span className="plus-dot grid size-[24px] shrink-0 place-items-center rounded-full bg-accent text-on-accent transition-transform duration-200 ease-claude group-hover/new:rotate-90 group-hover/new:scale-[1.05] group-active/new:rotate-0 group-active/new:scale-[.92]"><Plus size={15} strokeWidth={2.6}/></span>新しい会話<kbd className="ml-auto opacity-0 transition-opacity duration-150 ease-[ease] group-hover/new:opacity-100">{KEYS.newChat}</kbd></button>
+   <div className="search-box group/search mt-[6px] mb-[2px] flex items-center gap-[8px] rounded-[9px] border border-transparent px-[8px] text-subtle focus-within:border-line-strong focus-within:bg-inset"><Search size={14}/><input ref={searchRef} className="chat-search m-0 w-full rounded-[7px] border-0 bg-transparent px-0 py-[8px] text-[12.5px] text-ink-2 outline-none placeholder:text-faint" value={search} onChange={e=>setSearch(e.target.value)} placeholder="会話を検索" aria-label="会話を検索"/><kbd className="ml-auto opacity-0 transition-opacity duration-150 ease-[ease] group-hover/search:opacity-100 group-focus-within/search:opacity-100">{KEYS.search}</kbd></div>
+   <button className={"side-nav mt-[2px] flex w-full items-center gap-[10px] rounded-[9px] border-0 px-[10px] py-[8px] text-left text-[13px] hover:bg-line hover:text-ink [&_svg]:text-muted"+(view==="chats"?" active bg-line text-ink":" bg-transparent text-ink-4")} onClick={()=>{setView("chats");setArtifact(null);}}><MessagesSquare size={16}/>チャット</button>
+   <button className={"side-nav mt-[2px] flex w-full items-center gap-[10px] rounded-[9px] border-0 px-[10px] py-[8px] text-left text-[13px] hover:bg-line hover:text-ink [&_svg]:text-muted"+(view==="artifacts"?" active bg-line text-ink":" bg-transparent text-ink-4")} onClick={()=>{setView("artifacts");setArtifact(null);}}><Shapes size={16}/>アーティファクト</button>
+   <button className={"side-nav mt-[2px] flex w-full items-center gap-[10px] rounded-[9px] border-0 px-[10px] py-[8px] text-left text-[13px] hover:bg-line hover:text-ink [&_svg]:text-muted"+(view==="projects"||view==="project"?" active bg-line text-ink":" bg-transparent text-ink-4")} onClick={()=>{setView("projects");setArtifact(null);}}><FolderOpen size={16}/>プロジェクト</button>
+   <div className="side-scroll mx-[-6px] mt-[4px] mb-0 min-h-0 flex-1 overflow-x-hidden overflow-y-auto px-[6px]">
+    {starredChats.length>0&&<><div className="label mx-[10px] mt-[18px] mb-[6px] text-[10.5px] font-medium tracking-[.4px] text-subtle">スター付き</div>
+     <div className="chatlist flex min-h-0 flex-none flex-col gap-px overflow-visible">{starredChats.map(c=>chatRow(c))}</div></>}
+    <div className="label mx-[10px] mt-[18px] mb-[6px] text-[10.5px] font-medium tracking-[.4px] text-subtle">最近の会話</div>
+    <div className="chatlist flex min-h-0 flex-none flex-col gap-px overflow-visible">{recentChats.map(c=>chatRow(c))}{recentChats.length===0&&<p className="hint tight mx-[9px] mt-[2px] mb-[4px] text-[9.5px]">{search?"一致する会話はありません。":"まだ会話はありません。"}</p>}</div>
    </div>
    <CreditCard summary={summary} totals={usageTotal} onConfigure={()=>setOnboarding(true)}/>
    <AccountMenu name={prefs.displayName} plan={credit?.plan?`${PLAN_LABELS[credit.plan]} プラン`:"プラン未設定"} configured={configured}
     onSettings={()=>setSettings("general")} onShortcuts={()=>setShortcuts(true)} onImport={()=>void importExport()} onOnboarding={()=>setOnboarding(true)}/>
   </aside>
-  <main className={dragging?"dragging":""} onDragOver={e=>{e.preventDefault();setDragging(true);}} onDragLeave={e=>{if(e.currentTarget===e.target)setDragging(false);}} onDrop={e=>void onDrop(e)}>
-   <header>
+  <main className={"relative flex min-w-0 flex-1 flex-col"+(dragging?" dragging":"")} onDragOver={e=>{e.preventDefault();setDragging(true);}} onDragLeave={e=>{if(e.currentTarget===e.target)setDragging(false);}} onDrop={e=>void onDrop(e)}>
+   <header className="flex h-[52px] shrink-0 items-center justify-start gap-[8px] px-[16px] text-[12px] text-muted">
     {!sidebarOpen&&<button className="ghost-btn tip tip-below" data-tip="サイドバーを開く" aria-label="サイドバーを開く" onClick={()=>setSidebarOpen(true)}><PanelLeftOpen size={17}/></button>}
-    <span className="crumbs">
+    <span className="crumbs flex min-w-0 flex-1 items-center gap-[4px]">
      {view!=="chat"?null:fresh
-      ? chat.incognito?null:<select className="project-select" value={chat.projectId??""} onChange={e=>patchChat(chat.id,c=>({...c,projectId:e.target.value||undefined}))} aria-label="この会話のプロジェクト">
+      ? chat.incognito?null:<select className="project-select max-w-[180px] rounded-[8px] border border-accent/45 bg-accent/16 px-[8px] py-[4px] text-[10px] font-semibold text-link" value={chat.projectId??""} onChange={e=>patchChat(chat.id,c=>({...c,projectId:e.target.value||undefined}))} aria-label="この会話のプロジェクト">
          <option value="">プロジェクトなし</option>{projects.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select>
-      : <>{chatProject&&<><button className="crumb-project" onClick={()=>{setOpenProject(chatProject.id);setView("project");setArtifact(null);}}><FolderOpen size={14}/>{chatProject.name}</button><span className="crumb-sep">/</span></>}{chatMenu(chat,"title")}</>}
+      : <>{chatProject&&<><button className="crumb-project inline-flex items-center gap-[6px] whitespace-nowrap rounded-[8px] border-0 bg-transparent px-[8px] py-[6px] text-[13px] text-muted hover:bg-line hover:text-ink" onClick={()=>{setOpenProject(chatProject.id);setView("project");setArtifact(null);}}><FolderOpen size={14}/>{chatProject.name}</button><span className="crumb-sep mx-[-4px] text-faint">/</span></>}{chatMenu(chat,"title")}</>}
     </span>
-    <div className="header-actions">
-     {view==="chat"&&fresh&&!chat.projectId&&<button className={"ghost-btn incognito-toggle tip tip-below"+(chat.incognito?" on":"")} aria-pressed={!!chat.incognito}
+    <div className="header-actions flex items-center gap-[2px]">
+     {view==="chat"&&fresh&&!chat.projectId&&<button className={"ghost-btn incognito-toggle tip tip-below tip-end"+(chat.incognito?" on bg-ink-2 text-bg enabled:hover:bg-ink enabled:hover:text-bg":"")} aria-pressed={!!chat.incognito}
        data-tip={chat.incognito?"シークレットチャットをやめる":"シークレットチャット（保存しない）"} aria-label="シークレットチャット" onClick={()=>patchChat(chat.id,c=>({...c,incognito:!c.incognito}))}><Ghost size={17}/></button>}
-     {view==="chat"&&!fresh&&chat.incognito&&<span className="incognito-badge"><Ghost size={13}/>シークレット · 保存されません</span>}
-     {view==="chat"&&!fresh&&<button className="btn-secondary small handoff-btn tip tip-below" data-tip="Claude アプリの新しいチャットに文脈を渡す" onClick={()=>setHandoff(true)}><ArrowUpRight size={14}/>Claude で続ける</button>}
+     {view==="chat"&&!fresh&&chat.incognito&&<span className="incognito-badge inline-flex items-center gap-[6px] rounded-[9px] border border-dashed border-line-input px-[10px] py-[5px] text-[12px] text-muted"><Ghost size={13}/>シークレット · 保存されません</span>}
+     {view==="chat"&&!fresh&&<button className="btn-secondary small handoff-btn tip tip-below tip-end rounded-[9px]" data-tip="Claude アプリの新しいチャットに文脈を渡す" onClick={()=>setHandoff(true)}><ArrowUpRight size={14}/>Claude で続ける</button>}
      {!configured&&<button className="btn-secondary small" onClick={()=>setSettings("api")}><span className="dot"/>APIキーを設定</button>}
     </div></header>
-   {view==="artifacts"?<div className="workspace"><ArtifactsPage entries={artifactEntries} now={now} onOpen={e=>{setActive(e.chatId);setView("chat");setTimeout(()=>setArtifact(e.latest),0);}}/></div>:
-    view==="projects"?<div className="workspace"><ProjectsPage projects={projects} chats={chatRows} now={now} onCreate={newProject} onOpen={id=>{setOpenProject(id);setView("project");}}/></div>:
-    view==="project"&&openProjectData?<div className="workspace"><ProjectPage project={openProjectData} chats={chatRows} now={now} onBack={()=>setView("projects")}
+   {view==="artifacts"?<div className="workspace flex min-h-0 flex-1"><ArtifactsPage entries={artifactEntries} now={now} onOpen={e=>{setActive(e.chatId);setView("chat");setTimeout(()=>setArtifact(e.latest),0);}}/></div>:
+    view==="projects"?<div className="workspace flex min-h-0 flex-1"><ProjectsPage projects={projects} chats={chatRows} now={now} onCreate={newProject} onOpen={id=>{setOpenProject(id);setView("project");}}/></div>:
+    view==="project"&&openProjectData?<div className="workspace flex min-h-0 flex-1"><ProjectPage project={openProjectData} chats={chatRows} now={now} onBack={()=>setView("projects")}
       onEdit={()=>setProjectModal({project:openProjectData,isNew:false})} onStart={()=>newChat(openProjectData.id)} onOpenChat={id=>{setActive(id);setView("chat");}}/></div>:
-   view==="chats"?<div className="workspace"><ChatsPage now={now} onNew={()=>newChat()} onDelete={ids=>setConfirmBulk(ids)} onOpen={id=>{setActive(id);setView("chat");}}
+   view==="chats"?<div className="workspace flex min-h-0 flex-1"><ChatsPage now={now} onNew={()=>newChat()} onDelete={ids=>setConfirmBulk(ids)} onOpen={id=>{setActive(id);setView("chat");}}
      chats={chatRows.map(c=>({...c,projectName:projects.find(p=>p.id===c.projectId)?.name}))}/></div>:
-   <div className="workspace">
-    <div className={"conversation"+(fresh?" fresh":"")+(chat.incognito?" incognito":"")}>
+   <div className="workspace flex min-h-0 flex-1">
+    <div className={"conversation relative flex min-w-0 flex-1 flex-col"+(fresh?" fresh items-center justify-center overflow-auto":"")+(chat.incognito?" incognito":"")}>
      {fresh
-      ? <section className="welcome">
+      ? <section className="welcome -mt-[6vh] flex w-[min(720px,100%-48px)] animate-[fadeUp_.35s_var(--ease)_both] flex-col items-stretch gap-[20px]">
          {chat.incognito
-          ? <><h1 className="incognito-title"><Ghost size={32}/>シークレットチャット</h1><p>この会話は履歴に保存されず、メモリも使いません。ほかの会話に移ると消えます。</p></>
-          : <h1><LogoGlyph size={34}/>{chatProject?chatProject.name:greeting()+(prefs.displayName?`、${prefs.displayName}さん`:"")}</h1>}
-         {chatProject&&<p>このプロジェクトの指示とナレッジが自動で付きます。</p>}
-         {composer}
-         <div className="suggestions">{SUGGESTIONS.map(sg=><button key={sg.label} onClick={()=>{setDraft(sg.prompt);composerRef.current?.focus();}}>{sg.label}</button>)}</div>
-         {!chatProject&&<button className="link-btn" onClick={()=>void importExport()}><FileUp size={13}/> Claude のエクスポートから会話を続ける</button>}
+          ? <><h1 className="incognito-title m-0 flex items-center justify-center gap-[14px] font-serif text-[36px] leading-[1.2] font-normal tracking-[-.3px] text-ink-2 [&_svg]:text-ink-3"><Ghost size={32}/>シークレットチャット</h1><p className="-mt-[10px] mb-0 text-center text-[13px] text-muted">この会話は履歴に保存されず、メモリも使いません。ほかの会話に移ると消えます。</p></>
+          : <h1 className="m-0 flex items-center justify-center gap-[14px] font-serif text-[36px] leading-[1.2] font-normal tracking-[-.3px] text-ink-2"><LogoGlyph size={34}/>{chatProject?chatProject.name:greeting()+(prefs.displayName?`、${prefs.displayName}さん`:"")}</h1>}
+         {chatProject&&<p className="-mt-[10px] mb-0 text-center text-[13px] text-muted">このプロジェクトの指示とナレッジが自動で付きます。</p>}
+         {composer("welcome")}
+         <div className="suggestions flex flex-wrap justify-center gap-[8px]">{SUGGESTIONS.map(sg=><button key={sg.label} className="rounded-[10px] border border-line-strong bg-transparent px-[13px] py-[7px] text-[12.5px] text-ink-3 hover:border-line-input hover:bg-surface" onClick={()=>{setDraft(sg.prompt);composerRef.current?.focus();}}>{sg.label}</button>)}</div>
+         {!chatProject&&<button className="link-btn inline-flex items-center gap-[6px] self-center rounded-[6px] border-0 bg-transparent px-[8px] py-[4px] text-[12px] text-subtle hover:text-ink-3" onClick={()=>void importExport()}><FileUp size={13}/> Claude のエクスポートから会話を続ける</button>}
         </section>
       : <>
-       <section className="messages" ref={messagesRef} onScroll={e=>{const el=e.currentTarget;setAtBottom(el.scrollHeight-el.scrollTop-el.clientHeight<120);}}>
-        <div className="thread">
+       <section className="messages flex-1 overflow-auto scroll-auto px-[24px] pt-[12px] pb-[24px] max-[1000px]:px-[22px]" ref={messagesRef} onScroll={e=>{const el=e.currentTarget;setAtBottom(el.scrollHeight-el.scrollTop-el.clientHeight<120);}}>
+        <div className="thread mx-auto my-0 max-w-[760px] pt-[20px]">
          {chat.messages.map((m,i)=><MessageItem key={`${chat.id}-${i}`} message={m} isLast={i===lastAssistant&&!showPending} busy={busy}
            onRegenerate={()=>regenerate(i)} onEdit={text=>editAndResend(i,text)} onSelectAlternate={alt=>selectAlternate(i,alt)} onSaveFile={(id,name)=>void saveFile(id,name)} onContinue={()=>continueReply(i)} onSelectVersion={v=>selectVersion(i,v)}/>)}
-         {showPending&&<article className="message assistant pending">
+         {showPending&&<article className="message assistant pending mt-0 mb-[22px] block animate-fade-up text-[13px] leading-[1.85]">
            {(pending.thinking||!pending.text)&&<ThinkingBlock text={pending.thinking} live={!pending.text} seconds={pending.firstTextAt?(pending.firstTextAt-pending.startedAt)/1000:undefined}/>}
-           {pending.activity&&<p className="activity">{pending.activity}</p>}
-           {pending.text&&<Markdown text={pending.text}/>}
-           <div className="msg-actions working"><LogoGlyph size={24} working/></div>
+           {pending.activity&&<p className="activity my-[6px] text-[12.5px] text-muted before:mr-[7px] before:inline-block before:size-[7px] before:animate-pulse-dot before:rounded-full before:bg-accent before:content-['']">{pending.activity}</p>}
+           {pending.text&&<Markdown text={pending.text} className="mt-0 font-chat text-[16px] leading-[1.78] text-ink-3 [&_code]:font-mono [&_h1]:text-ink [&_h2]:text-ink [&_h3]:text-ink [&_pre]:font-mono [&_table]:font-sans"/>}
+           <div className="msg-actions working mt-[6px] flex items-center gap-[2px] opacity-100 transition-opacity duration-200 ease-[ease]"><LogoGlyph size={24} working/></div>
          </article>}
         </div>
        </section>
-       {!atBottom&&<button className="to-bottom tip" data-tip="最新へ" aria-label="最新のメッセージへ" onClick={scrollToBottom}><ArrowDown size={16}/></button>}
-       <footer>{composer}
-        <div className="status"><span className="status-text">{status==="準備完了"?"Claude は間違えることがあります。回答は必ずご確認ください。":status}</span>{hint&&<span className="status-hint">{hint}</span>}</div>
+       {!atBottom&&<button className="to-bottom tip relative bottom-[150px] left-1/2 z-[3] grid size-[34px] -translate-x-1/2 animate-fade-in place-items-center rounded-full border border-line-strong bg-surface-2 text-ink-3 shadow-[0_8px_24px_var(--shadow)] hover:bg-raised" data-tip="最新へ" aria-label="最新のメッセージへ" onClick={scrollToBottom}><ArrowDown size={16}/></button>}
+       <footer className="px-[24px] pt-0 pb-[14px] max-[1000px]:px-[18px]">{composer("footer")}
+        <div className="status mx-auto mt-[8px] mb-0 flex max-w-[760px] flex-wrap justify-center gap-x-[10px] gap-y-[4px] px-[8px] text-center text-[11px] text-subtle"><span className="status-text">{status==="準備完了"?"Claude は間違えることがあります。回答は必ずご確認ください。":status}</span>{hint&&<span className="status-hint text-faint before:mr-[10px] before:text-faint before:content-['·']">{hint}</span>}</div>
        </footer>
       </>}
     </div>
     {artifact&&<ArtifactPanel artifact={artifact} versions={artifactVersions.length?artifactVersions:[artifact]} onSelect={setArtifact} onClose={()=>setArtifact(null)}/>}
    </div>}
-   {(update.state==="available"||update.state==="downloading"||update.state==="ready")&&updateDismissed!==update.state+update.version&&<div className="update-banner" role="status">
-     <span className="update-banner-text"><b>{update.state==="ready"?"アップデートの準備ができました":"アップデートがあります"}</b>{statusText(update)}</span>
-     {update.state==="downloading"&&<span className="update-progress" aria-label={`${update.percent}%`}><i style={{width:`${update.percent}%`}}/></span>}
-     {update.state!=="downloading"&&"notes" in update&&update.notes&&<button className="link" onClick={()=>setSettings("about")}>変更内容</button>}
+   {(update.state==="available"||update.state==="downloading"||update.state==="ready")&&updateDismissed!==update.state+update.version&&<div className="update-banner absolute top-[58px] left-1/2 z-[6] flex max-w-[min(720px,calc(100%-40px))] animate-toast-in items-center gap-[12px] rounded-[12px] border border-line-strong bg-modal py-[8px] pr-[8px] pl-[16px] text-[12.5px] whitespace-normal text-ink-2 shadow-[0_8px_24px_var(--shadow)] [transform:translateX(-50%)]" role="status">
+     <span className="update-banner-text flex min-w-0 flex-col gap-px"><b className="text-[13px] text-ink">{update.state==="ready"?"アップデートの準備ができました":"アップデートがあります"}</b>{statusText(update)}</span>
+     {update.state==="downloading"&&<span className="update-progress block h-[6px] w-[140px] shrink-0 overflow-hidden rounded-[3px] bg-line" aria-label={`${update.percent}%`}><i className="block h-full bg-accent transition-[width] duration-300 ease-[ease]" style={{width:`${update.percent}%`}}/></span>}
+     {update.state!=="downloading"&&"notes" in update&&update.notes&&<button className="link text-[12px] whitespace-nowrap no-underline" onClick={()=>setSettings("about")}>変更内容</button>}
      {update.state==="available"&&<button className="btn-primary small" onClick={()=>void window.continuity.downloadUpdate()}>ダウンロード</button>}
      {update.state==="ready"&&<button className="btn-primary small" onClick={()=>void window.continuity.installUpdate()}>再起動して更新</button>}
-     {update.state!=="downloading"&&<button className="btn-text" onClick={()=>setUpdateDismissed(update.state+update.version)}>あとで</button>}
+     {update.state!=="downloading"&&<button className="btn-text px-[8px] py-[6px] whitespace-nowrap" onClick={()=>setUpdateDismissed(update.state+update.version)}>あとで</button>}
    </div>}
-   {dragging&&<div className="drop-hint">ここにドロップして添付</div>}
+   {dragging&&<div className="drop-hint pointer-events-none absolute inset-[12px] z-[4] grid animate-[fadeIn_.15s_ease] place-items-center rounded-[14px] border-2 border-dashed border-accent bg-accent/10 text-[14px] font-semibold text-link light:bg-[color-mix(in_srgb,var(--accent)_8%,#fff)]">ここにドロップして添付</div>}
   </main>
   {settings&&<SettingsPage initialTab={settings} prefs={prefs} onSavePrefs={savePrefs} configured={configured} onSaveKey={saveKey}
     credit={credit} onSaveCredit={saveCredit} onRestartOnboarding={()=>{setSettings(null);setOnboarding(true);}} onClose={()=>setSettings(null)} onNotice={toast} onConnectors={setConnectors}

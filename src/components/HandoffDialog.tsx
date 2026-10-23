@@ -53,27 +53,27 @@ export default function HandoffDialog(p: Props) {
   }
 
   return <div className="overlay" onMouseDown={p.onClose}>
-    <div className="modal handoff" role="dialog" aria-modal="true" aria-label="Claude アプリで続ける" onMouseDown={e => e.stopPropagation()}>
-      <button className="settings-close ghost-btn" onClick={p.onClose} aria-label="閉じる"><X size={18} /></button>
+    <div className="modal handoff w-[min(640px,100%)] px-[28px] pt-[26px] pb-[22px]" role="dialog" aria-modal="true" aria-label="Claude アプリで続ける" onMouseDown={e => e.stopPropagation()}>
+      <button className="settings-close ghost-btn absolute top-[14px] right-[14px]" onClick={p.onClose} aria-label="閉じる"><X size={18} /></button>
       <h2>Claude アプリで続ける</h2>
       <p className="muted">Claude デスクトップアプリの新しいチャットを、この会話の文脈を入力した状態で開きます。送信はアプリ側で内容を確認してから押してください。添付ファイルや作成したファイルは引き継がれません。</p>
-      <div className="segmented" role="tablist">
+      <div className="segmented mt-[14px]" role="tablist">
         <button className={mode === "summary" ? "active" : ""} onClick={() => { setMode("summary"); setEdited(null); }}>要約して引き継ぐ（おすすめ）</button>
         <button className={mode === "transcript" ? "active" : ""} onClick={() => { setMode("transcript"); setEdited(null); }}>最近のやり取りをそのまま</button>
       </div>
       {mode === "summary" && !summary
-        ? <div className="handoff-empty">
-          <p>会話全体を API で引き継ぎメモにまとめます（目的・決定事項・現状・次にやること）。<br />{p.modelLabel} を使い、API クレジットを少し使います。</p>
+        ? <div className="handoff-empty mt-[12px] flex flex-col items-center gap-[12px] rounded-[12px] border border-dashed border-line-strong px-[20px] py-[26px] text-center">
+          <p className="m-0 text-[12.5px] leading-[1.8] text-ink-4">会話全体を API で引き継ぎメモにまとめます（目的・決定事項・現状・次にやること）。<br />{p.modelLabel} を使い、API クレジットを少し使います。</p>
           <button className="btn-primary" disabled={summarizing || !p.configured || !p.turns.length} onClick={() => void summarize()}>
-            <Sparkles size={14} className={summarizing ? "spin" : ""} />{summarizing ? "要約しています…" : "引き継ぎメモを作成"}</button>
-          {!p.configured && <small>API キーを設定すると使えます。</small>}
+            <Sparkles size={14} className={summarizing ? "spin animate-spin" : ""} />{summarizing ? "要約しています…" : "引き継ぎメモを作成"}</button>
+          {!p.configured && <small className="text-[11px] text-warn">API キーを設定すると使えます。</small>}
         </div>
         : <>
-          <textarea className="text-input handoff-text" value={text} onChange={e => setEdited(e.target.value)} aria-label="引き継ぐ内容" />
-          <div className="handoff-meta">
-            <span className={fits ? "" : "over"}>{text.length.toLocaleString()} 文字{fits ? "" : platform === "win32" && text.length <= HANDOFF_MAX_CHARS ? " · Windows のリンク長の上限を超えるため末尾を省きます" : " · 上限を超えるため末尾を省きます"}</span>
+          <textarea className="text-input handoff-text mt-[12px] max-h-[46vh] min-h-[260px] text-[12.5px] leading-[1.7]" value={text} onChange={e => setEdited(e.target.value)} aria-label="引き継ぐ内容" />
+          <div className="handoff-meta mt-[6px] flex items-center gap-[14px] text-[11px] text-subtle">
+            <span className={fits ? "" : "over text-warn"}>{text.length.toLocaleString()} 文字{fits ? "" : platform === "win32" && text.length <= HANDOFF_MAX_CHARS ? " · Windows のリンク長の上限を超えるため末尾を省きます" : " · 上限を超えるため末尾を省きます"}</span>
             {mode === "transcript" && transcript.included < transcript.total && <span>直近 {transcript.included} / {transcript.total} 件を含めています</span>}
-            {mode === "summary" && <button className="link" onClick={() => void summarize()} disabled={summarizing}>{summarizing ? "作成中…" : "作り直す"}</button>}
+            {mode === "summary" && <button className="link ml-auto" onClick={() => void summarize()} disabled={summarizing}>{summarizing ? "作成中…" : "作り直す"}</button>}
           </div>
         </>}
       <div className="actions">

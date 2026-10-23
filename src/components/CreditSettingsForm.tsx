@@ -38,36 +38,36 @@ export default function CreditSettingsForm({ value, onSave }: Props) {
   }
 
   return <section className="credit-form">
-    <h3>月間クレジット</h3>
+    <h3 className="m-[0_0_6px] font-serif text-[16px] leading-[normal] font-semibold text-ink">月間クレジット</h3>
     <p className="muted">毎月付与されるAPIクレジットの消化状況を、この端末の利用記録から推定します。</p>
-    <span className="field-label">プラン</span>
+    <span className="field-label mt-[16px] block text-[11px] font-semibold text-ink-2">プラン</span>
     <div className="segmented" role="radiogroup" aria-label="プラン">
       {SEGMENTS.map(id => <button key={id} type="button" role="radio" aria-checked={plan === id}
         className={plan === id ? "active" : ""} onClick={() => setPlan(id)}>{SEGMENT_LABELS[id]}</button>)}
     </div>
-    <div className="field-row">
+    <div className="field-row flex gap-[14px]">
       <label className="field"><span>月間付与額（USD）</span>
         {preset
-          ? <span className="text-input readonly">{formatUsd(amount)}<small>{plan === "none" ? "付与なし" : "プリセット"}</small></span>
-          : <input className={"text-input" + (amountInvalid && customAmount ? " invalid" : "")} inputMode="decimal" value={customAmount}
+          ? <span className="text-input readonly flex items-center justify-between border-line text-muted">{formatUsd(amount)}<small className="text-[9px] text-faint">{plan === "none" ? "付与なし" : "プリセット"}</small></span>
+          : <input className={"text-input" + (amountInvalid && customAmount ? " invalid border-danger" : "")} inputMode="decimal" value={customAmount}
             onChange={e => setCustomAmount(e.target.value)} placeholder={plan === "team" ? "チーム合計（上限 $500）" : "例: 150"} />}
       </label>
       <label className="field"><span>クレジット付与日</span>
-        <span className="day-input">毎月
-          <select value={resetDay} onChange={e => setResetDay(Number(e.target.value))} aria-label="付与日">
+        <span className="day-input flex items-center gap-[8px] rounded-[8px] border border-line-input bg-inset px-[12px] py-[6px] text-[13px] text-muted">毎月
+          <select className="rounded-[6px] border border-line-input bg-surface-2 px-[8px] py-[5px] text-[14px] font-bold text-ink" value={resetDay} onChange={e => setResetDay(Number(e.target.value))} aria-label="付与日">
             {Array.from({ length: 31 }, (_, i) => <option key={i + 1} value={i + 1}>{i + 1}</option>)}
           </select>日</span>
       </label>
     </div>
     <p className="hint">Claudeの Settings › Billing に表示される請求日を入力してください。今のサイクル: {formatShortDate(start)} 〜 {formatShortDate(end)}（付与時刻は非公開のため日単位の目安）</p>
-    {plan !== "none" && <div className="calibration">
+    {plan !== "none" && <div className="calibration mt-[14px] rounded-[10px] border border-line bg-inset px-[14px] py-[13px] text-[11px]">
       <b>Console残高で補正（任意）</b>
-      <p>Console › Billing › Promotional credits の残額を入力すると、Playground など他の利用分も含めた推定になります。</p>
-      <div className="key-row">
+      <p className="m-[5px_0_10px] text-[10px] leading-[1.6] text-muted">Console › Billing › Promotional credits の残額を入力すると、Playground など他の利用分も含めた推定になります。</p>
+      <div className="key-row mt-[12px] flex gap-[8px]">
         <input className="text-input" inputMode="decimal" value={balance} onChange={e => setBalance(e.target.value)} placeholder="$ 残額" />
-        <button className="btn-secondary" onClick={recordBalance}>今の残高として記録</button>
+        <button className="btn-secondary whitespace-nowrap" onClick={recordBalance}>今の残高として記録</button>
       </div>
-      {calibration && <small>最終補正: {new Date(calibration.observedAt).toLocaleString()} · {formatUsd(calibration.balanceUsd)}
+      {calibration && <small className="mt-[8px] block text-[9px] text-faint">最終補正: {new Date(calibration.observedAt).toLocaleString()} · {formatUsd(calibration.balanceUsd)}
         {calibrationActive ? "（今のサイクルで有効）" : "（前のサイクルのため無効）"}
         <button className="link" onClick={() => setCalibration(undefined)}>解除</button></small>}
     </div>}

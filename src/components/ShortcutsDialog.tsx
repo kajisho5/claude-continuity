@@ -22,10 +22,12 @@ export default function ShortcutsDialog({ onClose }: { onClose: () => void }) {
     return () => window.removeEventListener("keydown", onKey, true);
   }, [onClose]);
   return <div className="overlay" onMouseDown={onClose}>
-    <div className="modal shortcuts" role="dialog" aria-modal="true" aria-label="キーボードショートカット" onMouseDown={e => e.stopPropagation()}>
-      <button className="settings-close ghost-btn" onClick={onClose} aria-label="閉じる"><X size={18} /></button>
+    <div className="modal shortcuts w-[min(460px,100%)]" role="dialog" aria-modal="true" aria-label="キーボードショートカット" onMouseDown={e => e.stopPropagation()}>
+      <button className="settings-close ghost-btn absolute top-[14px] right-[14px]" onClick={onClose} aria-label="閉じる"><X size={18} /></button>
       <h2>キーボードショートカット</h2>
-      <dl>{SHORTCUTS.map(s => <div key={s.label}><dt>{s.label}</dt><dd>{s.keys.map(k => <kbd key={k}>{k}</kbd>)}</dd></div>)}</dl>
+      <dl className="mx-0 mt-[14px] mb-0 flex flex-col">{SHORTCUTS.map(s => <div key={s.label} className="flex items-center justify-between gap-[12px] border-b border-line py-[9px]">
+        <dt className="text-[13px] text-ink-3">{s.label}</dt>
+        <dd className="m-0 flex gap-[4px]">{s.keys.map(k => <kbd key={k} className="m-0 bg-inset px-[7px] py-[4px] text-[11px] text-ink-4">{k}</kbd>)}</dd></div>)}</dl>
     </div>
   </div>;
 }

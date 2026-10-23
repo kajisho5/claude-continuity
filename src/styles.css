@@ -1,14 +1,13 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+JP:wght@400;500;600;700&family=Noto+Serif+JP:wght@500;600;700&family=Source+Serif+4:wght@500;600;700&display=swap');
 /*
- * Tailwind CSS v4. Preflight is left out on purpose: the design was built on browser defaults, and the
- * Markdown styles below rely on them. "legacy" sits between components and utilities while the move from
- * the old stylesheet finishes, so utilities always win.
+ * Tailwind CSS v4. Components style themselves with utilities; this file holds the theme, base rules,
+ * shared component classes and the styles for generated Markdown. Preflight is left out on purpose:
+ * the design was built on browser defaults, and the Markdown styles rely on them.
  */
-@layer theme, base, components, legacy, utilities;
+@layer theme, base, components, utilities;
 @import "tailwindcss/theme.css" layer(theme);
 @import "tailwindcss/utilities.css" layer(utilities);
 @import "highlight.js/styles/github-dark.css" layer(base);
-@import "./legacy.css" layer(legacy);
 
 /* light: variant for the light palette (html[data-theme="light"] is set by the app). */
 @custom-variant light (&:where(html[data-theme="light"] *));
@@ -42,7 +41,7 @@ html[data-theme="light"]{--bg:#FAF9F5;--sidebar:#F3F1EA;--surface:#FFFFFF;--surf
   --color-surface: var(--surface);
   --color-surface-2: var(--surface-2);
   --color-modal: var(--modal);
-  --color-input: var(--input);
+  --color-inset: var(--input);
   --color-raised: var(--raised);
   --color-line: var(--border);
   --color-line-strong: var(--border-strong);
@@ -105,14 +104,15 @@ html[data-theme="light"]{--bg:#FAF9F5;--sidebar:#F3F1EA;--surface:#FFFFFF;--surf
   @media (prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.001ms!important;animation-iteration-count:1!important;transition-duration:.001ms!important;scroll-behavior:auto!important}}
 }
 
-/* Shared building blocks used across many components (Tailwind component classes). */
+/* Shared building blocks used across many components (Tailwind component classes).
+ * btn-secondary / btn-text take the parent's text color: the original design let buttons inherit color. */
 @layer components {
   .btn-primary{@apply inline-flex items-center justify-center gap-[7px] rounded-[8px] border-0 bg-accent px-[14px] py-[9px] text-[12px] font-bold text-on-accent enabled:hover:bg-accent-hover enabled:active:scale-[.97]}
-  .btn-secondary{@apply inline-flex items-center gap-[7px] rounded-[8px] border border-line-strong bg-raised px-[13px] py-[9px] text-[11px] text-ink-2 enabled:hover:border-line-input enabled:active:scale-[.97]}
+  .btn-secondary{@apply inline-flex items-center gap-[7px] rounded-[8px] border border-line-strong bg-raised px-[13px] py-[9px] text-[11px] text-inherit enabled:hover:border-line-input enabled:active:scale-[.97]}
   .btn-danger{@apply inline-flex items-center gap-[6px] rounded-[8px] border-0 bg-danger px-[14px] py-[9px] text-[12px] font-bold text-[#1D1C1A] hover:brightness-[1.08]}
   .btn-primary.small,.btn-secondary.small{@apply px-[10px] py-[6px] text-[10.5px]}
   .btn-danger.small{@apply px-[10px] py-[6px] text-[11.5px]}
-  .btn-text{@apply border-0 bg-transparent px-[4px] py-[8px] text-[12px] font-medium text-muted}
+  .btn-text{@apply border-0 bg-transparent px-[4px] py-[8px] text-[12px] font-medium text-inherit}
   .link{@apply border-0 bg-transparent py-0 pr-0 pl-[6px] text-[length:inherit] text-link underline}
   .ghost-btn{@apply inline-grid size-[30px] shrink-0 place-items-center rounded-[8px] border-0 bg-transparent p-0 text-muted enabled:hover:bg-line enabled:hover:text-ink}
   .ghost-btn.small{@apply size-[24px] rounded-[6px]}
@@ -120,7 +120,7 @@ html[data-theme="light"]{--bg:#FAF9F5;--sidebar:#F3F1EA;--surface:#FFFFFF;--surf
   .icon-action{@apply inline-grid size-[30px] place-items-center rounded-[8px] border-0 bg-transparent p-0 text-muted enabled:hover:bg-line enabled:hover:text-ink enabled:active:scale-[.92] disabled:opacity-35}
   .round-btn{@apply inline-grid size-[32px] place-items-center rounded-[10px] border border-line-strong bg-transparent p-0 text-ink-3 enabled:hover:bg-line}
   .round-btn.on{@apply border-accent bg-accent/12 text-link}
-  .text-input{@apply w-full rounded-[8px] border border-line-input bg-input px-[12px] py-[11px] text-[12px] text-ink outline-none focus:border-accent}
+  .text-input{@apply w-full font-[inherit] rounded-[8px] border border-line-input bg-inset px-[12px] py-[11px] text-[12px] text-ink outline-none focus:border-accent}
   textarea.text-input{@apply min-h-[70px] resize-y font-sans}
   .text-input.tall{@apply min-h-[110px] resize-y leading-[1.7]}
   .field{@apply mt-[14px] flex min-w-0 flex-1 flex-col gap-[7px] text-[11px] text-ink-2}
@@ -129,7 +129,7 @@ html[data-theme="light"]{--bg:#FAF9F5;--sidebar:#F3F1EA;--surface:#FFFFFF;--surf
   .modal{@apply relative max-h-[calc(100vh-40px)] w-[min(480px,100%)] animate-[popIn_.2s_var(--ease)_both] overflow-auto rounded-[14px] border border-line-strong bg-modal p-[24px] shadow-[0_20px_80px_#0008] light:shadow-[0_1px_2px_#0000000f,0_16px_48px_#0000001f]}
   .modal h2{@apply mt-0 mb-[7px] font-serif text-[19px] font-semibold text-ink}
   .muted{@apply mt-0 mb-[6px] text-[11px] text-muted}
-  .hint{@apply mt-[10px] flex flex-wrap items-center gap-[6px] text-[10px] leading-[1.6] text-subtle}
+  .hint{@apply mt-[10px] mb-0 flex flex-wrap items-center gap-[6px] text-[10px] leading-[1.6] text-subtle}
   .actions{@apply mt-[18px] mb-[6px] flex justify-end gap-[8px]}
   .form-actions{@apply mt-[14px] flex items-center justify-end gap-[10px]}
   .form-actions.start{@apply mt-[10px] justify-start}
@@ -138,7 +138,7 @@ html[data-theme="light"]{--bg:#FAF9F5;--sidebar:#F3F1EA;--surface:#FFFFFF;--surf
   .toggle-row>span{@apply flex flex-1 flex-col gap-[3px]}
   .toggle-row b{@apply text-[11.5px] text-ink-2}
   .toggle-row small{@apply text-[9.5px] leading-[1.6] text-muted}
-  .segmented{@apply mt-[8px] flex gap-[2px] rounded-[9px] border border-line-input bg-input p-[3px]}
+  .segmented{@apply mt-[8px] flex gap-[2px] rounded-[9px] border border-line-input bg-inset p-[3px]}
   .segmented button{@apply flex-1 rounded-[7px] border-0 bg-transparent px-[4px] py-[8px] text-[10px] whitespace-nowrap text-muted}
   .segmented button.active{@apply bg-accent font-bold text-on-accent}
   .segmented.small{@apply m-0 w-[150px]}

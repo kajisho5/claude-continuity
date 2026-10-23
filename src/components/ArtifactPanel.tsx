@@ -36,10 +36,14 @@ function MermaidPreview({ artifact }: { artifact: ArtifactRequest }) {
     renderMermaid(artifact.code).then(s => { if (alive) setSvg(s); }).catch(e => { if (alive) setError(e instanceof Error ? e.message : String(e)); });
     return () => { alive = false; };
   }, [artifact.code]);
-  if (error) return <div className="artifact-error"><b>図を描けませんでした</b><pre>{error}</pre></div>;
-  if (!svg) return <div className="artifact-loading">図を描いています…</div>;
-  return <iframe className="artifact-frame" title={artifact.title} sandbox="" srcDoc={previewDocument({ language: "svg", code: svg })} />;
+  if (error) return <div className={"artifact-error " + PLACEHOLDER}><b>図を描けませんでした</b><pre className="m-0 max-w-full font-mono text-[11.5px] leading-[1.6] whitespace-pre-wrap text-danger">{error}</pre></div>;
+  if (!svg) return <div className={"artifact-loading " + PLACEHOLDER}>図を描いています…</div>;
+  return <iframe className={FRAME} title={artifact.title} sandbox="" srcDoc={previewDocument({ language: "svg", code: svg })} />;
 }
+
+const FRAME = "artifact-frame min-h-0 w-full flex-1 rounded-[10px] border-0 bg-white";
+/** `.artifact-loading, .artifact-error` */
+const PLACEHOLDER = "grid flex-1 place-items-center content-center gap-[8px] rounded-[10px] border border-dashed border-line-strong p-[20px] text-[13px] text-muted";
 
 type Props = { artifact: ArtifactRequest; versions: ArtifactRequest[]; onSelect: (artifact: ArtifactRequest) => void; onClose: () => void };
 
@@ -54,15 +58,17 @@ export default function ArtifactPanel({ artifact, versions, onSelect, onClose }:
     link.href = url; link.download = `${base}.${KIND_EXT[artifact.language]}`; link.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
-  return <aside className="artifact-panel" aria-label="アーティファクト">
-    <header>
-      <b>{artifact.title}</b><small>{KIND_LABEL[artifact.language]}</small>
-      {versions.length > 1 && <span className="alt-switch artifact-versions" aria-label="バージョン">
+  // An <aside>/<header>: these utilities also carry what the old app-wide `aside{}` / `header{}` rules gave it
+  // (border-right, overflow hidden, width/padding transition; header font-size, color, bold weight).
+  return <aside className="artifact-panel flex min-h-0 w-[min(470px,42%)] shrink-0 animate-slide-in flex-col gap-[10px] overflow-hidden border-x border-line bg-panel px-[18px] py-[16px] transition-[width,padding] duration-[.22s] ease-claude" aria-label="アーティファクト">
+    <header className="flex h-auto shrink-0 items-center justify-start gap-[8px] border-0 p-0 text-[12px] text-muted">
+      <b className="font-serif text-[14px] font-medium text-ink">{artifact.title}</b><small className="flex-[0_0_auto] text-[11px] text-muted">{KIND_LABEL[artifact.language]}</small>
+      {versions.length > 1 && <span className="alt-switch artifact-versions mx-[2px] inline-flex items-center gap-0 text-[11.5px] text-muted tabular-nums" aria-label="バージョン">
         <button className="icon-action" disabled={index === 0} onClick={() => onSelect(versions[index - 1])} aria-label="前のバージョン"><ChevronLeft size={15} /></button>
         v{index + 1} / {versions.length}
         <button className="icon-action" disabled={index >= versions.length - 1} onClick={() => onSelect(versions[index + 1])} aria-label="次のバージョン"><ChevronRight size={15} /></button>
       </span>}
-      <span className="spacer" />
+      <span className="spacer flex-1" />
       <div className="segmented small" role="tablist">
         <button role="tab" aria-selected={tab === "preview"} className={tab === "preview" ? "active" : ""} onClick={() => setTab("preview")}>プレビュー</button>
         <button role="tab" aria-selected={tab === "code"} className={tab === "code" ? "active" : ""} onClick={() => setTab("code")}>コード</button>
@@ -70,14 +76,14 @@ export default function ArtifactPanel({ artifact, versions, onSelect, onClose }:
       <button className="icon-btn" onClick={onClose} aria-label="閉じる"><X size={16} /></button>
     </header>
     {tab === "code"
-      ? <pre className="artifact-code">{artifact.code}</pre>
+      ? <pre className="artifact-code m-0 min-h-0 flex-1 overflow-auto rounded-[10px] border border-line bg-code p-[12px] font-mono text-[11.5px] leading-[1.6] whitespace-pre-wrap text-ink-3 light:text-[#DAD6CC]">{artifact.code}</pre>
       : artifact.language === "markdown"
-        ? <div className="artifact-doc"><Markdown text={artifact.code} /></div>
+        ? <div className="artifact-doc min-h-0 flex-1 overflow-auto rounded-[10px] border border-line bg-surface px-[22px] py-[18px]"><Markdown text={artifact.code} className="font-chat text-[14.5px] leading-[1.8] text-ink-3" /></div>
         : artifact.language === "mermaid"
           ? <MermaidPreview artifact={artifact} />
-          : <iframe className="artifact-frame" title={artifact.title} sandbox="allow-scripts" srcDoc={previewDocument({ language: artifact.language, code: artifact.code })} />}
-    {(artifact.language === "html" || artifact.language === "svg" || artifact.language === "mermaid") && <p className="hint">sandbox 付き iframe で表示しています（ネットワーク・アプリ本体へのアクセスなし）</p>}
-    <div className="artifact-actions">
+          : <iframe className={FRAME} title={artifact.title} sandbox="allow-scripts" srcDoc={previewDocument({ language: artifact.language, code: artifact.code })} />}
+    {(artifact.language === "html" || artifact.language === "svg" || artifact.language === "mermaid") && <p className="hint mb-0">sandbox 付き iframe で表示しています（ネットワーク・アプリ本体へのアクセスなし）</p>}
+    <div className="artifact-actions flex items-center gap-[8px]">
       <button className="btn-secondary" onClick={download}><Download size={14} /> .{KIND_EXT[artifact.language]} で保存</button>
       <CopyButton text={artifact.code} />
     </div>

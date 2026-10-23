@@ -30,13 +30,20 @@ function plainText(node: ReactNode): string {
   return "";
 }
 
-export function CopyButton({ text, label = "コピー", iconOnly = false }: { text: string; label?: string; iconOnly?: boolean }) {
+const COPY_BTN = "copy-btn inline-flex items-center gap-[5px] rounded-[6px] border border-line bg-transparent px-[8px] py-[3px] text-[10px] text-muted hover:border-line-input hover:text-ink-2";
+
+/** `className` adds contextual utilities (e.g. the code-block header's light-theme colors). */
+export function CopyButton({ text, label = "コピー", iconOnly = false, className = "" }: { text: string; label?: string; iconOnly?: boolean; className?: string }) {
   const [done, setDone] = useState(false);
-  return <button className={(iconOnly ? "icon-action" : "copy-btn") + " tip"} data-tip={done ? "コピーしました" : label} aria-label={label}
+  return <button className={(iconOnly ? "icon-action" : COPY_BTN) + " tip" + (className ? " " + className : "")} data-tip={done ? "コピーしました" : label} aria-label={label}
     onClick={() => { void copyText(text).then(() => { setDone(true); setTimeout(() => setDone(false), 1500); }); }}>
     {done ? <Check size={iconOnly ? 15 : 13} /> : <Copy size={iconOnly ? 15 : 13} />}{!iconOnly && (done ? "コピーしました" : label)}
   </button>;
 }
+
+/** Shared with the artifacts page (`.artifact-thumb`); callers add the size. */
+export const ARTIFACT_THUMB = "artifact-thumb grid shrink-0 place-items-center rounded-[10px] border border-line bg-inset text-link";
+const SHIMMER = "shimmer animate-shimmer bg-[image:linear-gradient(90deg,var(--muted)_0%,var(--muted)_40%,var(--text)_50%,var(--muted)_60%,var(--muted)_100%)] bg-size-[250%_100%] bg-clip-text text-transparent";
 
 /** Previewable code shows as an artifact card that opens the side panel, as in the Claude apps. */
 function ArtifactCard({ language, code, children }: { language: ArtifactKind; code: string; children: ReactNode }) {
@@ -44,23 +51,23 @@ function ArtifactCard({ language, code, children }: { language: ArtifactKind; co
   const [showCode, setShowCode] = useState(false);
   const title = artifactTitle(language, code);
   const lines = code.split("\n").length;
-  return <div className="artifact-card-wrap">
-    <div className="artifact-card" role="button" tabIndex={0} onClick={() => openArtifact({ title, language, code })}
+  return <div className="artifact-card-wrap my-[.9em] font-sans">
+    <div className="artifact-card group/card flex max-w-[440px] cursor-pointer items-center gap-[14px] rounded-[14px] border border-line-strong bg-surface py-[10px] pr-[14px] pl-[10px] transition-[border-color,transform,box-shadow] duration-150 ease-[ease] hover:border-line-input hover:shadow-[0_6px_20px_#0004] hover:[transform:translateY(-1px)]" role="button" tabIndex={0} onClick={() => openArtifact({ title, language, code })}
       onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openArtifact({ title, language, code }); } }}>
-      <span className="artifact-thumb">{language === "svg" ? <ImageIcon size={20} /> : language === "markdown" ? <FileText size={20} /> : language === "mermaid" ? <Workflow size={20} /> : <Code2 size={20} />}</span>
-      <span className="artifact-meta"><b>{title}</b><small>{KIND_LABEL[language]} · {lines} 行 · クリックして開く</small></span>
-      <Eye size={16} className="artifact-open" />
+      <span className={ARTIFACT_THUMB + " size-[52px]"}>{language === "svg" ? <ImageIcon size={20} /> : language === "markdown" ? <FileText size={20} /> : language === "mermaid" ? <Workflow size={20} /> : <Code2 size={20} />}</span>
+      <span className="artifact-meta flex min-w-0 flex-1 flex-col gap-[3px]"><b className="truncate text-[14px] font-semibold text-ink">{title}</b><small className="text-[11.5px] text-muted">{KIND_LABEL[language]} · {lines} 行 · クリックして開く</small></span>
+      <Eye size={16} className="artifact-open shrink-0 text-subtle group-hover/card:text-ink-3" />
     </div>
-    <button className="artifact-code-toggle" onClick={() => setShowCode(v => !v)} aria-expanded={showCode}>
-      <ChevronDown size={13} className={showCode ? "open" : ""} />{showCode ? "コードを隠す" : "コードを表示"}</button>
+    <button className="artifact-code-toggle mt-[6px] mr-0 mb-0 ml-[4px] inline-flex items-center gap-[5px] rounded-[6px] border-0 bg-transparent px-[4px] py-[3px] text-[11.5px] text-subtle hover:text-ink-3" onClick={() => setShowCode(v => !v)} aria-expanded={showCode}>
+      <ChevronDown size={13} className={"transition-transform duration-[.18s] ease-claude" + (showCode ? " open rotate-180" : "")} />{showCode ? "コードを隠す" : "コードを表示"}</button>
     {showCode && <CodeFrame language={language} code={code}>{children}</CodeFrame>}
   </div>;
 }
 
 function CodeFrame({ language, code, children }: { language: string; code: string; children: ReactNode }) {
-  return <div className="code-block">
-    <div className="code-head"><span>{language}</span><span className="code-actions"><CopyButton text={code} /></span></div>
-    <pre>{children}</pre>
+  return <div className="code-block my-[.8em] overflow-hidden rounded-[12px] border border-line bg-code">
+    <div className="code-head flex items-center justify-between bg-surface py-[5px] pr-[8px] pl-[12px] font-mono text-[10px] text-muted light:bg-[#2A2926] light:text-[#B9B4A8]"><span>{language}</span><span className="code-actions flex gap-[6px]"><CopyButton text={code} className="light:border-[#45433E]! light:text-[#B9B4A8]!" /></span></div>
+    <pre className="m-0 overflow-x-auto px-[14px] py-[12px] text-[12px] leading-[1.6]">{children}</pre>
   </div>;
 }
 
@@ -85,8 +92,8 @@ export function linkCitations(text: string, citations: { url: string; title: str
 }
 
 /** Renders assistant Markdown (GFM tables, code highlighting). Raw HTML is never rendered. */
-function MarkdownBody({ text }: { text: string }) {
-  return <div className="markdown">
+function MarkdownBody({ text, className }: { text: string; className?: string }) {
+  return <div className={"markdown" + (className ? " " + className : "")}>
     <ReactMarkdown remarkPlugins={[remarkGfm, [remarkMath, { singleDollarTextMath: false }]]} rehypePlugins={[[rehypeKatex, { throwOnError: false, strict: "ignore" }], [rehypeHighlight, { detect: true }]]}
       components={{
         pre: ({ children }) => <CodeBlock>{children}</CodeBlock>,
@@ -99,8 +106,8 @@ export const Markdown = memo(MarkdownBody);
 export function ThinkingBlock({ text, live, seconds }: { text: string; live?: boolean; seconds?: number }) {
   if (!text && !live) return null;
   const label = live ? "考えています…" : seconds != null && seconds >= 1 ? `${Math.round(seconds)}秒間考えました` : "思考プロセス";
-  return <details className={"thinking" + (live ? " live" : "")}>
-    <summary><span className={live ? "shimmer" : ""}>{label}</span><ChevronDown size={14} className="chev" /></summary>
-    {text && <div className="thinking-body">{text}</div>}
+  return <details className={"thinking group/think mt-0 mx-0 mb-[10px] rounded-[9px] border-0 bg-transparent text-[13px]" + (live ? " live" : "")}>
+    <summary className="inline-flex cursor-pointer list-none items-center gap-[6px] rounded-[6px] py-[4px] pr-[8px] pl-0 text-muted select-none hover:text-ink-2 [&::-webkit-details-marker]:hidden"><span className={live ? SHIMMER : ""}>{label}</span><ChevronDown size={14} className="chev transition-transform duration-200 ease-claude group-open/think:rotate-180" /></summary>
+    {text && <div className="thinking-body mt-[6px] mx-0 mb-[4px] max-h-[360px] animate-fade-in overflow-auto border-l-2 border-line-strong py-[2px] pr-0 pl-[14px] text-[13px] leading-[1.7] whitespace-pre-wrap text-muted">{text}</div>}
   </details>;
 }

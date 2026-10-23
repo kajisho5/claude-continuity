@@ -30,19 +30,19 @@ function StylesEditor({ prefs, onSave, model, onUsage }: { prefs: Prefs; onSave:
     finally { setBusy(false); }
   }
   return <>
-    <h3>カスタムスタイル</h3>
+    <h3 className="m-[0_0_6px] font-serif text-[16px] leading-[normal] font-semibold text-ink">カスタムスタイル</h3>
     <p className="muted">入力欄のツール →「スタイルを使用」から選べます。</p>
-    <div className="style-editor-list">
-      {styles.map(st => <div key={st.id} className="style-editor">
-        <div className="style-editor-head"><input className="text-input" value={st.name} maxLength={40} onChange={e => patch(st.id, { name: e.target.value })} aria-label="スタイル名" placeholder="スタイル名" />
+    <div className="style-editor-list mt-[10px] flex flex-col gap-[10px]">
+      {styles.map(st => <div key={st.id} className="style-editor flex flex-col gap-[6px] rounded-[10px] border border-line bg-inset p-[10px]">
+        <div className="style-editor-head flex items-center gap-[6px]"><input className="text-input px-[10px] py-[7px] font-semibold" value={st.name} maxLength={40} onChange={e => patch(st.id, { name: e.target.value })} aria-label="スタイル名" placeholder="スタイル名" />
           <button className="icon-btn" onClick={() => setStyles(list => list.filter(x => x.id !== st.id))} aria-label={`${st.name} を削除`}><Trash2 size={14} /></button></div>
-        <textarea className="text-input" value={st.prompt} maxLength={4000} onChange={e => patch(st.id, { prompt: e.target.value })} aria-label={`${st.name} の指示`} placeholder="例: 箇条書き中心で、専門用語には短い補足を付けてください。" />
+        <textarea className="text-input min-h-[60px]" value={st.prompt} maxLength={4000} onChange={e => patch(st.id, { prompt: e.target.value })} aria-label={`${st.name} の指示`} placeholder="例: 箇条書き中心で、専門用語には短い補足を付けてください。" />
       </div>)}
     </div>
-    {sampleOpen && <div className="style-sample">
-      <label className="field"><span>文章サンプル <small className="muted inline">自分の書いた文章やお手本を貼り付けてください。書き方だけを真似します</small></span>
+    {sampleOpen && <div className="style-sample mt-[10px] rounded-[10px] border border-dashed border-line-strong p-[12px]">
+      <label className="field"><span>文章サンプル <small className="muted inline ml-[6px] text-[9.5px] font-normal">自分の書いた文章やお手本を貼り付けてください。書き方だけを真似します</small></span>
         <textarea className="text-input tall" value={sample} onChange={e => setSample(e.target.value)} placeholder="ここにサンプルの文章を貼り付け（40文字以上）" /></label>
-      <div className="form-actions start"><button className="btn-primary small" disabled={busy || sample.trim().length < 40 || !model} onClick={() => void fromSample()}><Sparkles size={13} className={busy ? "spin" : ""} />{busy ? "分析しています…" : "このサンプルからスタイルを作る"}</button>
+      <div className="form-actions start"><button className="btn-primary small" disabled={busy || sample.trim().length < 40 || !model} onClick={() => void fromSample()}><Sparkles size={13} className={busy ? "spin animate-spin" : ""} />{busy ? "分析しています…" : "このサンプルからスタイルを作る"}</button>
         <button className="btn-text" onClick={() => setSampleOpen(false)}>やめる</button></div>
     </div>}
     <div className="form-actions">{message && <span className="form-message">{message}</span>}
@@ -72,25 +72,25 @@ export default function PreferencesSection({ prefs, onSave, model, onUsage }: { 
   }
   return <section className="credit-form">
     <StylesEditor prefs={prefs} onSave={onSave} model={model} onUsage={onUsage} />
-    <h3 className="spaced">メモリ</h3>
+    <h3 className="spaced m-[0_0_6px] font-serif text-[16px] leading-[normal] font-semibold text-ink">メモリ</h3>
     <p className="muted">メモリをオンにした会話で Claude が読み書きする内容です。ここで直接直したり、覚えておいてほしいことを書き足したりできます。</p>
     {memory === null ? <p className="hint">読み込み中…</p> : memory.length === 0 && !adding ? <p className="hint">保存されたメモリはありません。</p> :
-      <ul className="memory-list">{memory.map(file => <li key={file.path}>
+      <ul className="memory-list m-[8px_0_0] flex list-none flex-col gap-[6px] p-0">{memory.map(file => <li key={file.path} className="flex items-start gap-[6px] rounded-[8px] border border-line bg-inset px-[8px] py-[6px]">
         {editing?.path === file.path
-          ? <div className="memory-edit"><code>{file.path}</code>
+          ? <div className="memory-edit flex min-w-0 flex-1 flex-col gap-[6px]"><code className="rounded-[4px] bg-surface px-[.35em] py-[.05em] font-mono text-[10.5px] text-muted">{file.path}</code>
             <textarea className="text-input tall" value={editing.text} onChange={e => setEditing({ ...editing, text: e.target.value })} aria-label={`${file.path} の内容`} />
             <div className="form-actions start"><button className="btn-primary small" onClick={() => void write(file.path, editing.text)}>保存</button><button className="btn-text" onClick={() => setEditing(null)}>キャンセル</button></div></div>
-          : <details><summary><code>{file.path}</code><small>{formatBytes(file.size)}</small></summary><pre>{file.content}</pre></details>}
+          : <details className="min-w-0 flex-1"><summary className="flex cursor-pointer items-center gap-[8px] text-[10.5px]"><code className="rounded-[4px] bg-surface px-[.35em] py-[.05em] font-mono text-[.9em]">{file.path}</code><small className="ml-auto text-subtle">{formatBytes(file.size)}</small></summary><pre className="m-[8px_0_2px] max-h-[200px] overflow-auto font-mono text-[10.5px] leading-[1.6] font-normal whitespace-pre-wrap text-muted">{file.content}</pre></details>}
         {editing?.path !== file.path && <button className="icon-btn" onClick={() => setEditing({ path: file.path, text: file.content })} aria-label={`${file.path} を編集`}><Pencil size={14} /></button>}
         <button className="icon-btn" onClick={() => void remove(file.path)} aria-label={`${file.path} を削除`}><Trash2 size={14} /></button>
       </li>)}</ul>}
     {adding
-      ? <div className="memory-edit new">
+      ? <div className="memory-edit new mt-[10px] flex min-w-0 flex-1 flex-col gap-[6px] rounded-[10px] border border-dashed border-line-strong p-[10px]">
         <input className="text-input" value={adding.name} onChange={e => setAdding({ ...adding, name: e.target.value })} placeholder="ファイル名（例: 好み.md）" aria-label="メモリのファイル名" />
         <textarea className="text-input tall" value={adding.text} onChange={e => setAdding({ ...adding, text: e.target.value })} placeholder="例: 数字は千円単位で表示する。会議資料は A4 横で作る。" aria-label="メモリの内容" />
         <div className="form-actions start"><button className="btn-primary small" disabled={!adding.name.trim() || !adding.text.trim()} onClick={() => void write("/memories/" + adding.name.trim().replace(/[\\/]/g, "_"), adding.text).then(() => setAdding(null))}>追加</button>
           <button className="btn-text" onClick={() => setAdding(null)}>キャンセル</button></div></div>
       : <div className="form-actions start"><button className="btn-secondary small" onClick={() => setAdding({ name: "", text: "" })}><Plus size={13} />メモリを書き足す</button></div>}
-    {memoryError && <p className="form-message error">{memoryError}</p>}
+    {memoryError && <p className="form-message error text-danger">{memoryError}</p>}
   </section>;
 }

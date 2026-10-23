@@ -30,16 +30,16 @@ export default function DataSection({ onNotice }: { onNotice: Notice }) {
     finally { setBusy(false); }
   }
   return <>
-    <h3>バックアップ</h3>
+    <h3 className="m-[0_0_6px] font-serif text-[16px] leading-[normal] font-semibold text-ink">バックアップ</h3>
     <p className="muted">会話・プロジェクト・添付ファイル・メモリ・設定・使用量の記録を 1 つの ZIP にまとめます。別の PC への引っ越しにも使えます。</p>
     <p className="muted">API キーは含めません（この PC 専用の暗号化で保存しているため）。復元先で設定し直してください。</p>
     <div className="form-actions start"><button className="btn-primary" disabled={busy} onClick={() => void backup()}><Download size={14} />バックアップを作成</button></div>
-    <h3 className="spaced">バックアップから復元</h3>
+    <h3 className="spaced m-[0_0_6px] font-serif text-[16px] leading-[normal] font-semibold text-ink mt-[26px]">バックアップから復元</h3>
     <p className="muted">いまのデータをバックアップの内容で置き換えます。置き換える前の状態は自動で保存されるので、間違えても戻せます。</p>
     <div className="form-actions start"><button className="btn-secondary" disabled={busy} onClick={() => setConfirm(true)}><ArchiveRestore size={14} />ZIP を選んで復元…</button></div>
-    <h3 className="spaced">保存場所</h3>
+    <h3 className="spaced m-[0_0_6px] font-serif text-[16px] leading-[normal] font-semibold text-ink mt-[26px]">保存場所</h3>
     <p className="muted">データはこの PC の次のフォルダにだけ保存されます。クラウドには同期しません。</p>
-    <div className="path-row"><code>{dataDir || "…"}</code>
+    <div className="path-row mt-[8px] flex items-center gap-[10px] rounded-[9px] border border-line bg-inset py-[8px] pr-[8px] pl-[12px]"><code className="min-w-0 flex-1 font-mono text-[11.5px] leading-[normal] font-normal [overflow-wrap:anywhere] text-ink-4">{dataDir || "…"}</code>
       <button className="btn-secondary small" onClick={() => void window.continuity.openDataFolder().catch(e => onNotice("フォルダを開けませんでした: " + message(e), "error"))}><FolderOpen size={13} />開く</button></div>
     {confirm && <ConfirmDialog title="バックアップから復元しますか？" confirm="ZIP を選ぶ"
       body="いまの会話・プロジェクト・設定などが、選んだバックアップの内容に置き換わります。置き換える前の状態は自動で保存されます。"
