@@ -1,0 +1,43 @@
+name: E2E on Windows and macOS
+# The same end-to-end flows as "Build and test", run on real Windows and macOS runners: the built app is
+# launched and driven against mock servers, so platform differences (paths, process spawning, key storage,
+# window lifecycle) are exercised, not only Linux.
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  e2e:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - run: npm ci
+        env:
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
+      - run: npm run build
+      - name: E2E tests (Electron + Playwright)
+        run: npm run test:e2e
+        env:
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
+          # Flow state goes to the runner's temp folder, so failed flows can be uploaded below.
+          TMPDIR: ${{ runner.temp }}
+          TEMP: ${{ runner.temp }}
+          TMP: ${{ runner.temp }}
+      - name: Keep the state of failed flows
+        if: failure()
+        uses: actions/upload-artifact@v6
+        with:
+          name: e2e-failures-${{ matrix.os }}
+          path: ${{ runner.temp }}/cc-e2e-*
+          if-no-files-found: ignore
