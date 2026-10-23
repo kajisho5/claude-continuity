@@ -32,6 +32,8 @@ export default function UpdateSection() {
             <RefreshCw size={13} className={status.state === "checking" ? "spin" : ""} />更新を確認</button>}
     </div>
     {statusText(status) && <p className={"muted update-text" + (status.state === "error" ? " error" : "")}>{statusText(status)}</p>}
-    <p className="muted">更新は GitHub の Releases から配布されます。ダウンロードやインストールは、ボタンを押したときだけ行います。</p>
+    {status.state === "downloading" && <span className="update-progress wide"><i style={{ width: `${status.percent}%` }} /></span>}
+    {(status.state === "available" || status.state === "ready") && status.notes && <details className="update-notes" open><summary>変更内容</summary><pre>{status.notes}</pre></details>}
+    <p className="muted">起動時と数時間ごとに新しいバージョンを確認し、見つかったら通知します（設定 →「一般」でオフにできます）。ダウンロードと再起動は、ボタンを押したときだけ行います。</p>
   </div>;
 }

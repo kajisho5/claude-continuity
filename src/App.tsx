@@ -102,7 +102,7 @@ export default function App() {
  const [confirmDelete,setConfirmDelete]=useState<string|null>(null);
  const [handoff,setHandoff]=useState(false);
  const [update,setUpdate]=useState<UpdateStatus>({state:"idle"});
- const [updateDismissed,setUpdateDismissed]=useState(false);
+ const [updateDismissed,setUpdateDismissed]=useState("");
  const pendingRef=useRef<Pending|null>(null);
  const composerRef=useRef<ComposerHandle>(null);
  const searchRef=useRef<HTMLInputElement>(null);
@@ -446,11 +446,13 @@ export default function App() {
     </div>
     {artifact&&<ArtifactPanel artifact={artifact} onClose={()=>setArtifact(null)}/>}
    </div>}
-   {!updateDismissed&&(update.state==="available"||update.state==="downloading"||update.state==="ready")&&<div className="update-banner" role="status">
-     <span>{statusText(update)}</span>
+   {(update.state==="available"||update.state==="downloading"||update.state==="ready")&&updateDismissed!==update.state+update.version&&<div className="update-banner" role="status">
+     <span className="update-banner-text"><b>{update.state==="ready"?"アップデートの準備ができました":"アップデートがあります"}</b>{statusText(update)}</span>
+     {update.state==="downloading"&&<span className="update-progress" aria-label={`${update.percent}%`}><i style={{width:`${update.percent}%`}}/></span>}
+     {update.state!=="downloading"&&"notes" in update&&update.notes&&<button className="link" onClick={()=>setSettings("about")}>変更内容</button>}
      {update.state==="available"&&<button className="btn-primary small" onClick={()=>void window.continuity.downloadUpdate()}>ダウンロード</button>}
      {update.state==="ready"&&<button className="btn-primary small" onClick={()=>void window.continuity.installUpdate()}>再起動して更新</button>}
-     <button className="ghost-btn small" aria-label="閉じる" onClick={()=>setUpdateDismissed(true)}>×</button>
+     {update.state!=="downloading"&&<button className="btn-text" onClick={()=>setUpdateDismissed(update.state+update.version)}>あとで</button>}
    </div>}
    {dragging&&<div className="drop-hint">ここにドロップして添付</div>}
   </main>

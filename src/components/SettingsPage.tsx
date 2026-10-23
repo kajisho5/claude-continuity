@@ -86,6 +86,8 @@ export default function SettingsPage(p: Props) {
             <input type="checkbox" className="switch" checked={p.prefs.searchPastChats} onChange={e => update({ searchPastChats: e.target.checked })} /></label>
           <label className="toggle-row"><span><b>回答が終わったら通知する</b><small>アプリが前面にないとき、OS の通知でお知らせします。通知をクリックするとその会話を開きます。</small></span>
             <input type="checkbox" className="switch" checked={p.prefs.notifyOnReply} onChange={e => update({ notifyOnReply: e.target.checked })} /></label>
+          <label className="toggle-row"><span><b>アップデートを自動で確認する</b><small>起動時と数時間ごとに新しいバージョンを確認し、見つかったら通知します。ダウンロードはボタンを押したときだけです。</small></span>
+            <input type="checkbox" className="switch" checked={p.prefs.checkUpdates} onChange={e => update({ checkUpdates: e.target.checked })} /></label>
           <label className="toggle-row"><span><b>会話タイトルを自動で付ける</b><small>最初の回答のあと、Haiku で短いタイトルを付けます（ごく少額のクレジットを使います）</small></span>
             <input type="checkbox" className="switch" checked={p.prefs.autoTitle} onChange={e => update({ autoTitle: e.target.checked })} /></label>
         </>}

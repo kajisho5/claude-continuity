@@ -43,7 +43,7 @@ app.whenReady().then(async () => {
   // The renderer follows prefers-color-scheme, which nativeTheme.themeSource controls.
   nativeTheme.themeSource = (await loadPrefs()).theme;
   createWindow();
-  setupUpdater(() => mainWindow);
+  setupUpdater(() => mainWindow, { enabled: async () => (await loadPrefs()).checkUpdates });
   app.on("activate", () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
 });
 app.on("window-all-closed", () => { if (process.platform !== "darwin") app.quit(); });
@@ -375,7 +375,7 @@ ipcMain.handle("credit:save", async (_event, value: any) => {
 const prefsFile = () => path.join(dataDir(), "prefs.json");
 type Theme = "system" | "light" | "dark";
 type ChatFont = "serif" | "sans" | "system";
-type Prefs = { autoTitle: boolean; customStyle: string; displayName: string; theme: Theme; chatFont: ChatFont; shareName: boolean; preferences: string; searchPastChats: boolean; notifyOnReply: boolean };
+type Prefs = { autoTitle: boolean; customStyle: string; displayName: string; theme: Theme; chatFont: ChatFont; shareName: boolean; preferences: string; searchPastChats: boolean; notifyOnReply: boolean; checkUpdates: boolean };
 const THEMES: Theme[] = ["system", "light", "dark"];
 const FONTS: ChatFont[] = ["serif", "sans", "system"];
 function sanitizePrefs(raw: any): Prefs {
@@ -389,7 +389,8 @@ function sanitizePrefs(raw: any): Prefs {
     shareName: raw?.shareName === true,
     preferences: typeof raw?.preferences === "string" ? raw.preferences.slice(0, 4000) : "",
     searchPastChats: raw?.searchPastChats !== false,
-    notifyOnReply: raw?.notifyOnReply !== false
+    notifyOnReply: raw?.notifyOnReply !== false,
+    checkUpdates: raw?.checkUpdates !== false
   };
 }
 async function loadPrefs(): Promise<Prefs> {

@@ -87,13 +87,11 @@
       ],
       "category": "Office"
     },
-    "publish": [
-      {
-        "provider": "github",
-        "owner": "kajisho5",
-        "repo": "claude-continuity"
-      }
-    ],
+    "publish": {
+      "provider": "github",
+      "owner": "kajisho5",
+      "repo": "claude-continuity"
+    },
     "asarUnpack": [
       "dist-mcp/**"
     ]

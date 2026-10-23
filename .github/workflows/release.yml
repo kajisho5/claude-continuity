@@ -1,6 +1,12 @@
 name: Release Windows installer
-# Push a tag like v0.2.0 (matching package.json "version") to publish the installer on the Releases page.
-# latest.yml and the blockmap let installed copies update themselves (electron-updater, GitHub provider).
+# Push a tag like v0.2.0 (matching package.json "version") to publish the installer.
+# latest.yml and the blockmap let installed copies find and download updates (electron-updater, GitHub provider).
+#
+# Where updates are published:
+# - Repository variable RELEASES_REPO (e.g. kajisho5/claude-continuity-releases) set: the installer goes to that
+#   public repository, so the app can check for updates while this source repository stays private.
+#   Requires secret RELEASES_TOKEN: a fine-grained token with "Contents: Read and write" on that repository only.
+# - Not set: the installer goes to this repository's Releases (updates then work only if this repository is public).
 on:
   push:
     tags: ["v*"]
@@ -16,10 +22,12 @@ jobs:
     runs-on: windows-latest
     env:
       TAG: ${{ github.event.inputs.tag || github.ref_name }}
+      TARGET_REPO: ${{ vars.RELEASES_REPO || github.repository }}
     steps:
       - uses: actions/checkout@v4
         with:
           ref: ${{ env.TAG }}
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: 20
@@ -28,18 +36,37 @@ jobs:
         run: |
           version="v$(node -p "require('./package.json').version")"
           if [ "$version" != "$TAG" ]; then echo "::error::tag $TAG does not match package.json $version"; exit 1; fi
+      - name: Check token for an external releases repository
+        if: ${{ vars.RELEASES_REPO != '' }}
+        shell: bash
+        env:
+          HAS_TOKEN: ${{ secrets.RELEASES_TOKEN != '' }}
+        run: |
+          if [ "$HAS_TOKEN" != "true" ]; then echo "::error::RELEASES_REPO is set but secret RELEASES_TOKEN is missing"; exit 1; fi
       - run: npm install
       - run: npm test
-      - name: Build installer
+      - name: Build installer (update feed points at the target repository)
         shell: bash
-        run: npm run build && npx electron-builder --win nsis --publish never
+        run: |
+          owner="${TARGET_REPO%%/*}"; repo="${TARGET_REPO#*/}"
+          npm run build
+          npx electron-builder --win nsis --publish never -c.publish.provider=github "-c.publish.owner=$owner" "-c.publish.repo=$repo"
+      - name: Write release notes
+        shell: bash
+        run: |
+          previous="$(git describe --tags --abbrev=0 "$TAG^" 2>/dev/null || true)"
+          {
+            echo "## 変更内容"
+            if [ -n "$previous" ]; then git log --no-merges --pretty='- %s' "$previous..$TAG"; else git log --no-merges --pretty='- %s' -n 30 "$TAG"; fi
+          } > release-notes.md
       - name: Publish release
         shell: bash
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ vars.RELEASES_REPO != '' && secrets.RELEASES_TOKEN || github.token }}
         run: |
-          if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release upload "$TAG" release/*.exe release/*.exe.blockmap release/latest.yml --clobber
+          files=(release/*.exe release/*.exe.blockmap release/latest.yml)
+          if gh release view "$TAG" --repo "$TARGET_REPO" >/dev/null 2>&1; then
+            gh release upload "$TAG" "${files[@]}" --repo "$TARGET_REPO" --clobber
           else
-            gh release create "$TAG" release/*.exe release/*.exe.blockmap release/latest.yml --title "Claude Continuity $TAG" --generate-notes
+            gh release create "$TAG" "${files[@]}" --repo "$TARGET_REPO" --title "Claude Continuity $TAG" --notes-file release-notes.md
           fi
