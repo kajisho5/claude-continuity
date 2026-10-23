@@ -14,6 +14,7 @@
     "test": "vitest run",
     "build:mcp": "esbuild mcp/server.ts --bundle --platform=node --target=node18 --outfile=dist-mcp/server.js",
     "build:runtime": "esbuild src/artifact-runtime/runtime.tsx --bundle --minify --format=iife --platform=browser --define:process.env.NODE_ENV=\\\"production\\\" --outfile=src/generated/artifact-runtime.js --log-level=warning",
+    "pretest:e2e": "install-electron",
     "test:e2e": "node e2e/run.cjs"
   },
   "dependencies": {
@@ -47,8 +48,8 @@
     "@types/react-dom": "^19.0.0",
     "@vitejs/plugin-react": "^4.3.4",
     "concurrently": "^9.1.2",
-    "electron": "^34.0.0",
-    "electron-builder": "^25.1.8",
+    "electron": "^45.0.0",
+    "electron-builder": "^26.15.3",
     "esbuild": "^0.24.2",
     "playwright": "1.56.1",
     "recharts": "^3.10.1",
@@ -109,6 +110,10 @@
       ],
       "artifactName": "Claude-Continuity-${version}-${arch}.${ext}",
       "category": "public.app-category.productivity",
+      "minimumSystemVersion": "13.0",
+      "extendInfo": {
+        "NSAudioCaptureUsageDescription": "Claude Continuity captures your screen only when you press the screenshot button. It does not record audio."
+      },
       "hardenedRuntime": true
     },
     "afterPack": "build/adhoc-sign.cjs",

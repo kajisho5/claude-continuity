@@ -67,6 +67,10 @@ A desktop app (Windows / macOS / Linux, Electron + React) for continuing Claude 
 
 Monthly API credit included with plans such as Max expires at the end of each billing cycle. Check Anthropic's current terms.
 
+## Supported systems
+
+Windows 10 or later (64-bit), macOS 13 Ventura or later (Apple silicon and Intel), and Linux x64 (AppImage). These follow what Electron 45, which the app is built on, supports.
+
 ## Install (Windows)
 
 1. Download `Claude-Continuity-Setup-<version>.exe` from [Releases](https://github.com/kajisho5/claude-continuity/releases) and run it.
