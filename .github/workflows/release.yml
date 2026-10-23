@@ -135,24 +135,33 @@ jobs:
           fi
           asc() { "$dir/venv/bin/python" "$dir/runway/scripts/asc.py" "$@"; }
           asc decrypt-key "$src/devid.key.enc" "$dir/devid.key"
-          p12pass="$(uuidgen)"
-          echo "::add-mask::$p12pass"
+          kcpass="$(uuidgen)"
+          echo "::add-mask::$kcpass"
           # macOS's `security import` rejects PKCS#12 files using OpenSSL 3's default AES/SHA-256 MAC
           # ("MAC verification failed ... wrong password?"), so write it with the SHA-1/3DES algorithms it accepts.
           /usr/bin/openssl x509 -inform DER -in "$src/developer_id_application.cer" -out "$dir/devid.pem"
-          /usr/bin/openssl pkcs12 -export -inkey "$dir/devid.key" -in "$dir/devid.pem" -name devid -out "$dir/devid.p12" -passout "pass:$p12pass" \
+          /usr/bin/openssl pkcs12 -export -inkey "$dir/devid.key" -in "$dir/devid.pem" -name devid -out "$dir/devid.p12" -passout "pass:$kcpass" \
             -keypbe PBE-SHA1-3DES -certpbe PBE-SHA1-3DES -macalg sha1
-          # Fail here, with a clear step name, if the keychain still cannot read it.
-          kc="$dir/check.keychain-db"
-          security create-keychain -p "$p12pass" "$kc"
-          security import "$dir/devid.p12" -k "$kc" -P "$p12pass" -T /usr/bin/codesign > /dev/null
-          security delete-keychain "$kc"
-          link="$(base64 -i "$dir/devid.p12" | tr -d '\n')"
-          echo "::add-mask::$link"
+          # Our own keychain, set up the way runway's mac-notarize does: electron-builder's temporary keychain failed
+          # at set-key-partition-list ("SecKeychainUnlock: ... passphrase ... not correct") on these runners.
+          kc="$RUNNER_TEMP/release.keychain-db"
+          security create-keychain -p "$kcpass" "$kc"
+          security set-keychain-settings -lut 21600 "$kc"
+          security unlock-keychain -p "$kcpass" "$kc"
+          security import "$dir/devid.p12" -k "$kc" -P "$kcpass" -T /usr/bin/codesign -T /usr/bin/security > /dev/null
+          for ca in DeveloperIDG2CA.cer AppleWWDRCAG3.cer; do
+            curl -fsSL -o "$dir/$ca" "https://www.apple.com/certificateauthority/$ca" && security import "$dir/$ca" -k "$kc" -T /usr/bin/codesign || true
+          done
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$kcpass" "$kc" > /dev/null
+          # shellcheck disable=SC2046  # the existing keychain list is split into separate arguments on purpose
+          security list-keychains -d user -s "$kc" $(security list-keychains -d user | tr -d '"')
+          identity=$(security find-identity -v -p codesigning "$kc" | sed -n 's/.*"\(Developer ID Application: .*\)".*/\1/p' | head -n 1)
+          [ -n "$identity" ] || { echo "::error::Developer ID Application の署名 ID がキーチェーンに無い"; security find-identity -v -p codesigning "$kc"; exit 1; }
           key="$(asc write-key)"
           {
-            echo "CSC_LINK=$link"
-            echo "CSC_KEY_PASSWORD=$p12pass"
+            # electron-builder signs with this identity from the keychain above instead of importing a .p12 itself.
+            echo "CSC_NAME=${identity#Developer ID Application: }"
+            echo "CSC_KEYCHAIN=$kc"
             echo "APPLE_API_KEY=$key"
             echo "APPLE_API_KEY_ID=$ASC_KEY_ID"
             echo "APPLE_API_ISSUER=$ASC_ISSUER_ID"
@@ -199,6 +208,11 @@ jobs:
           npx electron-builder --mac --publish never -c.publish.provider=github "-c.publish.owner=$owner" "-c.publish.repo=$repo" "${extra[@]}"
       - name: Upload to the release
         run: gh release upload "$TAG" release/*.dmg release/*.zip release/*.blockmap release/latest-mac.yml --repo "$TARGET_REPO" --clobber
+      - name: Clean up signing material
+        if: always()
+        run: |
+          rm -rf "$RUNNER_TEMP/keys" "$RUNNER_TEMP/sign" "$RUNNER_TEMP/notary.p8"
+          security delete-keychain "$RUNNER_TEMP/release.keychain-db" 2>/dev/null || true
 
   publish:
     needs: [windows, mac]

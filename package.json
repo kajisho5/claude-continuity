@@ -1,6 +1,6 @@
 {
   "name": "claude-continuity",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "private": true,
   "description": "Local-first desktop app for importing Claude conversation exports and continuing them with the Anthropic API.",
   "main": "dist-electron/main.js",
