@@ -731,3 +731,15 @@ html[data-theme="light"] .artifact-code,html[data-theme="light"] .snippet pre{co
 .path-row{display:flex;align-items:center;gap:10px;margin-top:8px;padding:8px 8px 8px 12px;background:var(--input);border:1px solid var(--border);border-radius:9px}
 .path-row code{flex:1;min-width:0;font:11.5px var(--mono);color:var(--text-4);overflow-wrap:anywhere}
 .toaster{z-index:60}
+
+/* Hand off to the Claude apps */
+.handoff-btn{border-radius:9px;font-size:12px;padding:6px 11px}
+.modal.handoff{width:min(640px,100%);padding:26px 28px 22px}
+.modal.handoff .segmented{margin-top:14px}
+.modal.handoff textarea.handoff-text{margin-top:12px;min-height:260px;max-height:46vh;font-size:12.5px;line-height:1.7}
+.handoff-meta{display:flex;align-items:center;gap:14px;margin-top:6px;font-size:11px;color:var(--subtle)}
+.handoff-meta .over{color:var(--warn)}
+.handoff-meta .link{margin-left:auto}
+.handoff-empty{margin-top:12px;padding:26px 20px;border:1px dashed var(--border-strong);border-radius:12px;text-align:center;display:flex;flex-direction:column;align-items:center;gap:12px}
+.handoff-empty p{margin:0;font-size:12.5px;line-height:1.8;color:var(--text-4)}
+.handoff-empty small{font-size:11px;color:var(--warn)}

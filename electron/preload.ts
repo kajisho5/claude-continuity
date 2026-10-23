@@ -15,6 +15,8 @@ contextBridge.exposeInMainWorld("continuity", {
   backupData: () => ipcRenderer.invoke("data:backup"),
   restoreData: () => ipcRenderer.invoke("data:restore"),
   openDataFolder: () => ipcRenderer.invoke("data:openFolder"),
+  summarizeHandoff: (payload: unknown) => ipcRenderer.invoke("handoff:summarize", payload),
+  openHandoff: (payload: unknown) => ipcRenderer.invoke("handoff:open", payload),
   savePrefs: (prefs: unknown) => ipcRenderer.invoke("prefs:save", prefs),
   loadProjects: () => ipcRenderer.invoke("projects:load"),
   saveProjects: (projects: unknown) => ipcRenderer.invoke("projects:save", projects),

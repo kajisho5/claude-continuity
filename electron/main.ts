@@ -8,6 +8,7 @@ import type { MessageParam, ContentBlock, Message } from "@anthropic-ai/sdk/reso
 import { AttachmentStore, type Attachment } from "./attachments";
 import { listMemoryFiles, runMemoryCommand } from "./memory";
 import { createBackup, readBackup, restoreEntries } from "./backup";
+import { HANDOFF_PREFIX, fitsHandoff } from "../src/lib/handoff";
 import { activityLabel, buildMessages, buildSystem, buildTools, extractFileIds, extractText, type ChatTurn, type Project, type StyleId, type ToolFlags } from "./request";
 
 // Only `npm run dev` passes --dev; `npm start` after a build must load the bundled renderer.
@@ -595,6 +596,41 @@ ipcMain.handle("claude:reply", async (event, payload: ReplyPayload) => {
   return { text, thinking, aborted, usage, citations, files, container, notices: [...built.skipped.map(s => `添付をスキップ: ${s}`), ...unavailable.map(u => `${u}はこのモデルでは使えません`)] };
 });
 
+// ---- Hand off to the Claude apps (claude://claude.ai/new?q=…, prefilled, never auto-sent) ----
+const HANDOFF_SYSTEM = `あなたは会話の引き継ぎメモを書く担当です。渡された会話記録を読み、別の Claude がこのメモだけで作業を続けられるように、日本語で次の見出しの順にまとめてください。
+## 目的
+## これまでに決まったこと・前提
+## 現在の状態（直近の成果物や結論。重要なコード・数値・固有名詞は省略しない）
+## 未解決の点・次にやること
+最後の行に「上記を踏まえて続きを手伝ってください。」と書いてください。全体で 2,500 文字以内。会話にない事実を足さないこと。`;
+ipcMain.handle("handoff:summarize", async (_event, payload: { model: string; title: string; transcript: string }) => {
+  const model = String(payload?.model ?? "");
+  const info = modelCache.get(model);
+  const client = new Anthropic({ apiKey: await getApiKey() });
+  // Keep the newest part when the record is long; the summary is about where things stand now.
+  const transcript = String(payload?.transcript ?? "").slice(-150_000);
+  const response = await client.messages.create({
+    model, max_tokens: 3000,
+    ...(info?.adaptiveThinking ? { thinking: { type: "disabled" as const } } : {}),
+    system: HANDOFF_SYSTEM,
+    messages: [{ role: "user", content: `会話タイトル: ${String(payload?.title ?? "").slice(0, 200)}\n\n<conversation>\n${transcript}\n</conversation>` }]
+  });
+  const usage = {
+    model: response.model, inputTokens: response.usage.input_tokens, outputTokens: response.usage.output_tokens,
+    cacheCreationInputTokens: response.usage.cache_creation_input_tokens ?? 0, cacheReadInputTokens: response.usage.cache_read_input_tokens ?? 0, webSearchRequests: 0
+  };
+  await recordUsage(usage);
+  const text = response.content.filter(b => b.type === "text").map(b => b.text).join("").trim();
+  return { text: `これは別のアプリ（Claude API）で続けていた会話「${String(payload?.title ?? "").slice(0, 80)}」の引き継ぎメモです。\n\n${text}`, usage };
+});
+ipcMain.handle("handoff:open", async (_event, payload: { text: string; target: "desktop" | "web" }) => {
+  if (payload?.target === "web") { await shell.openExternal("https://claude.ai/new"); return true; }
+  const text = String(payload?.text ?? "");
+  if (!text.trim()) throw new Error("引き継ぐ内容が空です。");
+  if (!fitsHandoff(text, process.platform)) throw new Error("内容が長すぎます。短くしてから開いてください。");
+  await shell.openExternal(HANDOFF_PREFIX + encodeURIComponent(text));
+  return true;
+});
 ipcMain.handle("claude:title", async (_event, payload: { user: string; assistant: string }) => {
   // Use the cheapest small model without thinking so a tiny max_tokens still yields text.
   const candidates = [...modelCache.values()].filter(m => /haiku/.test(m.id)).sort((a, b) => (a.id.includes("4-5") ? -1 : 0) - (b.id.includes("4-5") ? -1 : 0));

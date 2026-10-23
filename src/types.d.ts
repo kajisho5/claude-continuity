@@ -46,6 +46,8 @@ declare global {
       backupData: () => Promise<{ canceled: true } | { canceled: false; filePath: string; count: number }>;
       restoreData: () => Promise<{ canceled: true } | { canceled: false; count: number; safetyPath: string }>;
       openDataFolder: () => Promise<boolean>;
+      summarizeHandoff: (payload: { model: string; title: string; transcript: string }) => Promise<{ text: string; usage: Omit<ContinuityUsage, "createdAt"> }>;
+      openHandoff: (payload: { text: string; target: "desktop" | "web" }) => Promise<boolean>;
       savePrefs: (prefs: ContinuityPrefs) => Promise<ContinuityPrefs>;
       loadProjects: () => Promise<ContinuityProject[]>;
       saveProjects: (projects: ContinuityProject[]) => Promise<ContinuityProject[]>;

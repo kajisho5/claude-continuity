@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowDown, Plus, FileUp, FolderOpen, MessagesSquare, Pencil, PanelLeftClose, PanelLeftOpen, Search } from "lucide-react";
+import { ArrowDown, ArrowUpRight, Plus, FileUp, FolderOpen, MessagesSquare, Pencil, PanelLeftClose, PanelLeftOpen, Search } from "lucide-react";
 import CreditCard from "./components/CreditCard";
 import LogoMark, { LogoGlyph } from "./components/LogoMark";
 import OnboardingWizard from "./components/OnboardingWizard";
@@ -11,6 +11,7 @@ import ProjectModal, { type Project } from "./components/ProjectModal";
 import SettingsPage, { type SettingsTab } from "./components/SettingsPage";
 import Toaster, { type Toast } from "./components/Toaster";
 import ChatsPage from "./components/ChatsPage";
+import HandoffDialog from "./components/HandoffDialog";
 import ArtifactPanel from "./components/ArtifactPanel";
 import ChatMenu from "./components/ChatMenu";
 import AccountMenu from "./components/AccountMenu";
@@ -92,6 +93,7 @@ export default function App() {
  const [atBottom,setAtBottom]=useState(true);
  const [renaming,setRenaming]=useState<string|null>(null);
  const [confirmDelete,setConfirmDelete]=useState<string|null>(null);
+ const [handoff,setHandoff]=useState(false);
  const pendingRef=useRef<Pending|null>(null);
  const composerRef=useRef<ComposerHandle>(null);
  const searchRef=useRef<HTMLInputElement>(null);
@@ -370,6 +372,7 @@ export default function App() {
       : <>{chatProject&&<><button className="crumb-project" onClick={()=>setProjectFilter(chatProject.id)}><FolderOpen size={14}/>{chatProject.name}</button><span className="crumb-sep">/</span></>}{chatMenu(chat,"title")}</>}
     </span>
     <div className="header-actions">
+     {view==="chat"&&!fresh&&<button className="btn-secondary small handoff-btn tip tip-below" data-tip="Claude アプリの新しいチャットに文脈を渡す" onClick={()=>setHandoff(true)}><ArrowUpRight size={14}/>Claude で続ける</button>}
      {!configured&&<button className="btn-secondary small" onClick={()=>setSettings("api")}><span className="dot"/>APIキーを設定</button>}
     </div></header>
    {view==="chats"?<div className="workspace"><ChatsPage now={now} onNew={newChat} onOpen={id=>{setActive(id);setView("chat");}}
@@ -410,6 +413,8 @@ export default function App() {
   </main>
   {settings&&<SettingsPage initialTab={settings} prefs={prefs} onSavePrefs={savePrefs} configured={configured} onSaveKey={saveKey}
     credit={credit} onSaveCredit={saveCredit} onRestartOnboarding={()=>{setSettings(null);setOnboarding(true);}} onClose={()=>setSettings(null)} onNotice={toast}/>}
+  {handoff&&<HandoffDialog title={chat.title} turns={chat.messages.map(m=>({role:m.role,content:m.content}))} model={model} modelLabel={currentModel?.displayName??model} configured={configured}
+    onUsage={usage=>setUsageRows(rows=>[...rows,{...usage,createdAt:new Date().toISOString()}])} onNotice={toast} onClose={()=>setHandoff(false)}/>}
   <Toaster toasts={toasts} onDismiss={id=>setToasts(list=>list.filter(t=>t.id!==id))}/>
   {renaming&&<RenameDialog initial={chats.find(c=>c.id===renaming)?.title??""} onSave={title=>patchChat(renaming,c=>({...c,title}))} onClose={()=>setRenaming(null)}/>}
   {confirmDelete&&<ConfirmDialog title="会話を削除しますか？" body={`「${chats.find(c=>c.id===confirmDelete)?.title??""}」を端末内の履歴から削除します。元に戻せません。`} confirm="削除"
