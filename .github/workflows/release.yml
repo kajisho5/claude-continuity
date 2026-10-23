@@ -1,8 +1,8 @@
 name: Release
 # Push a tag like v0.2.0 (matching package.json "version") to publish the installers,
 # or run "Package installers" with a release tag: it creates the tag and calls this workflow.
-# The release is created as a draft, the Windows and macOS builds upload to it, and it is published once
-# the Windows build has succeeded (a failed macOS build does not hold back Windows users).
+# The release is created as a draft, the Windows, macOS and Linux builds upload to it, and it is published once
+# the Windows build has succeeded (a failed macOS or Linux build does not hold back Windows users).
 # latest.yml / latest-mac.yml and the blockmaps let installed copies find and download updates (electron-updater).
 #
 # macOS signing (optional; without it the app is signed ad hoc, opens after the user allows it in
@@ -43,7 +43,7 @@ jobs:
   prepare:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           ref: ${{ env.TAG }}
           fetch-depth: 0
@@ -72,20 +72,42 @@ jobs:
     needs: prepare
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           ref: ${{ env.TAG }}
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
-          node-version: 20
+          node-version: 22
       - run: npm install
       - run: npm test
+      # Windows signing is optional. Either Azure Artifact Signing (formerly Trusted Signing): secrets AZURE_TENANT_ID,
+      # AZURE_CLIENT_ID, AZURE_CLIENT_SECRET and variables AZURE_SIGNING_ENDPOINT, AZURE_SIGNING_ACCOUNT,
+      # AZURE_CERT_PROFILE; or a code signing certificate: secrets WIN_CSC_LINK (base64 .pfx) and WIN_CSC_KEY_PASSWORD.
       - name: Build installer (update feed points at the target repository)
         shell: bash
+        env:
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          AZURE_SIGNING_ENDPOINT: ${{ vars.AZURE_SIGNING_ENDPOINT }}
+          AZURE_SIGNING_ACCOUNT: ${{ vars.AZURE_SIGNING_ACCOUNT }}
+          AZURE_CERT_PROFILE: ${{ vars.AZURE_CERT_PROFILE }}
+          WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+          WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
         run: |
           owner="${TARGET_REPO%%/*}"; repo="${TARGET_REPO#*/}"
+          sign=()
+          if [ -n "$AZURE_CLIENT_SECRET" ] && [ -n "$AZURE_SIGNING_ENDPOINT" ] && [ -n "$AZURE_SIGNING_ACCOUNT" ] && [ -n "$AZURE_CERT_PROFILE" ]; then
+            sign=("-c.win.azureSignOptions.endpoint=$AZURE_SIGNING_ENDPOINT" "-c.win.azureSignOptions.codeSigningAccountName=$AZURE_SIGNING_ACCOUNT" "-c.win.azureSignOptions.certificateProfileName=$AZURE_CERT_PROFILE")
+            echo "Signing with Azure Artifact Signing"
+          elif [ -n "$WIN_CSC_LINK" ]; then
+            echo "Signing with the code signing certificate"
+          else
+            unset WIN_CSC_LINK WIN_CSC_KEY_PASSWORD
+            echo "::notice::No Windows signing configured; the installer is unsigned"
+          fi
           npm run build
-          npx electron-builder --win nsis --publish never -c.publish.provider=github "-c.publish.owner=$owner" "-c.publish.repo=$repo"
+          npx electron-builder --win nsis --publish never -c.publish.provider=github "-c.publish.owner=$owner" "-c.publish.repo=$repo" "${sign[@]}"
       - name: Upload to the release
         shell: bash
         run: gh release upload "$TAG" release/*.exe release/*.exe.blockmap release/latest.yml --repo "$TARGET_REPO" --clobber
@@ -97,12 +119,12 @@ jobs:
       # HAS_CERT / HAS_NOTARY are only written by the signing steps: a job-level value would shadow GITHUB_ENV.
       HAS_RUNWAY: ${{ secrets.MATCH_GIT_TOKEN != '' && secrets.ASC_KEY_P8_BASE64 != '' && secrets.ASC_KEY_ID != '' && secrets.ASC_ISSUER_ID != '' && secrets.APPLE_TEAM_ID != '' }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           ref: ${{ env.TAG }}
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
-          node-version: 20
+          node-version: 22
       - run: npm install
       - run: npm test
       # Build before any signing material is loaded, so only electron-builder runs with it.
@@ -206,6 +228,21 @@ jobs:
             export CSC_IDENTITY_AUTO_DISCOVERY=false
           fi
           npx electron-builder --mac --publish never -c.publish.provider=github "-c.publish.owner=$owner" "-c.publish.repo=$repo" "${extra[@]}"
+      # electron-builder notarizes the app inside; the dmg itself is signed, notarized and stapled here so it opens
+      # without a Gatekeeper lookup too. Needs the keychain identity from the runway step.
+      - name: Notarize the dmg files
+        if: ${{ env.CSC_NAME != '' && env.CSC_KEYCHAIN != '' && env.APPLE_API_KEY != '' }}
+        run: |
+          set -euo pipefail
+          for f in release/*.dmg; do
+            codesign --force --timestamp --keychain "$CSC_KEYCHAIN" --sign "Developer ID Application: $CSC_NAME" "$f"
+            xcrun notarytool submit "$f" --key "$APPLE_API_KEY" --key-id "$APPLE_API_KEY_ID" --issuer "$APPLE_API_ISSUER" --wait --timeout 30m
+            for n in 1 2 3 4 5; do xcrun stapler staple "$f" && break; echo "staple retry $n"; sleep $((n * 10)); done
+            xcrun stapler validate "$f"
+          done
+          # The dmg bytes changed: refresh their sha512/size in latest-mac.yml; their blockmaps no longer apply.
+          node build/refresh-dmg-hashes.cjs release
+          rm -f release/*.dmg.blockmap
       - name: Upload to the release
         run: gh release upload "$TAG" release/*.dmg release/*.zip release/*.blockmap release/latest-mac.yml --repo "$TARGET_REPO" --clobber
       - name: Clean up signing material
@@ -214,8 +251,28 @@ jobs:
           rm -rf "$RUNNER_TEMP/keys" "$RUNNER_TEMP/sign" "$RUNNER_TEMP/notary.p8"
           security delete-keychain "$RUNNER_TEMP/release.keychain-db" 2>/dev/null || true
 
+  linux:
+    needs: prepare
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ env.TAG }}
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - run: npm install
+      - run: npm test
+      - name: Build AppImage
+        run: |
+          owner="${TARGET_REPO%%/*}"; repo="${TARGET_REPO#*/}"
+          npm run build
+          npx electron-builder --linux AppImage --publish never -c.publish.provider=github "-c.publish.owner=$owner" "-c.publish.repo=$repo"
+      - name: Upload to the release
+        run: gh release upload "$TAG" release/*.AppImage release/latest-linux.yml --repo "$TARGET_REPO" --clobber
+
   publish:
-    needs: [windows, mac]
+    needs: [windows, mac, linux]
     if: ${{ always() && needs.windows.result == 'success' }}
     runs-on: ubuntu-latest
     steps:

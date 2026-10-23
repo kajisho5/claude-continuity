@@ -40,7 +40,7 @@ Max プランなどに付く**月間 API クレジット**を、Claude アプリ
 
 **プロジェクト**
 - 指示とナレッジファイル（キャッシュされます）、プロジェクト単位のメモリ
-- テキストのナレッジが大きくなると（会話に使える量の半分を超えると）、全文を送る代わりに Claude が必要な箇所を検索して読みます（日本語にも対応したキーワード検索）
+- ナレッジの文字（テキストファイルと PDF の文字情報）が会話に使える量の半分を超えると、全文を送る代わりに Claude が必要な箇所を検索して読みます（日本語にも対応したキーワード検索）
 
 **そのほか**
 - **Claude アプリへの引き継ぎ**：要約または全文を、Claude Desktop の入力欄に下書きとして入れます。
@@ -81,6 +81,10 @@ API キーは [Anthropic Console](https://console.anthropic.com/) で発行し�
 2. dmg を開き、アプリを「アプリケーション」フォルダにドラッグします。
 3. v0.1.5 以降の Mac 版は Developer ID で署名し、Apple の公証を通しています。そのまま開けて、アプリ内のアップデートも使えます。
    - v0.1.4 以前の Mac 版（アドホック署名）は自動更新できないので、一度だけ手動で入れ替えてください。
+
+## インストール（Linux）
+
+[Releases](https://github.com/kajisho5/claude-continuity/releases) から `Claude-Continuity-<version>.AppImage` をダウンロードし、実行権限を付けて（`chmod +x`）起動します。アプリ内のアップデートは AppImage のファイルを入れ替えます。
 
 ## コネクタ（MCP サーバー）
 
@@ -135,13 +139,13 @@ API キーは [Anthropic Console](https://console.anthropic.com/) で発行し�
 - **会話エクスポートの読み込み**：形式の推定に頼っているので、うまく読めない場合があります。エクスポートに含まれる添付、アーティファクト、ツールの呼び出しは再現しません。
 - **長い会話**：入力上限を超える古い履歴は省きます（画面で知らせます）。自動での要約はしません。
 - **音声入力**：アプリ独自の機能はありません。OS の音声入力がそのまま使えます（Windows は `Win + H`、macOS は「音声入力」のショートカット）。
-- **ナレッジの検索**：意味の近さではなくキーワードで探します。PDF のナレッジは検索の対象外で、これまでどおり全文を送ります。
+- **ナレッジの検索**：意味の近さではなくキーワードで探します。文字情報のない（スキャンした）PDF はこれまでどおり全文を送ります。検索に切り替わった PDF は文字として読むので、図やレイアウトは伝わりません。
 - **API ではできないこと**：claude.ai との履歴の同期、claude.ai アカウント側のメモリの利用。
 - Windows のインストーラーには署名がありません。
 
 ## 開発
 
-必要なもの：Node.js 20 以上
+必要なもの：Node.js 22 以上
 
 ```bash
 npm install
@@ -171,7 +175,8 @@ npm start        # ビルド済みのアプリを起動
    - GitHub の Actions で「Package installers」を実行し、`release_tag` に `v<version>` を入れます。選んだブランチの先頭にタグを付けてリリースまで行います。
 3. `.github/workflows/release.yml` が下書きのリリースを作り、Windows と macOS を並行してビルドしてアップロードします。Windows のビルドが成功したら公開します。タグと `version` が一致しないと失敗します。
    - Windows：`.exe`、`.blockmap`、`latest.yml`
-   - macOS：arm64 と x64 の `.dmg` と `.zip`、`latest-mac.yml`
+   - macOS：arm64 と x64 の `.dmg` と `.zip`、`latest-mac.yml`（アプリと dmg の両方を公証）
+   - Linux：`.AppImage`、`latest-linux.yml`
 4. インストール済みのアプリは、起動の約15秒後と、その後6時間ごとに `latest.yml` を確認し、新しい版を案内します。
 
 **macOS の署名と公証**：次のどちらかの secret がそろうと、Developer ID で署名・公証され、Mac 版も自動で更新できるようになります（[electron-builder の公証の説明](https://www.electron.build/docs/notarization)）。
@@ -185,6 +190,8 @@ npm start        # ビルド済みのアプリを起動
 | `APPLE_API_KEY` / `APPLE_API_KEY_ID` / `APPLE_API_ISSUER` | App Store Connect の API キー（.p8 を base64 にしたもの）と、その ID |
 | または `APPLE_ID` / `APPLE_APP_SPECIFIC_PASSWORD` | Apple ID と App 用パスワード |
 | `APPLE_TEAM_ID` | チーム ID |
+
+**Windows の署名（任意）**：Azure Artifact Signing（旧 Trusted Signing。secret `AZURE_TENANT_ID`・`AZURE_CLIENT_ID`・`AZURE_CLIENT_SECRET` と、変数 `AZURE_SIGNING_ENDPOINT`・`AZURE_SIGNING_ACCOUNT`・`AZURE_CERT_PROFILE`）か、コード署名証明書（secret `WIN_CSC_LINK` に .pfx を base64 にしたもの、`WIN_CSC_KEY_PASSWORD`）を設定すると署名します。どちらもなければ署名なしです。
 
 自動更新は Releases を認証なしで読みます。そのため、配布先のリポジトリは公開されている必要があります。配布専用のリポジトリを使う場合は、Actions の変数 `RELEASES_REPO` と secret `RELEASES_TOKEN` を設定してください。
 

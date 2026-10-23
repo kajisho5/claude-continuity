@@ -35,6 +35,7 @@
     "rehype-katex": "^7.0.1",
     "remark-gfm": "^4.0.1",
     "remark-math": "^6.0.0",
+    "unpdf": "1.8.1",
     "zod": "^4.6.7"
   },
   "devDependencies": {
@@ -113,6 +114,7 @@
       "target": [
         "AppImage"
       ],
+      "artifactName": "Claude-Continuity-${version}.${ext}",
       "category": "Office"
     },
     "publish": {

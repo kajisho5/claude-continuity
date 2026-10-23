@@ -39,7 +39,7 @@ A desktop app (Windows / macOS / Linux, Electron + React) for continuing Claude 
 
 **Projects**
 - Instructions and knowledge files (cached), and per-project memory
-- When text knowledge grows past half of what a chat can hold, Claude searches it for the passages it needs instead of receiving it whole (keyword search that also handles Japanese)
+- When the text of the knowledge (text files and the text layer of PDFs) grows past half of what a chat can hold, Claude searches it for the passages it needs instead of receiving it whole (keyword search that also handles Japanese)
 
 **More**
 - **Handoff to the Claude apps**: puts a summary or the full transcript into Claude Desktop's message box as a draft
@@ -80,6 +80,10 @@ Create an API key in the [Anthropic Console](https://console.anthropic.com/).
 2. Open the dmg and drag the app into Applications.
 3. Mac builds from v0.1.5 on are signed with a Developer ID and notarized by Apple, so they open normally and update from inside the app.
    - Mac builds up to v0.1.4 (ad-hoc signed) can't update themselves; replace them by hand once.
+
+## Install (Linux)
+
+Download `Claude-Continuity-<version>.AppImage` from [Releases](https://github.com/kajisho5/claude-continuity/releases), make it executable (`chmod +x`), and run it. In-app updates replace the AppImage file.
 
 ## Connectors (MCP servers)
 
@@ -134,13 +138,13 @@ Settings → "Data & backup" exports all data as a single ZIP.
 - **Importing exports**: the format is inferred and may not always be read correctly. Attachments, artifacts and tool calls in an export are not reconstructed.
 - **Long chats**: the oldest history beyond the input limit is left out (the app tells you); there is no automatic summarization.
 - **Voice input**: there is no built-in feature, but the OS's dictation works as is (`Win + H` on Windows, the Dictation shortcut on macOS).
-- **Knowledge search**: matches keywords, not meaning. PDF knowledge is not searched; it is still sent whole.
+- **Knowledge search**: matches keywords, not meaning. Scanned PDFs without a text layer are still sent whole, and once knowledge is searched, PDFs are read as text (figures and layout are not seen).
 - **Not possible through the API**: syncing history with claude.ai, or using claude.ai's account memory.
 - The Windows installer is not signed.
 
 ## Development
 
-Requires Node.js 20 or later.
+Requires Node.js 22 or later.
 
 ```bash
 npm install
@@ -170,7 +174,8 @@ Layout:
    - Run "Package installers" in GitHub Actions with `release_tag` set to `v<version>`; it tags the head of the chosen branch and runs the release.
 3. `.github/workflows/release.yml` creates a draft release, builds Windows and macOS in parallel, uploads them, and publishes once the Windows build has succeeded. It fails if the tag and `version` differ.
    - Windows: `.exe`, `.blockmap`, `latest.yml`
-   - macOS: arm64 and x64 `.dmg` and `.zip`, `latest-mac.yml`
+   - macOS: arm64 and x64 `.dmg` and `.zip`, `latest-mac.yml` (the app and the dmg files are both notarized)
+   - Linux: `.AppImage`, `latest-linux.yml`
 4. Installed copies check `latest.yml` about 15 seconds after launch and every 6 hours after that, and offer the new version.
 
 **macOS signing and notarization**: with either set of secrets below, the Mac app is signed with a Developer ID and notarized, and updates itself ([electron-builder's notarization docs](https://www.electron.build/docs/notarization)).
@@ -184,5 +189,7 @@ Layout:
 | `APPLE_API_KEY` / `APPLE_API_KEY_ID` / `APPLE_API_ISSUER` | An App Store Connect API key (the .p8 as base64) and its IDs |
 | or `APPLE_ID` / `APPLE_APP_SPECIFIC_PASSWORD` | Apple ID and an app-specific password |
 | `APPLE_TEAM_ID` | Team ID |
+
+**Windows signing (optional)**: either Azure Artifact Signing (formerly Trusted Signing; secrets `AZURE_TENANT_ID`, `AZURE_CLIENT_ID`, `AZURE_CLIENT_SECRET` and variables `AZURE_SIGNING_ENDPOINT`, `AZURE_SIGNING_ACCOUNT`, `AZURE_CERT_PROFILE`) or a code signing certificate (secrets `WIN_CSC_LINK`, a base64 .pfx, and `WIN_CSC_KEY_PASSWORD`). Without them the installer is unsigned.
 
 Updates read Releases without authentication, so the repository that hosts them must be public. To publish to a separate repository, set the Actions variable `RELEASES_REPO` and the secret `RELEASES_TOKEN`.

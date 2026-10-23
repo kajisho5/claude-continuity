@@ -14,7 +14,7 @@ import { setupUpdater } from "./updater";
 import { getMainLocale, mainT, resolveMainLocale, setMainLocale } from "./i18n";
 import { connectorRequest, MCP_CONNECTOR_BETA, serverName, validateConnector, type Connector, type ConnectorView } from "./connectors";
 import { containerSkills, readSkillSource } from "./skills";
-import { buildIndex, formatKnowledgeHits, knowledgeTool, searchKnowledge, type KnowledgeIndex } from "./knowledge";
+import { buildIndex, formatKnowledgeHits, knowledgeTool, pdfText, searchKnowledge, type KnowledgeIndex } from "./knowledge";
 import { desktopConfigPath, LocalMcpPool, parseDesktopConfig, parseEnv, toolDefinitions, toToolResult, validateLocal, type LocalServer, type LocalToolRef } from "./localMcp";
 import { HANDOFF_PREFIX, fitsHandoff } from "../src/lib/handoff";
 import { activityLabel, buildMessages, historyBudget, buildSystem, buildTools, extractFileIds, extractSteps, extractText, type ChatTurn, type Project, type StyleId, type ToolFlags } from "./request";
@@ -789,16 +789,31 @@ function sanitizeTurns(list: unknown): ChatTurn[] {
 const knowledgeIndexes = new Map<string, { key: string; index: KnowledgeIndex }>();
 async function projectKnowledge(project: Project | null, store: AttachmentStore, maxInputTokens?: number): Promise<{ inline: Attachment[]; index: KnowledgeIndex | null; searched: string[] }> {
   const all = project?.knowledge ?? [];
-  const text = all.filter(k => k.kind === "text");
-  if (!project || !text.length) return { inline: all, index: null, searched: [] };
-  const docs = await Promise.all(text.map(async k => ({ id: k.id, name: k.name, text: (await store.read(k.id)).toString("utf8") })));
+  const candidates = all.filter(k => k.kind === "text" || k.kind === "pdf");
+  if (!project || !candidates.length) return { inline: all, index: null, searched: [] };
   // Half of the history budget: the conversation itself still needs room.
   const limit = Math.floor(historyBudget(maxInputTokens) / 2);
+  const docs: { id: string; name: string; text: string }[] = [];
+  for (const k of candidates) {
+    const text = k.kind === "text" ? (await store.read(k.id)).toString("utf8") : await cachedPdfText(k, store);
+    // A PDF without a text layer (a scan) can only be sent whole.
+    if (text.trim()) docs.push({ id: k.id, name: k.name, text });
+  }
   if (docs.reduce((sum, d) => sum + d.text.length, 0) <= limit) return { inline: all, index: null, searched: [] };
-  const key = text.map(k => k.id).join(",");
+  const key = docs.map(d => d.id).join(",");
   let cached = knowledgeIndexes.get(project.id);
   if (!cached || cached.key !== key) { cached = { key, index: buildIndex(docs) }; knowledgeIndexes.set(project.id, cached); }
-  return { inline: all.filter(k => k.kind !== "text"), index: cached.index, searched: text.map(k => k.name) };
+  const searched = new Set(docs.map(d => d.id));
+  return { inline: all.filter(k => !searched.has(k.id)), index: cached.index, searched: docs.map(d => d.name) };
+}
+const pdfTexts = new Map<string, string>();
+async function cachedPdfText(k: Attachment, store: AttachmentStore): Promise<string> {
+  if (!pdfTexts.has(k.id)) {
+    let text = "";
+    try { text = await pdfText(await store.read(k.id)); } catch {}
+    pdfTexts.set(k.id, text);
+  }
+  return pdfTexts.get(k.id)!;
 }
 
 // ---- Approval for local MCP tools (asked in the chat, like Claude Desktop) ----

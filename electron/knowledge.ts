@@ -87,6 +87,16 @@ export function searchKnowledge(index: KnowledgeIndex, query: string, max = 6): 
     .map(({ chunk, score }) => ({ name: chunk.name, index: chunk.index, score: Math.round(score * 100) / 100, text: chunk.text }));
 }
 
+/** Text layer of a PDF (empty for scanned PDFs without one). */
+export async function pdfText(data: Buffer): Promise<string> {
+  const { extractText, getDocumentProxy } = await import("unpdf");
+  const pdf = await getDocumentProxy(new Uint8Array(data));
+  try {
+    const { text } = await extractText(pdf, { mergePages: false });
+    return (Array.isArray(text) ? text : [text]).map(page => page.trim()).filter(Boolean).join("\n\n");
+  } finally { await (pdf as { destroy?: () => Promise<void> }).destroy?.().catch(() => {}); }
+}
+
 export function knowledgeTool() {
   const t = mainT().knowledge;
   return {
