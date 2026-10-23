@@ -105,6 +105,8 @@ jobs:
           node-version: 20
       - run: npm install
       - run: npm test
+      # Build before any signing material is loaded, so only electron-builder runs with it.
+      - run: npm run build
       # Both signing steps hand electron-builder its usual variables through GITHUB_ENV (masked in the log).
       - name: Developer ID from runway (hanger)
         if: ${{ env.HAS_RUNWAY == 'true' }}
@@ -186,7 +188,6 @@ jobs:
             unset CSC_LINK CSC_KEY_PASSWORD
             export CSC_IDENTITY_AUTO_DISCOVERY=false
           fi
-          npm run build
           npx electron-builder --mac --publish never -c.publish.provider=github "-c.publish.owner=$owner" "-c.publish.repo=$repo" "${extra[@]}"
       - name: Upload to the release
         run: gh release upload "$TAG" release/*.dmg release/*.zip release/*.blockmap release/latest-mac.yml --repo "$TARGET_REPO" --clobber
