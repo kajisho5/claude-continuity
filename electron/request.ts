@@ -2,7 +2,7 @@ import type { ContentBlockParam, MessageParam, ToolUnion } from "@anthropic-ai/s
 import type { Attachment } from "./attachments";
 
 export type ChatTurn = { role: "user" | "assistant"; content: string; attachments?: Attachment[] };
-export type ToolFlags = { webSearch?: boolean; webFetch?: boolean; files?: boolean; analysis?: boolean; memory?: boolean; pastChats?: boolean };
+export type ToolFlags = { webSearch?: boolean; webFetch?: boolean; files?: boolean; analysis?: boolean; memory?: boolean; pastChats?: boolean; connectors?: string[] };
 export type ModelCaps = { webSearch: boolean; codeExecution: boolean; imageInput: boolean; pdfInput: boolean };
 export type Project = { id: string; name: string; instructions: string; knowledge: Attachment[]; memory: boolean };
 export type StyleId = "standard" | "concise" | "detailed" | "explanatory" | "custom";
@@ -183,7 +183,7 @@ export function activityLabel(name: string | undefined): string | null {
 }
 
 export type ToolStep = {
-  kind: "search" | "fetch" | "code" | "file" | "memory" | "history" | "other";
+  kind: "search" | "fetch" | "code" | "file" | "memory" | "history" | "connector" | "other";
   label: string;
   detail?: string;
   output?: string;
@@ -201,11 +201,17 @@ const MEMORY_LABELS: Record<string, string> = { view: "メモリを確認", crea
  * Tool calls made while answering, paired with their results, for the expandable "what Claude did" view.
  * Server tools (web search/fetch, code execution) come back as content blocks; client memory results are passed in.
  */
-export function extractSteps(blocks: unknown[], clientResults: Map<string, { content: string; isError?: boolean }> = new Map()): ToolStep[] {
+export function extractSteps(blocks: unknown[], clientResults: Map<string, { content: string; isError?: boolean }> = new Map(), connectorNames: Record<string, string> = {}): ToolStep[] {
   const results = new Map<string, any>();
   for (const b of blocks as any[]) if (b && typeof b.tool_use_id === "string" && typeof b.type === "string" && b.type.endsWith("_tool_result")) results.set(b.tool_use_id, b);
   const steps: ToolStep[] = [];
   for (const b of blocks as any[]) {
+    if (b?.type === "mcp_tool_use") {
+      const res = results.get(b.id);
+      const text = Array.isArray(res?.content) ? res.content.filter((c: any) => c?.type === "text").map((c: any) => c.text).join("\n") : typeof res?.content === "string" ? res.content : "";
+      steps.push({ kind: "connector", label: `${connectorNames[b.server_name] ?? b.server_name ?? "コネクタ"}: ${b.name}`, detail: clip(b.input ?? {}, 2000), ...(text ? { output: clip(text) } : {}), ...(res?.is_error ? { error: true } : {}) });
+      continue;
+    }
     if (!b || (b.type !== "server_tool_use" && b.type !== "tool_use")) continue;
     const input = b.input ?? {};
     const result = results.get(b.id)?.content;

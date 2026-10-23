@@ -1,9 +1,10 @@
 import { useState } from "react";
-import { BarChart3, Brain, Check, ChevronRight, FileSpreadsheet, Globe, PenLine, Search, SlidersHorizontal } from "lucide-react";
+import { BarChart3, Brain, Check, ChevronRight, FileSpreadsheet, Globe, PenLine, Plug, Plus, Search, SlidersHorizontal } from "lucide-react";
 import { usePopover } from "./Popover";
 
-export type Tools = { webSearch?: boolean; webFetch?: boolean; files?: boolean; analysis?: boolean; memory?: boolean };
-type Key = keyof Tools;
+export type Tools = { webSearch?: boolean; webFetch?: boolean; files?: boolean; analysis?: boolean; memory?: boolean; connectors?: string[] };
+export type ConnectorOption = { id: string; name: string };
+type Key = Exclude<keyof Tools, "connectors">;
 type Option = { value: string; label: string };
 const ITEMS: { key: Key; title: string; desc: string; icon: typeof Search; chip: string }[] = [
   { key: "webSearch", title: "Web 検索", desc: "出典付きで最新情報を調べる · 1,000回 $10", icon: Search, chip: "Web検索" },
@@ -16,12 +17,15 @@ const ITEMS: { key: Key; title: string; desc: string; icon: typeof Search; chip:
 type Props = {
   tools: Tools; onChange: (next: Tools) => void; disabled?: boolean; projectMemory?: boolean;
   style: string; styles: Option[]; onStyle: (v: string) => void; placement?: "up" | "down";
+  connectors?: ConnectorOption[]; onManageConnectors?: () => void;
 };
 
-export default function ToolsMenu({ tools, onChange, disabled, projectMemory, style, styles, onStyle, placement }: Props) {
+export default function ToolsMenu({ tools, onChange, disabled, projectMemory, style, styles, onStyle, placement, connectors = [], onManageConnectors }: Props) {
   const { open, setOpen, ref } = usePopover();
   const [stylesOpen, setStylesOpen] = useState(false);
   const active = ITEMS.filter(item => tools[item.key] || (item.key === "memory" && projectMemory));
+  const activeConnectors = connectors.filter(c => tools.connectors?.includes(c.id));
+  const toggleConnector = (id: string, on: boolean) => onChange({ ...tools, connectors: on ? [...new Set([...(tools.connectors ?? []), id])] : (tools.connectors ?? []).filter(x => x !== id) });
   const styleLabel = style !== "standard" ? styles.find(s => s.value === style)?.label : undefined;
   return <div className="tools" ref={ref}>
     <button className={"round-btn tip" + (open ? " on" : "")} data-tip="ツール" aria-label="ツール" disabled={disabled} aria-expanded={open}
@@ -32,6 +36,8 @@ export default function ToolsMenu({ tools, onChange, disabled, projectMemory, st
       data-tip={item.key === "memory" && projectMemory ? `${item.chip}（プロジェクトの設定でオン）` : `${item.chip}（クリックでオフ）`} aria-label={item.chip}
       onClick={() => onChange({ ...tools, [item.key]: false })}>
       <item.icon size={12} /><span className="chip-label">{item.chip}</span></button>)}
+    {activeConnectors.map(c => <button key={c.id} className="tool-chip tip" disabled={disabled} data-tip={`${c.name}（クリックでオフ）`} aria-label={c.name}
+      onClick={() => toggleConnector(c.id, false)}><Plug size={12} /><span className="chip-label">{c.name}</span></button>)}
     {open && <div className={"menu tools-menu " + (placement === "down" ? "down" : "up")} role="menu">
       <button className="menu-item tools-style" aria-expanded={stylesOpen} onClick={() => setStylesOpen(v => !v)}>
         <PenLine size={16} /><span><b>スタイルを使用</b><small>{styleLabel ?? "標準"}</small></span>
@@ -49,6 +55,13 @@ export default function ToolsMenu({ tools, onChange, disabled, projectMemory, st
             onChange={e => onChange({ ...tools, [item.key]: e.target.checked })} />
         </label>;
       })}
+      <div className="menu-sep" />
+      <div className="menu-label">コネクタ</div>
+      {connectors.map(c => <label key={c.id} className="tools-item">
+        <Plug size={16} /><span><b>{c.name}</b><small>この会話で使う</small></span>
+        <input type="checkbox" className="switch" checked={!!tools.connectors?.includes(c.id)} onChange={e => toggleConnector(c.id, e.target.checked)} />
+      </label>)}
+      {onManageConnectors && <button className="menu-item" onClick={() => { setOpen(false); onManageConnectors(); }}><Plus size={15} />{connectors.length ? "コネクタを管理" : "コネクタを追加（Notion・社内 MCP サーバーなど）"}</button>}
     </div>}
   </div>;
 }

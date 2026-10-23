@@ -7,6 +7,7 @@ type ContinuityReply = {
   citations?: ContinuityCitation[]; files?: ContinuityFile[]; steps?: ContinuityStep[]; stopReason?: string;
 };
 type ContinuityStep = import("./lib/steps").ToolStep;
+type ContinuityConnector = import("./lib/connectors").ConnectorView;
 type ContinuityUpdateStatus = import("./lib/update").UpdateStatus;
 type ContinuityMessage = ContinuityReply & {
   role: "user" | "assistant";
@@ -14,7 +15,7 @@ type ContinuityMessage = ContinuityReply & {
   alternates?: ContinuityReply[];
   altIndex?: number;
 };
-type ContinuityTools = { webSearch?: boolean; webFetch?: boolean; files?: boolean; analysis?: boolean; memory?: boolean };
+type ContinuityTools = { webSearch?: boolean; webFetch?: boolean; files?: boolean; analysis?: boolean; memory?: boolean; connectors?: string[] };
 type ContinuityConversation = {
   id: string; title: string; messages: ContinuityMessage[]; source?: string;
   projectId?: string; style?: string; tools?: ContinuityTools; container?: { id: string; expiresAt?: string };
@@ -49,6 +50,10 @@ declare global {
       restoreData: () => Promise<{ canceled: true } | { canceled: false; count: number; safetyPath: string }>;
       openDataFolder: () => Promise<boolean>;
       focusWindow: () => Promise<boolean>;
+      listConnectors: () => Promise<ContinuityConnector[]>;
+      saveConnector: (input: { id?: string; name: string; url: string; enabled?: boolean; token?: string | null }) => Promise<ContinuityConnector[]>;
+      deleteConnector: (id: string) => Promise<ContinuityConnector[]>;
+      testConnector: (id: string) => Promise<{ tools: string[] }>;
       styleFromSample: (payload: { sample: string; model: string }) => Promise<{ prompt: string; usage: Omit<ContinuityUsage, "createdAt"> }>;
       attachmentText: (id: string) => Promise<{ text: string; truncated: boolean }>;
       openAttachmentPdf: (id: string, name: string) => Promise<boolean>;

@@ -882,3 +882,15 @@ html,body{overflow:hidden}
 .memory-edit code{font-size:10.5px;color:var(--muted)}
 .memory-edit.new{margin-top:10px;padding:10px;border:1px dashed var(--border-strong);border-radius:10px}
 .form-message.error{color:var(--danger)}
+
+/* Connectors */
+.hint-list{margin:8px 0 0;padding-left:18px;display:flex;flex-direction:column;gap:4px;font-size:11px;line-height:1.6;color:var(--subtle)}
+.connector-list{list-style:none;margin:14px 0 0;padding:0;display:flex;flex-direction:column;gap:6px}
+.connector-list li{display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--border);border-radius:10px;background:var(--input)}
+.connector-list li.empty{justify-content:center;color:var(--subtle);font-size:12px;border-style:dashed;background:none}
+.connector-list li>svg{color:var(--muted);flex-shrink:0}
+.connector-text{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.connector-text b{font-size:13px;color:var(--text-2)}
+.connector-text small{font-size:11px;color:var(--subtle);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.connector-text small.ok{color:var(--ok);display:inline-flex;align-items:center;gap:4px}
+.connector-form{margin-top:12px;padding:12px 14px;border:1px solid var(--border-strong);border-radius:12px}

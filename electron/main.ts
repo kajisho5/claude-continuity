@@ -5,11 +5,13 @@ import { randomUUID } from "node:crypto";
 import Anthropic from "@anthropic-ai/sdk";
 import AdmZip from "adm-zip";
 import type { MessageParam, ContentBlock, Message } from "@anthropic-ai/sdk/resources/messages";
+import type { MessageStream } from "@anthropic-ai/sdk/lib/MessageStream";
 import { AttachmentStore, type Attachment } from "./attachments";
 import { listMemoryFiles, runMemoryCommand } from "./memory";
 import { createBackup, readBackup, restoreEntries } from "./backup";
 import { formatHits, searchPastChats } from "./pastChats";
 import { setupUpdater } from "./updater";
+import { connectorRequest, MCP_CONNECTOR_BETA, serverName, validateConnector, type Connector, type ConnectorView } from "./connectors";
 import { HANDOFF_PREFIX, fitsHandoff } from "../src/lib/handoff";
 import { activityLabel, buildMessages, historyBudget, buildSystem, buildTools, extractFileIds, extractSteps, extractText, type ChatTurn, type Project, type StyleId, type ToolFlags } from "./request";
 
@@ -181,7 +183,7 @@ function sanitizeReply(m: any) {
     ...(m.aborted === true ? { aborted: true } : {}),
     ...(typeof m.stopReason === "string" ? { stopReason: m.stopReason.slice(0, 40) } : {}),
     ...(Array.isArray(m.steps) ? { steps: m.steps.slice(0, 100).map((st: any) => ({
-      kind: ["search", "fetch", "code", "file", "memory", "history", "other"].includes(st?.kind) ? st.kind : "other", label: str(st?.label, 500) ?? "",
+      kind: ["search", "fetch", "code", "file", "memory", "history", "connector", "other"].includes(st?.kind) ? st.kind : "other", label: str(st?.label, 500) ?? "",
       ...(st?.detail ? { detail: str(st.detail, 5000) } : {}), ...(st?.output ? { output: str(st.output, 5000) } : {}), ...(st?.error === true ? { error: true } : {}),
       ...(Array.isArray(st?.sources) ? { sources: st.sources.slice(0, 20).map((c: any) => ({ url: str(c?.url, 2000) ?? "", title: str(c?.title, 500) ?? "" })) } : {})
     })) } : {}),
@@ -216,7 +218,10 @@ ipcMain.handle("chats:save", async (_event, chats: unknown[]) => {
     ...(chat.starred === true ? { starred: true } : {}),
     ...isoDate(chat.updatedAt),
     ...(typeof chat.style === "string" ? { style: chat.style.slice(0, 60) } : {}),
-    ...(chat.tools && typeof chat.tools === "object" ? { tools: Object.fromEntries(["webSearch", "webFetch", "files", "analysis", "memory"].map(k => [k, chat.tools[k] === true])) } : {}),
+    ...(chat.tools && typeof chat.tools === "object" ? { tools: {
+      ...Object.fromEntries(["webSearch", "webFetch", "files", "analysis", "memory"].map(k => [k, chat.tools[k] === true])),
+      ...(Array.isArray(chat.tools.connectors) ? { connectors: chat.tools.connectors.filter((c: unknown) => typeof c === "string").slice(0, 30).map((c: string) => c.slice(0, 40)) } : {})
+    } } : {}),
     ...(chat.container && typeof chat.container.id === "string" ? { container: { id: chat.container.id.slice(0, 200), expiresAt: str(chat.container.expiresAt, 60) } } : {}),
     messages: Array.isArray(chat.messages) ? chat.messages.slice(-5000).map((m: any) => sanitizeMessage(m, 0)) : []
   }));
@@ -513,6 +518,70 @@ ipcMain.handle("memory:write", async (_event, virtualPath: string, text: string)
   return true;
 });
 
+// ---- Connectors (remote MCP servers via the API's MCP connector) ----
+const connectorsFile = () => path.join(dataDir(), "connectors.json");
+type StoredConnector = Omit<Connector, "token"> & { tokenEnc?: string };
+async function readStoredConnectors(): Promise<StoredConnector[]> {
+  try {
+    const raw = JSON.parse(await fs.readFile(connectorsFile(), "utf8"));
+    return Array.isArray(raw) ? raw.filter((c: any) => c && typeof c.id === "string" && typeof c.url === "string").slice(0, 30) : [];
+  } catch { return []; }
+}
+/** Tokens are encrypted with the OS key store like the API key and only decrypted when a request needs them. */
+async function loadConnectors(): Promise<Connector[]> {
+  return (await readStoredConnectors()).map(c => {
+    let token: string | undefined;
+    try { if (c.tokenEnc && safeStorage.isEncryptionAvailable()) token = safeStorage.decryptString(Buffer.from(c.tokenEnc, "base64")); } catch {}
+    return { id: c.id, name: String(c.name ?? ""), url: c.url, enabled: c.enabled !== false, ...(token ? { token } : {}) };
+  });
+}
+const viewOf = (c: StoredConnector): ConnectorView => ({ id: c.id, name: String(c.name ?? ""), url: c.url, enabled: c.enabled !== false, hasToken: !!c.tokenEnc });
+ipcMain.handle("connectors:list", async () => (await readStoredConnectors()).map(viewOf));
+ipcMain.handle("connectors:save", async (_event, input: { id?: string; name: string; url: string; enabled?: boolean; token?: string | null }) => {
+  const { name, url } = validateConnector(input ?? {});
+  const list = await readStoredConnectors();
+  const id = typeof input?.id === "string" && list.some(c => c.id === input.id) ? input.id : randomUUID().replace(/-/g, "").slice(0, 12);
+  const previous = list.find(c => c.id === id);
+  let tokenEnc = previous?.tokenEnc;
+  // undefined keeps the saved token, "" or null clears it, any other string replaces it.
+  if (input?.token === "" || input?.token === null) tokenEnc = undefined;
+  else if (typeof input?.token === "string") {
+    if (!safeStorage.isEncryptionAvailable()) throw new Error("この環境ではトークンを安全に保存できません。");
+    tokenEnc = safeStorage.encryptString(input.token.trim().slice(0, 8000)).toString("base64");
+  }
+  const next: StoredConnector = { id, name, url, enabled: input?.enabled !== false, ...(tokenEnc ? { tokenEnc } : {}) };
+  const saved = previous ? list.map(c => c.id === id ? next : c) : [...list, next];
+  await fs.writeFile(connectorsFile(), JSON.stringify(saved), "utf8");
+  return saved.map(viewOf);
+});
+ipcMain.handle("connectors:delete", async (_event, id: string) => {
+  const saved = (await readStoredConnectors()).filter(c => c.id !== String(id));
+  await fs.writeFile(connectorsFile(), JSON.stringify(saved), "utf8");
+  return saved.map(viewOf);
+});
+ipcMain.handle("connectors:test", async (_event, id: string) => {
+  // Lists the server's tools from this PC to confirm the URL and token; the API itself connects from Anthropic's side.
+  const connector = (await loadConnectors()).find(c => c.id === String(id));
+  if (!connector) throw new Error("コネクタが見つかりません。");
+  const { Client } = await import("@modelcontextprotocol/sdk/client/index.js");
+  const { StreamableHTTPClientTransport } = await import("@modelcontextprotocol/sdk/client/streamableHttp.js");
+  const { SSEClientTransport } = await import("@modelcontextprotocol/sdk/client/sse.js");
+  const headers: Record<string, string> = connector.token ? { Authorization: `Bearer ${connector.token}` } : {};
+  const attempt = async (transport: any) => {
+    const client = new Client({ name: "claude-continuity", version: app.getVersion() });
+    try {
+      await client.connect(transport);
+      const { tools } = await client.listTools();
+      return tools.map(t => t.name).slice(0, 100);
+    } finally { await client.close().catch(() => {}); }
+  };
+  try { return { tools: await attempt(new StreamableHTTPClientTransport(new URL(connector.url), { requestInit: { headers } })) }; }
+  catch (first) {
+    try { return { tools: await attempt(new SSEClientTransport(new URL(connector.url), { requestInit: { headers }, eventSourceInit: { fetch: (u: any, init: any) => fetch(u, { ...init, headers: { ...(init?.headers ?? {}), ...headers } }) } as any })) }; }
+    catch { throw new Error(`接続できませんでした: ${String((first as Error)?.message ?? first).slice(0, 200)}`); }
+  }
+});
+
 // ---- Generated files ----
 ipcMain.handle("files:save", async (_event, payload: { fileId: string; name: string }) => {
   const fileId = String(payload?.fileId ?? "");
@@ -565,6 +634,10 @@ ipcMain.handle("claude:reply", async (event, payload: ReplyPayload) => {
   const flags: ToolFlags = { ...(payload.tools ?? {}), memory: !incognito && (payload.tools?.memory === true || project?.memory === true), pastChats: !incognito && prefs.searchPastChats };
   const { tools, skills, unavailable } = buildTools(flags, caps);
   const codeOn = tools.some(t => t.type === "code_execution_20250825");
+  const activeConnectors = incognito ? [] : (await loadConnectors()).filter(c => c.enabled && (payload.tools?.connectors ?? []).includes(c.id));
+  const mcp = activeConnectors.length ? connectorRequest(activeConnectors) : null;
+  const connectorNames = new Map(activeConnectors.map(c => [serverName(c), c.name] as const));
+  const connectorLabel = (server?: string) => (server && connectorNames.get(server)) || server || "外部ツール";
   const client = new Anthropic({ apiKey: await getApiKey() });
   const store = attachments();
   const loader = {
@@ -610,25 +683,31 @@ ipcMain.handle("claude:reply", async (event, payload: ReplyPayload) => {
   try {
     for (let iteration = 0; iteration < MAX_LOOP; iteration++) {
       // Thinking counts toward max_tokens, so allow the model's full output budget; streaming keeps long replies within SDK limits.
-      const stream = client.messages.stream({
+      const params = {
         model, max_tokens: info?.maxTokens ?? 8192, messages,
         ...(system ? { system } : {}),
-        ...(tools.length ? { tools } : {}),
+        ...(tools.length || mcp ? { tools: [...tools, ...(mcp?.tools ?? [])] } : {}),
+        ...(mcp ? { mcp_servers: mcp.mcp_servers } : {}),
         ...(skills.length || container ? { container: { ...(container ? { id: container.id } : {}), ...(skills.length ? { skills: skills.map(skill_id => ({ type: "anthropic" as const, skill_id, version: "latest" })) } : {}) } } : {}),
         // Newer models default to display "omitted" (empty thinking text); ask for the readable summary instead.
         ...(info?.adaptiveThinking ? { thinking: { type: "adaptive" as const, display: "summarized" as const } } : {}),
         ...(effort ? { output_config: { effort: effort as "high" } } : {}),
         // Automatic prompt caching: the cache breakpoint moves forward with the conversation.
         cache_control: { type: "ephemeral" }
-      }, { signal: controller.signal });
+      };
+      // Connectors need the MCP connector beta; everything else uses the regular endpoint.
+      const stream = (mcp
+        ? client.beta.messages.stream({ ...params, betas: [MCP_CONNECTOR_BETA] } as any, { signal: controller.signal })
+        : client.messages.stream(params as any, { signal: controller.signal })) as unknown as MessageStream;
       stream.on("text", delta => send("text", delta));
       stream.on("thinking", delta => { thinking += delta; send("thinking", delta); });
       stream.on("streamEvent", (e, snapshot) => {
         pendingUsage = snapshot.usage;
         finalModel = snapshot.model || model;
         if (e.type === "content_block_start") {
-          const label = activityLabel((e.content_block as { name?: string }).name);
-          if (label && (e.content_block.type === "server_tool_use" || e.content_block.type === "tool_use")) send("activity", label);
+          const block = e.content_block as { type: string; name?: string; server_name?: string };
+          const label = block.type === "mcp_tool_use" ? `コネクタ（${connectorLabel(block.server_name)}）を使っています…` : activityLabel(block.name);
+          if (label && (block.type === "server_tool_use" || block.type === "tool_use" || block.type === "mcp_tool_use")) send("activity", label);
         }
       });
       const final: Message = await stream.finalMessage();
@@ -684,7 +763,7 @@ ipcMain.handle("claude:reply", async (event, payload: ReplyPayload) => {
     } catch { files.push({ fileId, name: fileId }); }
   }
   // "pause_turn"/"tool_use" here mean the loop limit cut the turn short; the UI offers to continue.
-  const steps = extractSteps(turnBlocks, clientResults);
+  const steps = extractSteps(turnBlocks, clientResults, Object.fromEntries(connectorNames));
   return { text, thinking, aborted, usage, citations, files, container, steps, ...(stopReason && stopReason !== "end_turn" && stopReason !== "stop_sequence" && !aborted ? { stopReason } : {}), notices: [...(built.omitted ? [`古いやり取り ${built.omitted} 件はモデルの上限のため送っていません`] : []), ...built.skipped.map(s => `添付をスキップ: ${s}`), ...unavailable.map(u => `${u}はこのモデルでは使えません`)] };
 });
 

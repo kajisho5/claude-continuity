@@ -1,6 +1,6 @@
 import { forwardRef, useImperativeHandle, useLayoutEffect, useRef } from "react";
 import { ArrowUp, Plus, Square } from "lucide-react";
-import ToolsMenu, { type Tools } from "./ToolsMenu";
+import ToolsMenu, { type ConnectorOption, type Tools } from "./ToolsMenu";
 import ModelMenu from "./ModelMenu";
 import { AttachmentChip } from "./MessageItem";
 
@@ -17,6 +17,7 @@ type Props = {
   model: string; models: Option[]; onModel: (v: string) => void; modelsLoading: boolean; onRefreshModels: () => void;
   effort: string; efforts: Option[]; onEffort: (v: string) => void;
   placeholder: string; placement?: "up" | "down";
+  connectors?: ConnectorOption[]; onManageConnectors?: () => void;
 };
 
 const Composer = forwardRef<ComposerHandle, Props>(function Composer(p, ref) {
@@ -38,7 +39,7 @@ const Composer = forwardRef<ComposerHandle, Props>(function Composer(p, ref) {
     <div className="composer-bar">
       <button className="round-btn tip" data-tip="ファイルを添付" aria-label="ファイルを添付" onClick={p.onPickFiles} disabled={p.busy}><Plus size={17} /></button>
       <ToolsMenu tools={p.tools} onChange={p.onTools} disabled={p.busy} projectMemory={p.projectMemory}
-        style={p.style} styles={p.styles} onStyle={p.onStyle} placement={p.placement} />
+        style={p.style} styles={p.styles} onStyle={p.onStyle} placement={p.placement} connectors={p.connectors} onManageConnectors={p.onManageConnectors} />
       <span className="spacer" />
       <ModelMenu model={p.model} models={p.models} onModel={p.onModel} modelsLoading={p.modelsLoading} onRefresh={p.onRefreshModels}
         effort={p.effort} efforts={p.efforts} onEffort={p.onEffort} disabled={p.busy} placement={p.placement} />

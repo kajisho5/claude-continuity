@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import type { ConnectorView } from "./lib/connectors";
 import { ArrowDown, ArrowUpRight, Ghost, Plus, Shapes, FileUp, FolderOpen, MessagesSquare, PanelLeftClose, PanelLeftOpen, Search } from "lucide-react";
 import CreditCard from "./components/CreditCard";
 import LogoMark, { LogoGlyph } from "./components/LogoMark";
@@ -105,6 +106,7 @@ export default function App() {
  const [confirmDelete,setConfirmDelete]=useState<string|null>(null);
  const [confirmBulk,setConfirmBulk]=useState<string[]|null>(null);
  const [handoff,setHandoff]=useState(false);
+ const [connectors,setConnectors]=useState<ConnectorView[]>([]);
  const [update,setUpdate]=useState<UpdateStatus>({state:"idle"});
  const [updateDismissed,setUpdateDismissed]=useState("");
  const pendingRef=useRef<Pending|null>(null);
@@ -134,6 +136,7 @@ export default function App() {
      pendingRef.current=next;setPending(next);
    });
    const offUpdate=window.continuity.onUpdateStatus(setUpdate);
+   window.continuity.listConnectors().then(setConnectors).catch(()=>{});
    return ()=>{window.clearInterval(timer);unsubscribe();offUpdate();};
  },[]);
  async function refreshModels(announce=false){
@@ -411,6 +414,7 @@ export default function App() {
    style={chat.style==="custom"?"custom:custom":chat.style??"standard"} styles={[...STYLES.filter(s=>s.id!=="custom").map(s=>({value:s.id,label:s.label})),...prefs.customStyles.map(st=>({value:"custom:"+st.id,label:st.name}))]} onStyle={v=>patchChat(chat.id,c=>({...c,style:v}))}
    model={model} models={availableModels.length?availableModels.map(m=>({value:m.id,label:m.displayName})):[{value:model,label:modelsLoading?"取得中…":model}]} onModel={setModel} modelsLoading={modelsLoading} onRefreshModels={()=>void refreshModels(true)}
    effort={effort} efforts={currentModel?.effortLevels.length?[{value:"",label:"思考: 既定"},...currentModel.effortLevels.map(l=>({value:l,label:`思考: ${EFFORT_LABELS[l]??l}`}))]:[]} onEffort={setEffort}
+   connectors={chat.incognito?[]:connectors.filter(c=>c.enabled).map(c=>({id:c.id,name:c.name}))} onManageConnectors={()=>setSettings("connectors")}
    placeholder={chat.incognito?"シークレットチャット（保存されません）":fresh?"今日はどんなお手伝いをしましょうか？":"返信…"} placement={fresh?"down":"up"}/>;
  return <ArtifactContext.Provider value={setArtifact}><div className={"shell font-"+prefs.chatFont+(sidebarOpen?"":" sidebar-closed")}>
   <aside aria-hidden={!sidebarOpen}>
@@ -497,7 +501,7 @@ export default function App() {
    {dragging&&<div className="drop-hint">ここにドロップして添付</div>}
   </main>
   {settings&&<SettingsPage initialTab={settings} prefs={prefs} onSavePrefs={savePrefs} configured={configured} onSaveKey={saveKey}
-    credit={credit} onSaveCredit={saveCredit} onRestartOnboarding={()=>{setSettings(null);setOnboarding(true);}} onClose={()=>setSettings(null)} onNotice={toast}
+    credit={credit} onSaveCredit={saveCredit} onRestartOnboarding={()=>{setSettings(null);setOnboarding(true);}} onClose={()=>setSettings(null)} onNotice={toast} onConnectors={setConnectors}
     model={model} onUsage={usage=>setUsageRows(rows=>[...rows,{...usage,createdAt:new Date().toISOString()}])}/>}
   {handoff&&<HandoffDialog title={chat.title} turns={chat.messages.map(m=>({role:m.role,content:m.content}))} model={model} modelLabel={currentModel?.displayName??model} configured={configured}
     onUsage={usage=>setUsageRows(rows=>[...rows,{...usage,createdAt:new Date().toISOString()}])} onNotice={toast} onClose={()=>setHandoff(false)}/>}

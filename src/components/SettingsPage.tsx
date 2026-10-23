@@ -1,21 +1,24 @@
 import { useEffect, useState } from "react";
-import { CreditCard as CreditIcon, HardDrive, ExternalLink, Info, KeyRound, MessageSquareText, Plug, ShieldCheck, UserRound, X } from "lucide-react";
+import type { ConnectorView } from "../lib/connectors";
+import { Cable, CreditCard as CreditIcon, HardDrive, ExternalLink, Info, KeyRound, MessageSquareText, Plug, ShieldCheck, UserRound, X } from "lucide-react";
 import CreditSettingsForm from "./CreditSettingsForm";
 import PreferencesSection from "./PreferencesSection";
 import McpSection from "./McpSection";
 import DataSection from "./DataSection";
 import UpdateSection from "./UpdateSection";
+import ConnectorsSection from "./ConnectorsSection";
 import type { CreditSettings } from "../lib/credit";
 import { type Prefs } from "../lib/prefs";
 
-export type SettingsTab = "general" | "api" | "credit" | "responses" | "data" | "mcp" | "about";
+export type SettingsTab = "general" | "api" | "credit" | "responses" | "connectors" | "data" | "mcp" | "about";
 const TABS: { id: SettingsTab; label: string; icon: typeof KeyRound }[] = [
   { id: "general", label: "一般", icon: UserRound },
   { id: "api", label: "API キー", icon: KeyRound },
   { id: "credit", label: "クレジット", icon: CreditIcon },
   { id: "responses", label: "スタイルとメモリ", icon: MessageSquareText },
+  { id: "connectors", label: "コネクタ", icon: Cable },
   { id: "data", label: "データとバックアップ", icon: HardDrive },
-  { id: "mcp", label: "MCP 連携", icon: Plug },
+  { id: "mcp", label: "Claude Code 連携", icon: Plug },
   { id: "about", label: "このアプリについて", icon: Info }
 ];
 const THEMES: { id: Prefs["theme"]; label: string }[] = [{ id: "system", label: "システム" }, { id: "light", label: "ライト" }, { id: "dark", label: "ダーク" }];
@@ -31,6 +34,7 @@ type Props = {
   configured: boolean; onSaveKey: (key: string) => Promise<void>;
   credit: CreditSettings | null; onSaveCredit: (next: CreditSettings) => Promise<void>; onRestartOnboarding: () => void;
   onClose: () => void; onNotice: (text: string, kind?: "ok" | "error") => void;
+  onConnectors: (list: ConnectorView[]) => void;
   model: string; onUsage: (usage: Awaited<ReturnType<typeof window.continuity.styleFromSample>>["usage"]) => void;
 };
 
@@ -111,6 +115,7 @@ export default function SettingsPage(p: Props) {
             <button className="link" onClick={p.onRestartOnboarding}>初期設定をやり直す</button></div>
         </>}
         {tab === "responses" && <PreferencesSection prefs={p.prefs} onSave={p.onSavePrefs} model={p.model} onUsage={p.onUsage} />}
+        {tab === "connectors" && <ConnectorsSection onChange={p.onConnectors} />}
         {tab === "data" && <DataSection onNotice={p.onNotice} />}
         {tab === "mcp" && <McpSection />}
         {tab === "about" && <>
