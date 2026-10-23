@@ -152,6 +152,7 @@ npm run dev      # Vite + Electron (development)
 npm test         # unit tests (vitest)
 npm run build    # type-check (renderer / electron) and build
 npm start        # run the built app
+npm run test:e2e  # screen tests (Electron + Playwright, after build; xvfb-run -a on Linux without a display)
 ```
 
 Packages: `npm run dist:win` / `npm run dist:mac` / `npm run dist:linux`

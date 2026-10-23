@@ -153,6 +153,7 @@ npm run dev      # Vite + Electron（開発モード）
 npm test         # 単体テスト（vitest）
 npm run build    # 型チェック（renderer / electron）とビルド
 npm start        # ビルド済みのアプリを起動
+npm run test:e2e  # 画面テスト（Electron + Playwright。build の後に実行。画面のない Linux では xvfb-run -a を付ける）
 ```
 
 パッケージ作成：`npm run dist:win` / `npm run dist:mac` / `npm run dist:linux`
