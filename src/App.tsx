@@ -130,6 +130,15 @@ export default function App() {
  }
  useEffect(()=>{ if(configured) void refreshModels(); },[configured]);
  useEffect(()=>{
+   // Resolve the theme here rather than trusting the OS bridge: "system" follows prefers-color-scheme, the others are fixed.
+   const media=window.matchMedia("(prefers-color-scheme: dark)");
+   const apply=()=>{document.documentElement.dataset.theme=prefs.theme==="system"?(media.matches?"dark":"light"):prefs.theme;};
+   apply();
+   if(prefs.theme!=="system")return;
+   media.addEventListener("change",apply);
+   return ()=>media.removeEventListener("change",apply);
+ },[prefs.theme]);
+ useEffect(()=>{
    // MCP usage is written by another process; pick it up when the window regains focus.
    const reload=()=>{window.continuity.loadUsage().then(rows=>setUsageRows(toUsageRows(rows))).catch(()=>{});};
    window.addEventListener("focus",reload);
@@ -400,7 +409,7 @@ export default function App() {
    {dragging&&<div className="drop-hint">ここにドロップして添付</div>}
   </main>
   {settings&&<SettingsPage initialTab={settings} prefs={prefs} onSavePrefs={savePrefs} configured={configured} onSaveKey={saveKey}
-    credit={credit} onSaveCredit={saveCredit} onRestartOnboarding={()=>{setSettings(null);setOnboarding(true);}} onClose={()=>setSettings(null)}/>}
+    credit={credit} onSaveCredit={saveCredit} onRestartOnboarding={()=>{setSettings(null);setOnboarding(true);}} onClose={()=>setSettings(null)} onNotice={toast}/>}
   <Toaster toasts={toasts} onDismiss={id=>setToasts(list=>list.filter(t=>t.id!==id))}/>
   {renaming&&<RenameDialog initial={chats.find(c=>c.id===renaming)?.title??""} onSave={title=>patchChat(renaming,c=>({...c,title}))} onClose={()=>setRenaming(null)}/>}
   {confirmDelete&&<ConfirmDialog title="会話を削除しますか？" body={`「${chats.find(c=>c.id===confirmDelete)?.title??""}」を端末内の履歴から削除します。元に戻せません。`} confirm="削除"

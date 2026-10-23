@@ -7,6 +7,7 @@ import AdmZip from "adm-zip";
 import type { MessageParam, ContentBlock, Message } from "@anthropic-ai/sdk/resources/messages";
 import { AttachmentStore, type Attachment } from "./attachments";
 import { listMemoryFiles, runMemoryCommand } from "./memory";
+import { createBackup, readBackup, restoreEntries } from "./backup";
 import { activityLabel, buildMessages, buildSystem, buildTools, extractFileIds, extractText, type ChatTurn, type Project, type StyleId, type ToolFlags } from "./request";
 
 // Only `npm run dev` passes --dev; `npm start` after a build must load the bundled renderer.
@@ -215,6 +216,40 @@ ipcMain.handle("usage:load", async () => {
     for (const line of lines) { try { rows.push({ ...JSON.parse(line), source: "mcp" }); } catch {} }
   } catch {}
   return rows;
+});
+// ---- Backup and restore of everything except the device-bound API key ----
+const stamp = () => new Date().toISOString().slice(0, 19).replace(/[-:]/g, "").replace("T", "-");
+ipcMain.handle("data:backup", async () => {
+  const result = await dialog.showSaveDialog({
+    title: "すべてのデータをバックアップ", defaultPath: `claude-continuity-backup-${stamp()}.zip`,
+    filters: [{ name: "ZIP", extensions: ["zip"] }]
+  });
+  if (result.canceled || !result.filePath) return { canceled: true };
+  const { zip, count } = await createBackup(dataDir(), app.getVersion());
+  await fs.writeFile(result.filePath, zip.toBuffer());
+  return { canceled: false, filePath: result.filePath, count };
+});
+ipcMain.handle("data:openFolder", async () => {
+  const error = await shell.openPath(dataDir());
+  if (error) throw new Error(error);
+  return true;
+});
+ipcMain.handle("data:restore", async () => {
+  const result = await dialog.showOpenDialog({ title: "バックアップから復元", properties: ["openFile"], filters: [{ name: "ZIP", extensions: ["zip"] }] });
+  if (result.canceled || !result.filePaths[0]) return { canceled: true };
+  const stat = await fs.stat(result.filePaths[0]);
+  if (stat.size > 2 * 1024 * 1024 * 1024) throw new Error("バックアップファイルが大きすぎます（上限 2GB）。");
+  let zip: AdmZip;
+  try { zip = new AdmZip(result.filePaths[0]); } catch { throw new Error("ZIP ファイルを開けませんでした。"); }
+  const entries = readBackup(zip);
+  // Keep the current state next to the data folder so a mistaken restore can be undone by restoring this file.
+  const safetyDir = path.join(app.getPath("userData"), "backups");
+  await fs.mkdir(safetyDir, { recursive: true });
+  const safetyPath = path.join(safetyDir, `before-restore-${stamp()}.zip`);
+  await fs.writeFile(safetyPath, (await createBackup(dataDir(), app.getVersion())).zip.toBuffer());
+  await restoreEntries(dataDir(), entries);
+  nativeTheme.themeSource = (await loadPrefs()).theme;
+  return { canceled: false, count: entries.length, safetyPath };
 });
 ipcMain.handle("mcp:info", () => {
   // Packaged builds unpack dist-mcp from the asar archive so the Electron binary can run it as Node.

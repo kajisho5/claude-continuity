@@ -41,6 +41,14 @@ A local-first Electron desktop app for importing Claude conversation exports and
 - Exported conversations may contain private information; keep export files secure.
 - API usage shown in the app is a local record of successful requests, not a real-time credit balance or exact cost estimate.
 
+## バックアップと引っ越し
+
+設定 →「データとバックアップ」から、会話・プロジェクト・添付ファイル・メモリ・設定・使用量の記録を 1 つの ZIP に書き出せます。
+
+- API キーは含まれません。キーはこの PC 専用の暗号化（`safeStorage`）で保存しているためです。復元先の PC で設定し直してください。
+- 復元すると現在のデータは置き換わります。置き換える前の状態は、ユーザーデータフォルダの `backups/before-restore-*.zip` に自動で保存されます。
+- データはこの PC のユーザーデータフォルダにだけ保存されます。クラウドには同期しません。フォルダの場所は同じ画面に表示されます。
+
 ## Known limitations
 
 - The export parser is best-effort; Claude export formats and attachment types vary.
@@ -92,6 +100,16 @@ npm test
 npm run build
 npm start
 ```
+
+## ダウンロード（Windows）
+
+[Releases](https://github.com/kajisho5/claude-continuity/releases) ページから `Claude Continuity Setup <version>.exe` をダウンロードして実行します。インストーラーには署名がないため、Windows SmartScreen の警告が出たら「詳細情報」→「実行」を選んでください。
+
+### リリースの公開手順（メンテナー向け）
+
+1. `package.json` の `version` を上げてコミットします。
+2. `git tag v<version> && git push origin v<version>` を実行します。
+3. `.github/workflows/release.yml` がインストーラーをビルドし、テストを実行してから同じタグのリリースにアップロードします。タグと `package.json` の version が一致しないと失敗します。
 
 ## Package locally
 

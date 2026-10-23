@@ -43,6 +43,9 @@ declare global {
       loadCredit: () => Promise<ContinuityCreditSettings | null>;
       saveCredit: (settings: ContinuityCreditSettings) => Promise<ContinuityCreditSettings>;
       loadPrefs: () => Promise<ContinuityPrefs>;
+      backupData: () => Promise<{ canceled: true } | { canceled: false; filePath: string; count: number }>;
+      restoreData: () => Promise<{ canceled: true } | { canceled: false; count: number; safetyPath: string }>;
+      openDataFolder: () => Promise<boolean>;
       savePrefs: (prefs: ContinuityPrefs) => Promise<ContinuityPrefs>;
       loadProjects: () => Promise<ContinuityProject[]>;
       saveProjects: (projects: ContinuityProject[]) => Promise<ContinuityProject[]>;

@@ -625,32 +625,28 @@ header{height:52px;border-bottom:0;padding:0 16px;gap:8px;justify-content:flex-s
 
 /* ===== Round 3: themes, chat font, settings page, chats page, toasts ===== */
 :root{--code-bg:#1A1918;--panel:#22211F;--scroll:#4A4844;--glyph-track:#5A5752;--send-off:#47453F;--send-off-text:#8E8A80;--avatar:#D9D5CB;--chat-font:var(--serif-body);--shadow:#0006}
-/* Light palette: same warm neutrals inverted; nativeTheme.themeSource drives prefers-color-scheme. */
-@media (prefers-color-scheme: light){
-  :root{
-    --bg:#FAF9F5;--sidebar:#F3F1EA;--surface:#FFFFFF;--surface-2:#FFFFFF;--modal:#FFFFFF;--input:#FFFFFF;--raised:#EFECE3;
+/* Light palette, applied by the renderer via data-theme (system follows prefers-color-scheme). */
+html[data-theme="light"]{--bg:#FAF9F5;--sidebar:#F3F1EA;--surface:#FFFFFF;--surface-2:#FFFFFF;--modal:#FFFFFF;--input:#FFFFFF;--raised:#EFECE3;
     --border:#E6E2D8;--border-strong:#DAD5C9;--border-input:#C7C1B3;
     --text:#1D1C19;--text-2:#29271F;--text-3:#37352E;--text-4:#55524A;--muted:#6E6A61;--subtle:#8B867B;--faint:#A29D91;
     --accent:#578DD9;--accent-hover:#4A80CC;--on-accent:#0F1522;--link:#2F69BD;
     --ok:#4F8A3E;--warn:#A9741A;--danger:#C0523F;
     --panel:#F3F1EA;--scroll:#CFCABD;--glyph-track:#C9C3B5;--send-off:#E3DFD4;--send-off-text:#A29D91;--avatar:#3A3833;--shadow:#0002;
-    color-scheme:light;
-  }
-  .overlay{background:#2a26201f}
-  .onboarding{background:#2a262040}
-  .modal,.wizard,.settings,.menu{box-shadow:0 1px 2px #0000000f,0 16px 48px #0000001f}
-  .composer{box-shadow:0 1px 2px #0000000d,0 6px 24px #0000000f}
-  .composer:focus-within{box-shadow:0 1px 2px #0000000d,0 8px 30px #00000017}
-  .initial{color:#FAF9F5}
-  .markdown code{background:var(--raised)}
-  .code-block .code-head{background:#2A2926;color:#B9B4A8}
-  .code-block .copy-btn{color:#B9B4A8!important;border-color:#45433E}
-  .user-bubble{border-color:transparent}
-  .thinking-body{border-left-color:var(--border-strong)}
-  .tool-chip{background:color-mix(in srgb,var(--accent) 12%,transparent)}
-  .drop-hint{background:color-mix(in srgb,var(--accent) 8%,#fff)}
-  .artifact-code,.snippet pre{color:#DAD6CC}
-}
+    color-scheme:light;}
+html[data-theme="light"] .overlay{background:#2a26201f}
+html[data-theme="light"] .onboarding{background:#2a262040}
+html[data-theme="light"] .modal,html[data-theme="light"] .wizard,html[data-theme="light"] .settings,html[data-theme="light"] .menu{box-shadow:0 1px 2px #0000000f,0 16px 48px #0000001f}
+html[data-theme="light"] .composer{box-shadow:0 1px 2px #0000000d,0 6px 24px #0000000f}
+html[data-theme="light"] .composer:focus-within{box-shadow:0 1px 2px #0000000d,0 8px 30px #00000017}
+html[data-theme="light"] .initial{color:#FAF9F5}
+html[data-theme="light"] .markdown code{background:var(--raised)}
+html[data-theme="light"] .code-block .code-head{background:#2A2926;color:#B9B4A8}
+html[data-theme="light"] .code-block .copy-btn{color:#B9B4A8!important;border-color:#45433E}
+html[data-theme="light"] .user-bubble{border-color:transparent}
+html[data-theme="light"] .thinking-body{border-left-color:var(--border-strong)}
+html[data-theme="light"] .tool-chip{background:color-mix(in srgb,var(--accent) 12%,transparent)}
+html[data-theme="light"] .drop-hint{background:color-mix(in srgb,var(--accent) 8%,#fff)}
+html[data-theme="light"] .artifact-code,html[data-theme="light"] .snippet pre{color:#DAD6CC}
 .code-block,.snippet,.artifact-code{background:var(--code-bg)}
 .artifact-panel{background:var(--panel)}
 *{scrollbar-color:var(--scroll) transparent}
@@ -731,3 +727,7 @@ header{height:52px;border-bottom:0;padding:0 16px;gap:8px;justify-content:flex-s
 .chats-page{overflow-x:hidden}
 .toaster{top:60px;bottom:auto}
 @keyframes toastIn{from{opacity:0;transform:translateY(-8px) scale(.98)}to{opacity:1;transform:none}}
+.form-actions.start{justify-content:flex-start;margin-top:10px}
+.path-row{display:flex;align-items:center;gap:10px;margin-top:8px;padding:8px 8px 8px 12px;background:var(--input);border:1px solid var(--border);border-radius:9px}
+.path-row code{flex:1;min-width:0;font:11.5px var(--mono);color:var(--text-4);overflow-wrap:anywhere}
+.toaster{z-index:60}
