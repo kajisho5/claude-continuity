@@ -1,10 +1,19 @@
 name: Package Windows installer
+# Without a release tag: builds the installer as a workflow artifact (kept 14 days).
+# With a release tag (e.g. v0.2.0, matching package.json "version"): tags the selected commit and publishes
+# the release through release.yml. Tags pushed by this workflow's token do not start release.yml a second time.
 on:
   workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "リリースするタグ（例: v0.2.0）。空ならインストーラーを成果物として作るだけ"
+        required: false
+        default: ""
 permissions:
   contents: read
 jobs:
   windows-installer:
+    if: ${{ inputs.release_tag == '' }}
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -19,3 +28,30 @@ jobs:
           path: release/*.exe
           if-no-files-found: error
           retention-days: 14
+  tag:
+    if: ${{ inputs.release_tag != '' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      TAG: ${{ inputs.release_tag }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Create the tag on the selected commit
+        shell: bash
+        run: |
+          version="v$(node -p "require('./package.json').version")"
+          if [ "$version" != "$TAG" ]; then echo "::error::tag $TAG does not match package.json $version"; exit 1; fi
+          if git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null; then echo "::error::tag $TAG already exists"; exit 1; fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "$TAG" -m "Claude Continuity $TAG"
+          git push origin "refs/tags/$TAG"
+  release:
+    needs: tag
+    permissions:
+      contents: write
+    uses: ./.github/workflows/release.yml
+    with:
+      tag: ${{ inputs.release_tag }}
+    secrets: inherit

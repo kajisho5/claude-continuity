@@ -1,5 +1,6 @@
 name: Release Windows installer
-# Push a tag like v0.2.0 (matching package.json "version") to publish the installer.
+# Push a tag like v0.2.0 (matching package.json "version") to publish the installer,
+# or run "Package Windows installer" with a release tag: it creates the tag and calls this workflow.
 # latest.yml and the blockmap let installed copies find and download updates (electron-updater, GitHub provider).
 #
 # Where updates are published:
@@ -15,13 +16,18 @@ on:
       tag:
         description: "既存のタグ（例: v0.2.0）"
         required: true
+  workflow_call:
+    inputs:
+      tag:
+        type: string
+        required: true
 permissions:
   contents: write
 jobs:
   release:
     runs-on: windows-latest
     env:
-      TAG: ${{ github.event.inputs.tag || github.ref_name }}
+      TAG: ${{ inputs.tag || github.ref_name }}
       TARGET_REPO: ${{ vars.RELEASES_REPO || github.repository }}
     steps:
       - uses: actions/checkout@v4
