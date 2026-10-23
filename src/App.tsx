@@ -232,7 +232,7 @@ export default function App() {
    pendingRef.current=start;setPending(start);setStatus("Claudeに問い合わせ中…");
    const container=target.container&&(!target.container.expiresAt||Date.parse(target.container.expiresAt)>Date.now())?target.container.id:undefined;
    try{
-     const response=await window.continuity.reply({requestId,model,effort:effort||undefined,style:target.style,projectId:target.projectId,tools:target.incognito?{...target.tools,memory:false}:target.tools,containerId:container,
+     const response=await window.continuity.reply({requestId,model,effort:effort||undefined,style:target.style,projectId:target.projectId,tools:target.incognito?{...target.tools,memory:false}:target.tools,containerId:container,chatId:target.id,incognito:!!target.incognito,
        messages:history.slice(-60).map(m=>({role:m.role,content:m.content,...(m.attachments?.length?{attachments:m.attachments}:{})}))});
      const cost=costOf(response.usage.model,response.usage);
      const thoughtUntil=pendingRef.current?.firstTextAt??Date.now();

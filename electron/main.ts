@@ -8,6 +8,7 @@ import type { MessageParam, ContentBlock, Message } from "@anthropic-ai/sdk/reso
 import { AttachmentStore, type Attachment } from "./attachments";
 import { listMemoryFiles, runMemoryCommand } from "./memory";
 import { createBackup, readBackup, restoreEntries } from "./backup";
+import { formatHits, searchPastChats } from "./pastChats";
 import { HANDOFF_PREFIX, fitsHandoff } from "../src/lib/handoff";
 import { activityLabel, buildMessages, buildSystem, buildTools, extractFileIds, extractSteps, extractText, type ChatTurn, type Project, type StyleId, type ToolFlags } from "./request";
 
@@ -178,7 +179,7 @@ function sanitizeReply(m: any) {
     ...(m.aborted === true ? { aborted: true } : {}),
     ...(typeof m.stopReason === "string" ? { stopReason: m.stopReason.slice(0, 40) } : {}),
     ...(Array.isArray(m.steps) ? { steps: m.steps.slice(0, 100).map((st: any) => ({
-      kind: ["search", "fetch", "code", "file", "memory", "other"].includes(st?.kind) ? st.kind : "other", label: str(st?.label, 500) ?? "",
+      kind: ["search", "fetch", "code", "file", "memory", "history", "other"].includes(st?.kind) ? st.kind : "other", label: str(st?.label, 500) ?? "",
       ...(st?.detail ? { detail: str(st.detail, 5000) } : {}), ...(st?.output ? { output: str(st.output, 5000) } : {}), ...(st?.error === true ? { error: true } : {}),
       ...(Array.isArray(st?.sources) ? { sources: st.sources.slice(0, 20).map((c: any) => ({ url: str(c?.url, 2000) ?? "", title: str(c?.title, 500) ?? "" })) } : {})
     })) } : {}),
@@ -366,7 +367,7 @@ ipcMain.handle("credit:save", async (_event, value: any) => {
 const prefsFile = () => path.join(dataDir(), "prefs.json");
 type Theme = "system" | "light" | "dark";
 type ChatFont = "serif" | "sans" | "system";
-type Prefs = { autoTitle: boolean; customStyle: string; displayName: string; theme: Theme; chatFont: ChatFont; shareName: boolean; preferences: string };
+type Prefs = { autoTitle: boolean; customStyle: string; displayName: string; theme: Theme; chatFont: ChatFont; shareName: boolean; preferences: string; searchPastChats: boolean };
 const THEMES: Theme[] = ["system", "light", "dark"];
 const FONTS: ChatFont[] = ["serif", "sans", "system"];
 function sanitizePrefs(raw: any): Prefs {
@@ -378,7 +379,8 @@ function sanitizePrefs(raw: any): Prefs {
     chatFont: FONTS.includes(raw?.chatFont) ? raw.chatFont : "serif",
     // The display name stays local unless the user opts in to Claude using it.
     shareName: raw?.shareName === true,
-    preferences: typeof raw?.preferences === "string" ? raw.preferences.slice(0, 4000) : ""
+    preferences: typeof raw?.preferences === "string" ? raw.preferences.slice(0, 4000) : "",
+    searchPastChats: raw?.searchPastChats !== false
   };
 }
 async function loadPrefs(): Promise<Prefs> {
@@ -467,7 +469,7 @@ ipcMain.handle("files:save", async (_event, payload: { fileId: string; name: str
 // ---- Replies ----
 type ReplyPayload = {
   requestId: string; messages: ChatTurn[]; model?: string; effort?: string;
-  style?: StyleId; projectId?: string; tools?: ToolFlags; containerId?: string;
+  style?: StyleId; projectId?: string; tools?: ToolFlags; containerId?: string; chatId?: string; incognito?: boolean;
 };
 const activeReplies = new Map<string, AbortController>();
 const MAX_LOOP = 8;
@@ -480,6 +482,14 @@ function sanitizeTurns(list: unknown): ChatTurn[] {
   return list.filter((m: any) => m && (m.role === "user" || m.role === "assistant") && typeof m.content === "string")
     .map((m: any) => ({ role: m.role, content: m.content.slice(0, 2_000_000), ...(m.role === "user" ? { attachments: sanitizeAttachments(m.attachments) } : {}) }));
 }
+async function pastChatsOutcome(input: { query?: unknown; max_results?: unknown }, chatId?: string, projectId?: string) {
+  const query = typeof input?.query === "string" ? input.query.slice(0, 500) : "";
+  if (!query.trim()) return { content: "Error: query is required", isError: true };
+  let chats: any[] = [];
+  try { const data = JSON.parse(await fs.readFile(chatsFile(), "utf8")); if (Array.isArray(data)) chats = data; } catch {}
+  const max = typeof input?.max_results === "number" ? input.max_results : 5;
+  return { content: formatHits(searchPastChats(chats, query, { excludeId: chatId, projectId: projectId || undefined, max })) };
+}
 ipcMain.handle("claude:reply", async (event, payload: ReplyPayload) => {
   const turns = sanitizeTurns(payload?.messages);
   if (!turns.length) throw new Error("送信する会話がありません。");
@@ -491,7 +501,9 @@ ipcMain.handle("claude:reply", async (event, payload: ReplyPayload) => {
   const effort = payload.effort && info?.effortLevels.includes(payload.effort) ? payload.effort : undefined;
   const [prefs, projects] = await Promise.all([loadPrefs(), loadProjects()]);
   const project = payload.projectId ? projects.find(p => p.id === payload.projectId) ?? null : null;
-  const flags: ToolFlags = { ...(payload.tools ?? {}), memory: payload.tools?.memory === true || project?.memory === true };
+  const incognito = payload.incognito === true;
+  // Incognito chats neither remember nor look back, as in the Claude apps.
+  const flags: ToolFlags = { ...(payload.tools ?? {}), memory: !incognito && (payload.tools?.memory === true || project?.memory === true), pastChats: !incognito && prefs.searchPastChats };
   const { tools, skills, unavailable } = buildTools(flags, caps);
   const codeOn = tools.some(t => t.type === "code_execution_20250825");
   const client = new Anthropic({ apiKey: await getApiKey() });
@@ -574,7 +586,9 @@ ipcMain.handle("claude:reply", async (event, payload: ReplyPayload) => {
           if (block.type !== "tool_use") continue;
           const outcome = block.name === "memory"
             ? await runMemoryCommand(memoryRoot(), (block.input ?? {}) as Record<string, unknown>)
-            : { content: `Error: unknown tool ${block.name}`, isError: true };
+            : block.name === "search_past_chats"
+              ? await pastChatsOutcome(block.input as { query?: unknown; max_results?: unknown }, payload.chatId, payload.projectId)
+              : { content: `Error: unknown tool ${block.name}`, isError: true };
           clientResults.set(block.id, outcome);
           results.push({ type: "tool_result" as const, tool_use_id: block.id, content: outcome.content, ...(outcome.isError ? { is_error: true } : {}) });
         }

@@ -2,7 +2,7 @@ import type { ContentBlockParam, MessageParam, ToolUnion } from "@anthropic-ai/s
 import type { Attachment } from "./attachments";
 
 export type ChatTurn = { role: "user" | "assistant"; content: string; attachments?: Attachment[] };
-export type ToolFlags = { webSearch?: boolean; webFetch?: boolean; files?: boolean; analysis?: boolean; memory?: boolean };
+export type ToolFlags = { webSearch?: boolean; webFetch?: boolean; files?: boolean; analysis?: boolean; memory?: boolean; pastChats?: boolean };
 export type ModelCaps = { webSearch: boolean; codeExecution: boolean; imageInput: boolean; pdfInput: boolean };
 export type Project = { id: string; name: string; instructions: string; knowledge: Attachment[]; memory: boolean };
 export type StyleId = "standard" | "concise" | "detailed" | "explanatory" | "custom";
@@ -12,6 +12,7 @@ export const STYLE_PROMPTS: Record<Exclude<StyleId, "standard" | "custom">, stri
   detailed: "回答は詳しくしてください。背景、根拠、具体例、注意点まで含めて丁寧に説明してください。",
   explanatory: "教える口調で説明してください。専門用語は噛み砕き、前提から段階を追って理解できるようにしてください。"
 };
+import { PAST_CHATS_TOOL } from "./pastChats";
 export const ANTHROPIC_SKILLS = ["xlsx", "docx", "pptx", "pdf"];
 
 export type Profile = { name?: string; preferences?: string };
@@ -115,6 +116,7 @@ export function buildTools(flags: ToolFlags, caps: ModelCaps): { tools: ToolUnio
     else unavailable.push(flags.files ? "ファイル作成" : "データ分析");
   }
   if (flags.memory) tools.push({ type: "memory_20250818", name: "memory" });
+  if (flags.pastChats) tools.push(PAST_CHATS_TOOL);
   return { tools, skills: flags.files && caps.codeExecution ? ANTHROPIC_SKILLS : [], unavailable };
 }
 
@@ -165,12 +167,13 @@ export function activityLabel(name: string | undefined): string | null {
     case "web_fetch": return "ページを読み込んでいます…";
     case "code_execution": case "bash_code_execution": case "text_editor_code_execution": return "コードを実行しています…";
     case "memory": return "メモリを確認しています…";
+    case "search_past_chats": return "過去の会話を探しています…";
     default: return null;
   }
 }
 
 export type ToolStep = {
-  kind: "search" | "fetch" | "code" | "file" | "memory" | "other";
+  kind: "search" | "fetch" | "code" | "file" | "memory" | "history" | "other";
   label: string;
   detail?: string;
   output?: string;
@@ -213,6 +216,9 @@ export function extractSteps(blocks: unknown[], clientResults: Map<string, { con
     } else if (b.name === "memory") {
       const own = clientResults.get(b.id);
       steps.push({ kind: "memory", label: `${MEMORY_LABELS[String(input.command)] ?? "メモリ操作"}${input.path ? `: ${clip(input.path, 300)}` : ""}`, ...(own ? { output: clip(own.content), ...(own.isError ? { error: true } : {}) } : {}) });
+    } else if (b.name === "search_past_chats") {
+      const own = clientResults.get(b.id);
+      steps.push({ kind: "history", label: `過去の会話から「${clip(input.query, 200)}」を検索`, ...(own ? { output: clip(own.content), ...(own.isError ? { error: true } : {}) } : {}) });
     } else {
       steps.push({ kind: "other", label: String(b.name ?? "ツール"), detail: clip(input, 2000) });
     }

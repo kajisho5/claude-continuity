@@ -1,6 +1,6 @@
 /** One tool call made while answering (mirrors electron/request.ts ToolStep). */
 export type ToolStep = {
-  kind: "search" | "fetch" | "code" | "file" | "memory" | "other";
+  kind: "search" | "fetch" | "code" | "file" | "memory" | "history" | "other";
   label: string;
   detail?: string;
   output?: string;

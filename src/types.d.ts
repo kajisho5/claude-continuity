@@ -64,7 +64,7 @@ declare global {
       listModels: () => Promise<ContinuityModel[]>;
       reply: (payload: {
         requestId: string; messages: { role: "user" | "assistant"; content: string; attachments?: ContinuityAttachment[] }[];
-        model?: string; effort?: string; style?: string; projectId?: string; tools?: ContinuityTools; containerId?: string;
+        model?: string; effort?: string; style?: string; projectId?: string; tools?: ContinuityTools; containerId?: string; chatId?: string; incognito?: boolean;
       }) => Promise<{
         text: string; thinking: string; aborted: boolean; usage: ContinuityUsage; citations: ContinuityCitation[]; files: ContinuityFile[];
         container?: { id: string; expiresAt?: string }; notices: string[]; steps: ContinuityStep[]; stopReason?: string;

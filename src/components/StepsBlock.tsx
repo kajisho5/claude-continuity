@@ -1,14 +1,14 @@
-import { Brain, ChevronDown, Code2, FileText, Globe, Search, Wrench } from "lucide-react";
+import { Brain, ChevronDown, Code2, FileText, Globe, History, Search, Wrench } from "lucide-react";
 import type { ToolStep } from "../lib/steps";
 
-const ICONS = { search: Search, fetch: Globe, code: Code2, file: FileText, memory: Brain, other: Wrench } as const;
+const ICONS = { search: Search, fetch: Globe, code: Code2, file: FileText, memory: Brain, history: History, other: Wrench } as const;
 const hostOf = (url: string) => { try { return new URL(url).hostname; } catch { return url; } };
 
 function summary(steps: ToolStep[]): string {
   const count = (kind: ToolStep["kind"]) => steps.filter(s => s.kind === kind).length;
   const parts = [
     count("search") && `検索 ${count("search")} 回`, count("fetch") && `ページ読込 ${count("fetch")} 件`,
-    count("code") + count("file") && `コード実行 ${count("code") + count("file")} 回`, count("memory") && `メモリ ${count("memory")} 回`, count("other") && `その他 ${count("other")} 回`
+    count("code") + count("file") && `コード実行 ${count("code") + count("file")} 回`, count("memory") && `メモリ ${count("memory")} 回`, count("history") && `過去の会話を検索 ${count("history")} 回`, count("other") && `その他 ${count("other")} 回`
   ].filter(Boolean);
   return parts.join(" · ");
 }

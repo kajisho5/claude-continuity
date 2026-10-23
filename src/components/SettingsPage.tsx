@@ -81,6 +81,8 @@ export default function SettingsPage(p: Props) {
             {FONTS.map(f => <button key={f.id} role="radio" aria-checked={p.prefs.chatFont === f.id} className={"theme-card" + (p.prefs.chatFont === f.id ? " active" : "")} onClick={() => update({ chatFont: f.id })}>
               <span className="font-preview" style={{ fontFamily: f.sample }}>Aa あ</span>{f.label}</button>)}
           </div>
+          <label className="toggle-row"><span><b>過去の会話を検索して参照する</b><small>関連しそうなとき、Claude がこの PC に保存された過去の会話を検索して文脈に使います。プロジェクト内の会話はそのプロジェクトの中だけを検索します。シークレットチャットでは使いません。</small></span>
+            <input type="checkbox" className="switch" checked={p.prefs.searchPastChats} onChange={e => update({ searchPastChats: e.target.checked })} /></label>
           <label className="toggle-row"><span><b>会話タイトルを自動で付ける</b><small>最初の回答のあと、Haiku で短いタイトルを付けます（ごく少額のクレジットを使います）</small></span>
             <input type="checkbox" className="switch" checked={p.prefs.autoTitle} onChange={e => update({ autoTitle: e.target.checked })} /></label>
         </>}
