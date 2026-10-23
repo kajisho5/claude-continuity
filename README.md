@@ -58,7 +58,7 @@ Max プランなどの月間 API クレジットは請求サイクルの終わ�
 
 ## インストール（Windows）
 
-1. [Releases](https://github.com/kajisho5/claude-continuity/releases) から `Claude Continuity Setup <version>.exe` をダウンロードして実行します。
+1. [Releases](https://github.com/kajisho5/claude-continuity/releases) から `Claude-Continuity-Setup-<version>.exe` をダウンロードして実行します。
 2. インストーラーには署名がありません。SmartScreen の警告が出たら「詳細情報」→「実行」を選んでください。
 3. 初回起動時の設定で、プラン、クレジットの付与日、API キーの順に入力します。API キーは接続テストをしてから保存します。
 
