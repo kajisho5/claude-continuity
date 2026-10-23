@@ -1,126 +1,184 @@
 # Claude Continuity
 
-A local-first Electron desktop app for importing Claude conversation exports and continuing selected conversations through the Anthropic Messages API.
+Claude の会話を **Anthropic API** で続けるためのデスクトップアプリです（Windows / macOS / Linux、Electron + React）。
+Max プランなどに付く**月間 API クレジット**を、Claude アプリに近い使い心地で使い切ることを目的にしています。
 
-## Implemented in the repository
+> Anthropic の公式製品ではありません。Claude のロゴやデザインは使っていません。
 
-- Local (stdio) MCP servers, in the same format as Claude Desktop's `mcpServers` (Settings → Connectors → Local, or "Import from Claude Desktop"). The app starts them on this PC, offers their tools to Claude, and asks before each tool runs (allow once / always allow / deny), like Claude Desktop. Environment variables are stored encrypted.
-- Japanese and English UI (Settings → General → Language; "Match system" follows the OS language). English wording follows Claude's own English UI where the screen has a Claude equivalent.
+![会話画面](docs/screenshots/chat.png)
 
-## GUI preview
+<sub>スクリーンショットは、テスト用のモック API に接続して撮ったものです。</sub>
 
-![Claude Continuity GUI preview](docs/gui-preview.svg)
+## できること
 
-> This is a conceptual preview based on the current UI source, not a screenshot of a successfully built or running application. The app has not yet been build-verified.
+**会話**
+- ストリーミング表示、思考プロセスの表示、停止、再生成（バージョン切り替え）、編集して再送信
+- 途切れた返信の続きを生成、拒否時の案内、ツールの実行ステップの表示
+- Markdown、表、コードのハイライト、数式（KaTeX）
+- 添付：画像、PDF、テキスト、コード。表計算ファイルはコード実行で読みます。ボタン、ドラッグ＆ドロップ、貼り付けのどれでも追加できます。
+- モデルと思考の深さ（`effort`）の選択。選べるモデルは API キーで使えるモデルの一覧から自動で取得します。
+- スタイル：標準・簡潔・詳細・説明的に加え、カスタムスタイルを複数作れます。文章サンプルから作ることもできます。
+- 自動タイトル、会話の検索、スター、チャット一覧ページ、シークレットチャット
+- Claude の会話エクスポート（JSON / ZIP）の読み込み
 
+**ツール**（会話ごとにオン・オフ）
+- Web 検索、Web ページの取得（番号付きの出典）
+- コード実行、ファイル作成（Excel / Word / PowerPoint / PDF、Anthropic の Skills）
+- メモリ（この PC に保存）
+- 過去の会話の検索
+- コネクタ（MCP サーバー）。詳しくは[下の節](#コネクタmcp-サーバー)を参照してください。
 
-- Electron + React + TypeScript desktop application
-- Import Claude conversation exports in JSON or ZIP format (best-effort parser for common export layouts)
-- Continue imported conversations through the Anthropic API
-- Choose between configured Claude models in the composer, plus the thinking depth (`effort`) each model supports
-- Streamed replies with Markdown rendering (tables, highlighted code with copy buttons), a summarized-thinking panel, and a stop button
-- Attachments (images, PDFs, text/code; spreadsheets via code execution) by button, drag and drop, or paste
-- Projects with custom instructions and knowledge files, response styles, and optional memory (`memory_20250818`, stored locally)
-- Tools per conversation: web search and URL fetch with numbered sources, Skills (Excel/Word/PowerPoint/PDF creation with download), and data analysis via code execution
-- Regenerate (with version switching), edit-and-resend, automatic titles, sandboxed HTML/SVG artifact preview, and automatic prompt caching
-- Bundled MCP server (`delegate_task`, `credit_status`) so Claude Code / Claude Desktop can hand heavy reading and reasoning to the API credit and get back only a summary
-- Monthly API credit tracker for Max/Team plans: first-run setup (plan → grant day → API key with connection test), estimated remaining credit, expiry countdown, daily budget, and pace warnings; optional calibration from the Console balance
-- Store conversation history and API usage records locally
-- Search conversations by title and message text
-- Export an individual conversation to JSON and delete conversations
-- Store the Anthropic API key using Electron `safeStorage`
-- Windows NSIS, macOS DMG, and Linux AppImage packaging configuration
-- GitHub Actions build and manual Windows packaging workflows
+**アーティファクト**
+- HTML、SVG、Markdown ドキュメント、Mermaid 図、**React コンポーネント**をプレビューできます。
+  - プレビューは sandbox 付きの iframe で表示し、ネットワークに接続しません。
+  - React には lucide-react、recharts、Tailwind を同梱しています。
+- バージョン切り替え、保存、一覧ページ
 
-## Important billing distinction
+**プロジェクト**
+- 指示とナレッジファイル（キャッシュされます）、プロジェクト単位のメモリ
 
-**Claude Pro/Max subscription usage is not the same as Anthropic API credits.** This application calls the Anthropic API with an API key, so requests are billed under the API organization's billing and credit terms. It does not consume unused Claude Max subscription usage, and it does not read or spend a Claude app/Max allowance. Check the current Anthropic Console and Claude plan terms before using it.
+**そのほか**
+- **Claude アプリへの引き継ぎ**：要約または全文を、Claude Desktop の入力欄に下書きとして入れます。
+- **API クレジットの管理**：推定残額、失効までの日数、1日あたりの目安、ペースの警告を表示します。Console の残高から補正することもできます。
+- **日本語・英語の UI**：設定 → 一般 → 言語 で切り替えます。英語の文言は、Claude の英語 UI に合わせています。
+- **テーマとフォント**：ダーク / ライト / システム、チャットのフォント
+- **バックアップと復元**、会話の書き出し（JSON / HTML）
+- **アプリ内アップデート**：新しい版を通知し、ボタンでダウンロードして再起動します。
+- **返信の通知**、キーボードショートカット（`Ctrl/⌘ + Shift + ?` で一覧）
 
-## Data and privacy
+| React アーティファクト | ローカル MCP の実行確認 | 英語 UI |
+|---|---|---|
+| ![](docs/screenshots/react-artifact.png) | ![](docs/screenshots/local-mcp-approval.png) | ![](docs/screenshots/english-home.png) |
 
-- Conversation history and the local token ledger are stored under Electron's user-data directory.
-- The API key is encrypted with Electron `safeStorage` where supported.
-- When continuing a conversation, the selected recent message context is sent to Anthropic's API.
-- Exported conversations may contain private information; keep export files secure.
-- API usage shown in the app is a local record of successful requests, not a real-time credit balance or exact cost estimate.
+## 料金についての注意
 
-## バックアップと引っ越し
+**Claude の Pro / Max のサブスクリプション枠と、API クレジットは別物です。** このアプリは API キーで Anthropic API を呼ぶので、料金は API の組織の請求とクレジットに付きます。Claude アプリやサブスクリプションの使用量は消費しません。
 
-設定 →「データとバックアップ」から、会話・プロジェクト・添付ファイル・メモリ・設定・使用量の記録を 1 つの ZIP に書き出せます。
+Max プランなどの月間 API クレジットは請求サイクルの終わりに失効します。最新の条件は Anthropic の案内で確認してください。
 
-- API キーは含まれません。キーはこの PC 専用の暗号化（`safeStorage`）で保存しているためです。復元先の PC で設定し直してください。
-- 復元すると現在のデータは置き換わります。置き換える前の状態は、ユーザーデータフォルダの `backups/before-restore-*.zip` に自動で保存されます。
-- データはこの PC のユーザーデータフォルダにだけ保存されます。クラウドには同期しません。フォルダの場所は同じ画面に表示されます。
+## インストール（Windows）
 
-## Known limitations
+1. [Releases](https://github.com/kajisho5/claude-continuity/releases) から `Claude Continuity Setup <version>.exe` をダウンロードして実行します。
+2. インストーラーには署名がありません。SmartScreen の警告が出たら「詳細情報」→「実行」を選んでください。
+3. 初回起動時の設定で、プラン、クレジットの付与日、API キーの順に入力します。API キーは接続テストをしてから保存します。
 
-- The export parser is best-effort; Claude export formats and attachment types vary.
-- Images, files, artifacts, tool calls, and other rich message content are not faithfully reconstructed.
-- Long context is truncated to a recent character-bounded suffix; automatic summarization and model-specific token budgeting are not implemented.
-- API credit balance and expiration are not queried.
-- Windows/macOS installers have packaging configuration but are not release-verified.
-- The repository has not been validated by a successful build in this environment. Do not treat the application as tested until CI succeeds and a real export is exercised.
+API キーは [Anthropic Console](https://console.anthropic.com/) で発行します。
 
-## Requirements
+## コネクタ（MCP サーバー）
 
-- Node.js 20+
-- An Anthropic Console API key with API access and available API credits
+設定 → コネクタ で登録し、会話ごとに入力欄の「ツール」メニューからオンにします。
 
-## Development
+| 種類 | 仕組み | 注意 |
+|---|---|---|
+| リモート（URL） | API の MCP connector（beta）が、`https://` で公開されたサーバーに直接接続します。 | アクセストークンは暗号化して保存します。やり取りは Anthropic の標準のデータ保持の対象です。 |
+| ローカル（コマンド） | この PC でサーバーを起動し（stdio）、ツールを Claude に渡します。書き方は Claude Desktop の `mcpServers` と同じです。 | ツールを実行する前に、毎回「今回だけ許可 / 常に許可 / 拒否」を確認します。環境変数は暗号化して保存します。コマンドはあなたの権限で動くので、信頼できるものだけを登録してください。 |
 
-```bash
-npm install
-npm run dev
-```
+「**Claude Desktop から読み込む**」を押すと、`claude_desktop_config.json` のサーバーを一括で登録できます。設定ファイルの場所は[公式ドキュメント](https://modelcontextprotocol.io/docs/develop/connect-local-servers)に従っています。
 
-## MCP 連携（Claude Code / Claude Desktop から API に作業を任せる）
+- Windows：`%APPDATA%\Claude\claude_desktop_config.json`
+- macOS：`~/Library/Application Support/Claude/claude_desktop_config.json`
 
-`npm run build` で `dist-mcp/server.js` が作られます。アプリの「API設定 › MCP 連携」で、読ませてよいフォルダを選ぶと登録コマンドを生成できます。
+## Claude Code / Claude Desktop から API に作業を任せる（同梱の MCP サーバー）
+
+アプリには MCP サーバー（`dist-mcp/server.js`）が入っています。これを Claude Code や Claude Desktop に登録すると、重い資料の読み込みや長い推論を API クレジットで処理し、要約だけを会話に返せます。登録用のコマンドと JSON は、設定 →「Claude Code 連携」で読ませてよいフォルダを選ぶと生成されます。
 
 | ツール | 内容 |
 |---|---|
-| `delegate_task` | 指示とファイルパスを受け取り、サーバーがファイルを直接読んで Messages API で処理し、要約だけを返す。事前に `count_tokens` で費用を見積もり、1回の上限を超えると実行しない |
-| `credit_status` | アプリと MCP の利用記録から、今月の推定残額・失効日・1日の目安を返す |
+| `delegate_task` | 指示とファイルパスを受け取り、サーバーがファイルを直接読んで処理し、要約だけを返します。事前に `count_tokens` で最悪額を見積もり、上限を超えるときは実行しません。 |
+| `credit_status` | 今月の推定残額、失効日、1日あたりの目安を返します。 |
 
 | 環境変数 | 内容 |
 |---|---|
-| `ANTHROPIC_API_KEY` | この用途専用のキー（MCP 設定に平文で残るため、期限と支出上限のあるワークスペースのキーを推奨） |
-| `CONTINUITY_MCP_ROOTS` | 読み込みを許可するフォルダ（Windows は `;`、macOS/Linux は `:` 区切り） |
-| `CONTINUITY_DATA_DIR` | アプリのデータフォルダ（利用記録とクレジット設定の共有に使う） |
+| `ANTHROPIC_API_KEY` | この用途専用のキー。MCP の設定に平文で残るので、期限と支出上限を付けたキーを推奨します。 |
+| `CONTINUITY_MCP_ROOTS` | 読み込みを許可するフォルダ（Windows は `;`、macOS / Linux は `:` 区切り） |
+| `CONTINUITY_DATA_DIR` | アプリのデータフォルダ。利用記録とクレジット設定の共有に使います。 |
 | `CONTINUITY_MCP_MODEL` | 既定のモデル（既定 `claude-opus-5-5`） |
-| `CONTINUITY_MCP_MAX_USD_PER_CALL` | 1回あたりの費用上限（既定 2） |
-| `ELECTRON_RUN_AS_NODE=1` | アプリ本体の実行ファイルを Node として使う（Node.js のインストール不要） |
+| `CONTINUITY_MCP_MAX_USD_PER_CALL` | 1回あたりの費用の上限（既定 2） |
+| `CONTINUITY_MCP_LANG` | 出力の言語（`ja` / `en`）。未指定なら OS の言語に合わせます。 |
+| `ELECTRON_RUN_AS_NODE=1` | アプリ本体を Node として動かします。Node.js をインストールしなくても使えます。 |
 
-## Tests
+## データとプライバシー
+
+- 会話、プロジェクト、添付、メモリ、設定、利用記録は、この PC のユーザーデータフォルダにだけ保存します。クラウドには同期しません。
+- API キー、コネクタのトークン、ローカル MCP の環境変数は、OS の安全な保存領域（Electron `safeStorage`）で暗号化します。
+- 会話を続けるときは、モデルの入力上限に収まる範囲の履歴と添付を Anthropic API に送ります。
+- アプリに表示する残額は、ローカルの記録から出した**推定値**です。正確な残高は Console の Billing で確認してください。
+
+### バックアップと引っ越し
+
+設定 →「データとバックアップ」から、すべてのデータを ZIP 1つに書き出せます。
+
+- API キーは含まれません。PC ごとに暗号化しているためです。復元先の PC で設定し直してください。
+- 復元すると、今のデータは置き換わります。置き換える前の状態は `backups/before-restore-*.zip` に自動で保存されます。
+
+## 既知の制限
+
+- **まだ実機で確認できていないこと**：本物の API キーでの動作、Windows インストーラー、実際の Claude Desktop への引き継ぎ、アップデートのダウンロードからインストールまで、`npx` を使う実際のローカル MCP サーバー。ここまでのテストは、Linux 上でモック API を使って行っています。
+- **会話エクスポートの読み込み**：形式の推定に頼っているので、うまく読めない場合があります。エクスポートに含まれる添付、アーティファクト、ツールの呼び出しは再現しません。
+- **長い会話**：入力上限を超える古い履歴は省きます（画面で知らせます）。自動での要約はしません。
+- **未対応の機能**：Research モード、独自スキルのアップロード、プロジェクトのナレッジを検索して使う仕組み（RAG）、音声入力、どこからでも呼び出せるショートカット、画面キャプチャ。
+- **API ではできないこと**：claude.ai との履歴の同期、claude.ai アカウント側のメモリの利用。
+- インストーラーに署名はありません。
+
+## 開発
+
+必要なもの：Node.js 20 以上
 
 ```bash
-npm test
+npm install
+npm run dev      # Vite + Electron（開発モード）
+npm test         # 単体テスト（vitest）
+npm run build    # 型チェック（renderer / electron）とビルド
+npm start        # ビルド済みのアプリを起動
 ```
 
-## Type-check and production build
+パッケージ作成：`npm run dist:win` / `npm run dist:mac` / `npm run dist:linux`
 
-```bash
-npm run build
-npm start
-```
+構成：
 
-## ダウンロード（Windows）
+| フォルダ | 内容 |
+|---|---|
+| `src/` | 画面（React 19、Tailwind CSS v4） |
+| `src/i18n/` | UI の文言。`ja` が基準で、`en` は型でそろえています。 |
+| `src/artifact-runtime/` | React アーティファクトのランタイム |
+| `electron/` | main プロセス：API 呼び出し、保存、コネクタ、アップデート |
+| `mcp/` | 同梱の MCP サーバー |
 
-[Releases](https://github.com/kajisho5/claude-continuity/releases) ページから `Claude Continuity Setup <version>.exe` をダウンロードして実行します。インストーラーには署名がないため、Windows SmartScreen の警告が出たら「詳細情報」→「実行」を選んでください。
-
-### リリースの公開手順（メンテナー向け）
+## リリース（メンテナー向け）
 
 1. `package.json` の `version` を上げてコミットします。
-2. `git tag v<version> && git push origin v<version>` を実行します。
-3. `.github/workflows/release.yml` がインストーラーをビルドし、テストを実行してから同じタグのリリースにアップロードします。タグと `package.json` の version が一致しないと失敗します。
-4. インストール済みのアプリは、起動の約15秒後と、その後6時間ごとに Releases の `latest.yml` を確認します。新しい版があれば画面上部に案内を出します。アプリが背面にあるときは OS の通知も出します。ダウンロードと再起動は、ボタンを押したときだけ行います（設定 →「このアプリについて」からも確認でき、「一般」で自動確認をオフにできます）。
+2. 次のどちらかでタグを付けます。
+   - `git tag v<version> && git push origin v<version>`
+   - GitHub の Actions で「Package Windows installer」を実行し、`release_tag` に `v<version>` を入れます。選んだブランチの先頭にタグを付けてリリースまで行います。
+3. `.github/workflows/release.yml` がテストとビルドをして、インストーラー（`.exe`）、`.blockmap`、`latest.yml` をリリースに公開します。タグと `version` が一致しないと失敗します。
+4. インストール済みのアプリは、起動の約15秒後と、その後6時間ごとに `latest.yml` を確認し、新しい版を案内します。
 
-> 自動更新は Releases を認証なしで読みに行きます。そのため、配布先のリポジトリは公開されている必要があります。ソースを非公開にしたい場合は、配布専用の公開リポジトリを Actions 変数 `RELEASES_REPO` に、書き込み権限付きトークンを secret `RELEASES_TOKEN` に設定してください（詳細は `.github/workflows/release.yml` の冒頭）。
+自動更新は Releases を認証なしで読みます。そのため、配布先のリポジトリは公開されている必要があります。配布専用のリポジトリを使う場合は、Actions の変数 `RELEASES_REPO` と secret `RELEASES_TOKEN` を設定してください。
 
-## Package locally
+---
 
-```bash
-npm run dist:win
-npm run dist:mac
-npm run dist:linux
-```
+## English summary
+
+Claude Continuity is an unofficial desktop app (Electron + React) for continuing Claude conversations through the **Anthropic API**. It is meant for spending a plan's monthly API credit with an experience close to the Claude apps. It is not affiliated with Anthropic.
+
+**Features**
+- Streaming chat with thinking, edits and versions, attachments, styles, projects and memory.
+- Web search and fetch, code execution, file creation (Skills), and searching past chats.
+- Artifacts (HTML, SVG, Markdown, Mermaid and sandboxed React).
+- Remote and local MCP connectors. Local servers ask for approval before each tool call, like Claude Desktop, and can be imported from Claude Desktop's config.
+- Handoff to the Claude apps.
+- A credit tracker, backup and restore, and in-app updates.
+- A Japanese and English UI.
+
+**Billing:** API credit is separate from Claude subscription usage; this app only uses the API.
+
+**Get it:** download the Windows installer from [Releases](https://github.com/kajisho5/claude-continuity/releases). The installer is unsigned.
+
+**Develop:** `npm install`, then `npm run dev`. `npm test` runs the unit tests, and `npm run build` type-checks and builds the app.
+
+**Not verified yet on real machines:**
+- A real API key
+- The Windows installer
+- Handoff to Claude Desktop
+- Updates from download through install
+- Real `npx` MCP servers
