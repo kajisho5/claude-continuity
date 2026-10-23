@@ -1,0 +1,71 @@
+import { mainT } from "./i18n";
+
+/** Client-side tool that lets Claude look up the user's earlier chats, mirroring the Claude apps' chat search. */
+export function pastChatsTool() {
+  const t = mainT().pastChats;
+  return {
+    name: "search_past_chats",
+    description: t.toolDescription,
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        query: { type: "string", description: t.queryDescription },
+        max_results: { type: "integer", description: t.maxResultsDescription }
+      },
+      required: ["query"]
+    }
+  };
+}
+
+type StoredChat = { id: string; title: string; projectId?: string; updatedAt?: string; messages: { role: string; content: string }[] };
+export type PastChatHit = { id: string; title: string; updatedAt?: string; score: number; excerpt: string };
+
+function terms(query: string): string[] {
+  const words = query.toLowerCase().split(/[\s、。,.!?！？「」『』()（）]+/).filter(w => w.length >= 1);
+  if (words.length > 1 || (words[0]?.length ?? 0) <= 3) return words;
+  // A single long Japanese phrase rarely matches verbatim; fall back to its 2-character pieces as well.
+  const w = words[0] ?? "";
+  const grams = new Set<string>([w]);
+  for (let i = 0; i + 2 <= w.length; i++) grams.add(w.slice(i, i + 2));
+  return [...grams];
+}
+function count(haystack: string, needle: string): number {
+  if (!needle) return 0;
+  let n = 0, i = 0;
+  while ((i = haystack.indexOf(needle, i)) !== -1) { n++; i += needle.length; }
+  return n;
+}
+function excerpt(text: string, needles: string[], width = 220): string {
+  const lower = text.toLowerCase();
+  const at = needles.map(n => lower.indexOf(n)).filter(i => i >= 0).sort((a, b) => a - b)[0] ?? 0;
+  const start = Math.max(0, at - width / 2);
+  return (start > 0 ? "…" : "") + text.slice(start, start + width).replace(/\s+/g, " ").trim() + (start + width < text.length ? "…" : "");
+}
+
+/**
+ * Ranks earlier chats by keyword hits (title hits weigh more, full-phrase hits more than 2-character pieces).
+ * Scope follows the Claude apps: inside a project only that project's chats, otherwise only chats outside projects.
+ */
+export function searchPastChats(chats: StoredChat[], query: string, opts: { excludeId?: string; projectId?: string; max?: number }): PastChatHit[] {
+  const q = query.trim();
+  if (!q) return [];
+  const needles = terms(q);
+  const full = q.toLowerCase();
+  const hits: PastChatHit[] = [];
+  for (const chat of chats) {
+    if (chat.id === opts.excludeId || (chat.projectId ?? undefined) !== (opts.projectId ?? undefined)) continue;
+    const title = (chat.title ?? "").toLowerCase();
+    const body = chat.messages.map(m => m.content).join("\n");
+    const lower = body.toLowerCase();
+    let score = count(title, full) * 12 + count(lower, full) * 4;
+    for (const n of needles) if (n !== full) score += count(title, n) * 3 + Math.min(count(lower, n), 20) * (n.length >= 3 ? 2 : 1);
+    if (score > 0) hits.push({ id: chat.id, title: chat.title, ...(chat.updatedAt ? { updatedAt: chat.updatedAt } : {}), score, excerpt: excerpt(body, [full, ...needles]) });
+  }
+  return hits.sort((a, b) => b.score - a.score || (b.updatedAt ?? "").localeCompare(a.updatedAt ?? "")).slice(0, Math.min(Math.max(opts.max ?? 5, 1), 10));
+}
+
+export function formatHits(hits: PastChatHit[]): string {
+  const t = mainT().pastChats;
+  if (!hits.length) return t.noHits;
+  return hits.map((h, i) => `${t.hitHeading(i + 1, h.title, h.updatedAt?.slice(0, 10))}\n${h.excerpt}`).join("\n\n");
+}

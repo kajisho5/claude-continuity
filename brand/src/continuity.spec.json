@@ -1,0 +1,95 @@
+{
+  "background": "gradient:#FBF7F0,#EDE4D5",
+  "darkBackground": "gradient:#2F2B26,#161412",
+  "groups": [
+    {
+      "name": "Dot",
+      "props": {
+        "translucency": {
+          "enabled": true,
+          "value": 0.1
+        },
+        "blur-material": 0.15,
+        "specular": true,
+        "shadow": {
+          "kind": "neutral",
+          "opacity": 0.45
+        }
+      },
+      "layers": [
+        {
+          "file": "dot.svg",
+          "name": "3 Dot",
+          "props": {
+            "glass": true,
+            "fill": {
+              "linear-gradient": [
+                "#E9875F",
+                "#C8603C"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Meter",
+      "props": {
+        "translucency": {
+          "enabled": true,
+          "value": 0.12
+        },
+        "blur-material": 0.2,
+        "specular": true,
+        "shadow": {
+          "kind": "layer-color",
+          "opacity": 0.5
+        }
+      },
+      "layers": [
+        {
+          "file": "meter.svg",
+          "name": "2 Meter",
+          "props": {
+            "glass": true,
+            "fill": {
+              "linear-gradient": [
+                "#7FA8E8",
+                "#4C7CCB"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Track",
+      "props": {
+        "translucency": {
+          "enabled": true,
+          "value": 0.35
+        },
+        "blur-material": 0.3,
+        "shadow": {
+          "kind": "neutral",
+          "opacity": 0.25
+        }
+      },
+      "layers": [
+        {
+          "file": "track.svg",
+          "name": "1 Track",
+          "props": {
+            "glass": true,
+            "fill": {
+              "linear-gradient": [
+                "#D8CDBB",
+                "#BFB29E"
+              ]
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,24 @@
+export const artifacts = {
+  panel: {
+    label: "アーティファクト",
+    diagramFailed: "図を描けませんでした",
+    drawingDiagram: "図を描いています…",
+    preparingComponent: "コンポーネントを準備しています…",
+    versions: "バージョン",
+    previousVersion: "前のバージョン",
+    nextVersion: "次のバージョン",
+    preview: "プレビュー",
+    code: "コード",
+    sandboxHint: "sandbox 付き iframe で表示しています（ネットワーク・アプリ本体へのアクセスなし）",
+    reactLibraries: " · 使えるライブラリ: React・lucide-react・recharts・Tailwind",
+    saveAs: (ext: string) => `.${ext} で保存`
+  },
+  page: {
+    title: "アーティファクト",
+    search: "アーティファクトを検索",
+    searchPlaceholder: "アーティファクトを検索…",
+    emptyTitle: "まだアーティファクトはありません",
+    emptyText: "Claude が HTML・SVG・図（Mermaid）・長めの文書（Markdown）を書くと、ここにまとまります。会話の中ではカードとして表示され、クリックすると右側で開きます。",
+    versions: (n: number) => `${n} バージョン`
+  }
+};

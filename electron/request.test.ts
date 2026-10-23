@@ -1,12 +1,28 @@
 import { describe, expect, it } from "vitest";
-import { buildMessages, buildSystem, buildTools, extractFileIds, extractText, selectHistory, type ModelCaps } from "./request";
+import { buildMessages, buildSystem, buildTools, RESEARCH_MAX_USES, extractFileIds, extractText, selectHistory, type ModelCaps } from "./request";
 import type { Attachment } from "./attachments";
 
 const caps: ModelCaps = { webSearch: true, codeExecution: true, imageInput: true, pdfInput: true };
 const att = (kind: Attachment["kind"], name: string): Attachment => ({ id: name, name, kind, size: 3, mediaType: kind === "image" ? "image/png" : kind === "pdf" ? "application/pdf" : "text/plain" });
 const loader = { read: async () => Buffer.from("abc"), uploadForContainer: async (a: Attachment) => `file_${a.name}` };
 
+describe("historyBudget", () => {
+  it("scales with the model's input limit within bounds", async () => {
+    const { historyBudget } = await import("./request");
+    expect(historyBudget(undefined)).toBe(120_000);
+    expect(historyBudget(200_000)).toBe(120_000);
+    expect(historyBudget(1_000_000)).toBe(600_000);
+    expect(historyBudget(50_000)).toBe(60_000);
+    expect(historyBudget(10_000_000)).toBe(1_500_000);
+  });
+});
+
 describe("buildSystem", () => {
+  it("adds the profile only when given", () => {
+    expect(buildSystem(undefined, "", null)).toBeUndefined();
+    expect(buildSystem(undefined, "", null, { name: " Shota ", preferences: "結論から" })).toBe("# ユーザーについて\nユーザーの呼び名: Shota\nユーザーが全会話で考慮してほしいこと:\n結論から");
+    expect(buildSystem("concise", "", null, { preferences: "敬語" })?.startsWith("# ユーザーについて")).toBe(true);
+  });
   it("orders style then project instructions", () => {
     const system = buildSystem("concise", "", { id: "p", name: "Q3", instructions: "円で表示", knowledge: [], memory: false });
     expect(system?.startsWith("回答は簡潔に")).toBe(true);
@@ -85,5 +101,52 @@ describe("extract helpers", () => {
       { type: "container_upload", file_id: "file_input" },
       { type: "bash_code_execution_tool_result", content: { type: "bash_code_execution_result", content: [{ type: "bash_code_execution_output", file_id: "file_out" }] } }
     ])).toEqual(["file_out"]);
+  });
+});
+
+describe("extractSteps", () => {
+  it("pairs server tools with their results", async () => {
+    const { extractSteps } = await import("./request");
+    const steps = extractSteps([
+      { type: "server_tool_use", id: "s1", name: "web_search", input: { query: "Q3 売上" } },
+      { type: "web_search_tool_result", tool_use_id: "s1", content: [{ type: "web_search_result", url: "https://a.example", title: "A" }] },
+      { type: "server_tool_use", id: "s2", name: "bash_code_execution", input: { command: "python a.py" } },
+      { type: "bash_code_execution_tool_result", tool_use_id: "s2", content: { type: "bash_code_execution_result", stdout: "ok\n", stderr: "", return_code: 0, content: [] } },
+      { type: "server_tool_use", id: "s3", name: "web_fetch", input: { url: "https://b.example" } },
+      { type: "web_fetch_tool_result", tool_use_id: "s3", content: { type: "web_fetch_tool_error", error_code: "url_not_accessible" } },
+      { type: "text", text: "done" }
+    ]);
+    expect(steps).toEqual([
+      { kind: "search", label: "「Q3 売上」を検索", sources: [{ url: "https://a.example", title: "A" }], output: "1 件の結果" },
+      { kind: "code", label: "コードを実行", detail: "python a.py", output: "ok\n" },
+      { kind: "fetch", label: "ページを読み込み", detail: "https://b.example", error: true, output: "エラー: url_not_accessible" }
+    ]);
+  });
+  it("uses client results for memory and flags failing commands", async () => {
+    const { extractSteps } = await import("./request");
+    const steps = extractSteps([
+      { type: "tool_use", id: "m1", name: "memory", input: { command: "view", path: "/memories" } },
+      { type: "server_tool_use", id: "c1", name: "bash_code_execution", input: { command: "false" } },
+      { type: "bash_code_execution_tool_result", tool_use_id: "c1", content: { type: "bash_code_execution_result", stdout: "", stderr: "boom", return_code: 1, content: [] } }
+    ], new Map([["m1", { content: "Directory: /memories" }]]));
+    expect(steps[0]).toEqual({ kind: "memory", label: "メモリを確認: /memories", output: "Directory: /memories" });
+    expect(steps[1]).toMatchObject({ kind: "code", error: true, output: "[stderr]\nboom" });
+  });
+});
+
+describe("research mode", () => {
+  const caps = { webSearch: true, codeExecution: true, imageInput: true, pdfInput: true };
+  it("turns on search and fetch with the research budget", () => {
+    const { tools } = buildTools({ research: true }, caps);
+    expect(tools.map(t => (t as { name: string; max_uses?: number }).name)).toEqual(["web_search", "web_fetch"]);
+    for (const t of tools) expect((t as { max_uses?: number }).max_uses).toBe(RESEARCH_MAX_USES);
+    expect((buildTools({ webSearch: true }, caps).tools[0] as { max_uses?: number }).max_uses).toBe(5);
+  });
+  it("reports research as unavailable once when the model has no web tools", () => {
+    expect(buildTools({ research: true }, { ...caps, webSearch: false }).unavailable).toEqual(["リサーチ"]);
+  });
+  it("adds the research instructions to the system prompt", () => {
+    expect(buildSystem(undefined, "", null, undefined, { research: true })).toContain("# リサーチモード");
+    expect(buildSystem(undefined, "", null)).toBeUndefined();
   });
 });

@@ -1,0 +1,61 @@
+export const pages = {
+  chats: {
+    title: "チャット履歴",
+    newChat: "新しい会話",
+    search: "会話を検索",
+    searchPlaceholder: "会話を検索…",
+    selectedCount: (n: number) => `${n} 件を選択中`,
+    matchCount: (query: string, n: number) => `「${query}」に一致する会話 ${n} 件`,
+    totalCount: (n: number) => `${n} 件の会話`,
+    deselectAll: "選択を解除",
+    selectAll: "すべて選択",
+    deleteSelected: (n: number) => `${n} 件を削除`,
+    select: "選択",
+    lastMessage: (when: string) => `最終メッセージ ${when}`,
+    noMatches: "一致する会話はありません。"
+  },
+  projects: {
+    title: "プロジェクト",
+    newProject: "新しいプロジェクト",
+    search: "プロジェクトを検索",
+    searchPlaceholder: "プロジェクトを検索…",
+    emptyTitle: "プロジェクトで会話をまとめる",
+    emptyText: "指示とナレッジ（PDF やテキスト）を登録しておくと、そのプロジェクトの会話すべてに自動で付きます。ナレッジはキャッシュされるので、繰り返し送ってもコストを抑えられます。",
+    createFirst: "最初のプロジェクトを作成",
+    noInstructions: "指示はまだありません",
+    chatCount: (n: number) => `会話 ${n} 件`,
+    knowledgeCount: (n: number) => `ナレッジ ${n} 件`,
+    updated: (when: string) => `更新 ${when}`,
+    noMatches: "一致するプロジェクトはありません。"
+  },
+  project: {
+    allProjects: "すべてのプロジェクト",
+    edit: "プロジェクトを編集",
+    start: "このプロジェクトで会話を始める…",
+    lastMessage: "最終メッセージ",
+    noChats: "まだ会話はありません。上の入力欄から始めましょう。",
+    instructions: "指示",
+    instructionsPlaceholder: "このプロジェクトでの回答の仕方を指示できます。",
+    knowledge: "ナレッジ",
+    knowledgeEmpty: "PDF やテキストを追加すると、毎回の会話に自動で添付されます。",
+    memory: "メモリ",
+    memoryOn: "このプロジェクトの会話では、Claude が覚えておいた内容を使います。",
+    memoryOff: "オンにすると、会話をまたいで覚えておけます。"
+  },
+  projectModal: {
+    newTitle: "新しいプロジェクト",
+    editTitle: "プロジェクト設定",
+    name: "名前",
+    namePlaceholder: "例: Q3 レポート",
+    defaultName: "プロジェクト",
+    instructions: "カスタム指示",
+    instructionsPlaceholder: "例: あなたは小売企業の経営企画担当のアシスタントです。数字は出典と比較対象を明記し、結論を先に書いてください。",
+    knowledge: "ナレッジ",
+    knowledgeSummary: (n: number, size: string) => `${n} 件 · ${size} · 毎回の会話に添付（自動キャッシュで再送コストを抑えます）`,
+    knowledgeEmpty: "PDF やテキストを追加すると、毎回の会話に自動で添付されます",
+    addFiles: "ファイルを追加",
+    useMemory: "このプロジェクトでメモリを使う",
+    memoryHint: "覚えた内容はこの端末の memories フォルダに保存され、API設定から確認・削除できます",
+    confirmDelete: "このプロジェクトを削除しますか？（会話は残ります）"
+  }
+};

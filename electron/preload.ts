@@ -2,7 +2,7 @@ import { contextBridge, ipcRenderer, webUtils, type IpcRendererEvent } from "ele
 type StreamEvent = { requestId: string; kind: "text" | "thinking" | "activity"; delta: string };
 contextBridge.exposeInMainWorld("continuity", {
   chooseExport: () => ipcRenderer.invoke("dialog:import-export"),
-  exportChat: (payload: { fileName: string; data: string }) => ipcRenderer.invoke("dialog:export-chat", payload),
+  exportChat: (payload: { fileName: string; data: string; format?: "json" | "html" }) => ipcRenderer.invoke("dialog:export-chat", payload),
   saveApiKey: (key: string) => ipcRenderer.invoke("key:save", key),
   testApiKey: (key: string) => ipcRenderer.invoke("key:test", key),
   keyStatus: () => ipcRenderer.invoke("key:status"),
@@ -12,6 +12,47 @@ contextBridge.exposeInMainWorld("continuity", {
   loadCredit: () => ipcRenderer.invoke("credit:load"),
   saveCredit: (settings: unknown) => ipcRenderer.invoke("credit:save", settings),
   loadPrefs: () => ipcRenderer.invoke("prefs:load"),
+  backupData: () => ipcRenderer.invoke("data:backup"),
+  restoreData: () => ipcRenderer.invoke("data:restore"),
+  openDataFolder: () => ipcRenderer.invoke("data:openFolder"),
+  focusWindow: () => ipcRenderer.invoke("window:focus"),
+  captureScreen: () => ipcRenderer.invoke("capture:screen"),
+  shortcutStatus: () => ipcRenderer.invoke("shortcut:status"),
+  onQuick: (listener: () => void) => {
+    const handler = () => listener();
+    ipcRenderer.on("app:quick", handler);
+    return () => { ipcRenderer.removeListener("app:quick", handler); };
+  },
+  listConnectors: () => ipcRenderer.invoke("connectors:list"),
+  saveConnector: (input: unknown) => ipcRenderer.invoke("connectors:save", input),
+  deleteConnector: (id: string) => ipcRenderer.invoke("connectors:delete", id),
+  testConnector: (id: string) => ipcRenderer.invoke("connectors:test", id),
+  listSkills: () => ipcRenderer.invoke("skills:list"),
+  uploadSkill: (kind: "folder" | "file") => ipcRenderer.invoke("skills:upload", kind),
+  deleteSkill: (id: string) => ipcRenderer.invoke("skills:delete", id),
+  importDesktopConnectors: () => ipcRenderer.invoke("connectors:importDesktop"),
+  resetAllowedTools: (id: string) => ipcRenderer.invoke("connectors:resetAllowed", id),
+  answerApproval: (approvalId: string, decision: string) => ipcRenderer.invoke("claude:approve", approvalId, decision),
+  onApproval: (listener: (approval: unknown) => void) => {
+    const handler = (_event: IpcRendererEvent, payload: unknown) => listener(payload);
+    ipcRenderer.on("claude:approval", handler);
+    return () => { ipcRenderer.removeListener("claude:approval", handler); };
+  },
+  styleFromSample: (payload: unknown) => ipcRenderer.invoke("style:fromSample", payload),
+  attachmentText: (id: string) => ipcRenderer.invoke("attachments:text", id),
+  openAttachmentPdf: (id: string, name: string) => ipcRenderer.invoke("attachments:openPdf", id, name),
+  appVersion: () => ipcRenderer.invoke("app:version"),
+  updateStatus: () => ipcRenderer.invoke("update:status"),
+  checkForUpdates: () => ipcRenderer.invoke("update:check"),
+  downloadUpdate: () => ipcRenderer.invoke("update:download"),
+  installUpdate: () => ipcRenderer.invoke("update:install"),
+  onUpdateStatus: (listener: (status: unknown) => void) => {
+    const handler = (_event: unknown, status: unknown) => listener(status);
+    ipcRenderer.on("update:status", handler);
+    return () => { ipcRenderer.removeListener("update:status", handler); };
+  },
+  summarizeHandoff: (payload: unknown) => ipcRenderer.invoke("handoff:summarize", payload),
+  openHandoff: (payload: unknown) => ipcRenderer.invoke("handoff:open", payload),
   savePrefs: (prefs: unknown) => ipcRenderer.invoke("prefs:save", prefs),
   loadProjects: () => ipcRenderer.invoke("projects:load"),
   saveProjects: (projects: unknown) => ipcRenderer.invoke("projects:save", projects),
@@ -21,7 +62,10 @@ contextBridge.exposeInMainWorld("continuity", {
   attachmentPreview: (id: string) => ipcRenderer.invoke("attachments:preview", id),
   listMemory: () => ipcRenderer.invoke("memory:list"),
   deleteMemory: (path: string) => ipcRenderer.invoke("memory:delete", path),
+  writeMemory: (path: string, text: string) => ipcRenderer.invoke("memory:write", path, text),
   saveGeneratedFile: (fileId: string, name: string) => ipcRenderer.invoke("files:save", { fileId, name }),
+  mcpInfo: () => ipcRenderer.invoke("mcp:info"),
+  pickMcpFolders: () => ipcRenderer.invoke("mcp:pickFolder"),
   listModels: () => ipcRenderer.invoke("claude:models"),
   reply: (payload: unknown) => ipcRenderer.invoke("claude:reply", payload),
   generateTitle: (user: string, assistant: string) => ipcRenderer.invoke("claude:title", { user, assistant }),

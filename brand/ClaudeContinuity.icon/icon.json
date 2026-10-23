@@ -1,0 +1,107 @@
+{
+  "groups" : [
+    {
+      "layers" : [
+        {
+          "glass" : true,
+          "image-name" : "dot.svg",
+          "name" : "3 Dot",
+          "fill" : {
+            "linear-gradient" : [
+              "srgb:0.91373,0.52941,0.37255,1.00000",
+              "srgb:0.78431,0.37647,0.23529,1.00000"
+            ]
+          }
+        }
+      ],
+      "name" : "Dot",
+      "shadow" : {
+        "kind" : "neutral",
+        "opacity" : 0.45
+      },
+      "specular" : true,
+      "translucency" : {
+        "enabled" : true,
+        "value" : 0.1
+      },
+      "blur-material" : 0.15
+    },
+    {
+      "layers" : [
+        {
+          "glass" : true,
+          "image-name" : "meter.svg",
+          "name" : "2 Meter",
+          "fill" : {
+            "linear-gradient" : [
+              "srgb:0.49804,0.65882,0.90980,1.00000",
+              "srgb:0.29804,0.48627,0.79608,1.00000"
+            ]
+          }
+        }
+      ],
+      "name" : "Meter",
+      "shadow" : {
+        "kind" : "layer-color",
+        "opacity" : 0.5
+      },
+      "specular" : true,
+      "translucency" : {
+        "enabled" : true,
+        "value" : 0.12
+      },
+      "blur-material" : 0.2
+    },
+    {
+      "layers" : [
+        {
+          "glass" : true,
+          "image-name" : "track.svg",
+          "name" : "1 Track",
+          "fill" : {
+            "linear-gradient" : [
+              "srgb:0.84706,0.80392,0.73333,1.00000",
+              "srgb:0.74902,0.69804,0.61961,1.00000"
+            ]
+          }
+        }
+      ],
+      "name" : "Track",
+      "shadow" : {
+        "kind" : "neutral",
+        "opacity" : 0.25
+      },
+      "specular" : true,
+      "translucency" : {
+        "enabled" : true,
+        "value" : 0.35
+      },
+      "blur-material" : 0.3
+    }
+  ],
+  "supported-platforms" : {
+    "circles" : [
+      "watchOS"
+    ],
+    "squares" : "shared"
+  },
+  "fill-specializations" : [
+    {
+      "value" : {
+        "linear-gradient" : [
+          "srgb:0.98431,0.96863,0.94118,1.00000",
+          "srgb:0.92941,0.89412,0.83529,1.00000"
+        ]
+      }
+    },
+    {
+      "appearance" : "dark",
+      "value" : {
+        "linear-gradient" : [
+          "srgb:0.18431,0.16863,0.14902,1.00000",
+          "srgb:0.08627,0.07843,0.07059,1.00000"
+        ]
+      }
+    }
+  ]
+}

@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
+import { mainT } from "./i18n";
 
 export type AttachmentKind = "image" | "pdf" | "text" | "file";
 export type Attachment = { id: string; name: string; mediaType: string; size: number; kind: AttachmentKind };
@@ -33,7 +34,7 @@ export function classify(name: string, bytes: Buffer): { kind: AttachmentKind; m
 export class AttachmentStore {
   constructor(private readonly dir: string) {}
   private fileFor(id: string) {
-    if (!/^[0-9a-f-]{36}$/.test(id)) throw new Error("添付ファイルの ID が正しくありません。");
+    if (!/^[0-9a-f-]{36}$/.test(id)) throw new Error(mainT().attachments.badId);
     return path.join(this.dir, id);
   }
   private indexFile() { return path.join(this.dir, "index.json"); }
@@ -42,11 +43,11 @@ export class AttachmentStore {
   }
 
   async add(name: string, bytes: Buffer): Promise<Attachment> {
-    if (bytes.length === 0) throw new Error(`${name} は空のファイルです。`);
-    if (bytes.length > MAX_ATTACHMENT_BYTES) throw new Error(`${name} は大きすぎます（上限 32MB）。`);
+    if (bytes.length === 0) throw new Error(mainT().attachments.empty(name));
+    if (bytes.length > MAX_ATTACHMENT_BYTES) throw new Error(mainT().attachments.tooLarge(name));
     const { kind, mediaType } = classify(name, bytes);
-    if (kind === "image" && bytes.length > MAX_IMAGE_BYTES) throw new Error(`${name} は画像の上限 10MB を超えています。`);
-    if (kind === "text" && bytes.length > MAX_TEXT_BYTES) throw new Error(`${name} はテキストの上限 2MB を超えています。`);
+    if (kind === "image" && bytes.length > MAX_IMAGE_BYTES) throw new Error(mainT().attachments.imageTooLarge(name));
+    if (kind === "text" && bytes.length > MAX_TEXT_BYTES) throw new Error(mainT().attachments.textTooLarge(name));
     await fs.mkdir(this.dir, { recursive: true });
     const id = randomUUID();
     await fs.writeFile(this.fileFor(id), bytes);
@@ -54,8 +55,8 @@ export class AttachmentStore {
   }
   async addPath(filePath: string): Promise<Attachment> {
     const info = await fs.stat(filePath);
-    if (!info.isFile()) throw new Error(`${path.basename(filePath)} はファイルではありません。`);
-    if (info.size > MAX_ATTACHMENT_BYTES) throw new Error(`${path.basename(filePath)} は大きすぎます（上限 32MB）。`);
+    if (!info.isFile()) throw new Error(mainT().attachments.notFile(path.basename(filePath)));
+    if (info.size > MAX_ATTACHMENT_BYTES) throw new Error(mainT().attachments.tooLarge(path.basename(filePath)));
     return this.add(path.basename(filePath), await fs.readFile(filePath));
   }
   read(id: string): Promise<Buffer> { return fs.readFile(this.fileFor(id)); }

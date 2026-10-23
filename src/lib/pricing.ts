@@ -1,3 +1,5 @@
+import { t } from "../i18n";
+
 // Official list prices in USD per million tokens (https://platform.claude.com/docs/en/about-claude/pricing, checked 2026-10-23).
 // Cache writes use the 5-minute rate, which is the API default.
 export type Price = { input: number; cacheWrite: number; cacheHit: number; output: number };
@@ -83,5 +85,5 @@ export function priceHint(modelId: string): string | null {
   const price = priceFor(modelId);
   if (!price) return null;
   const fmt = (n: number) => `$${Number.isInteger(n) ? n : n.toString()}`;
-  return `入力 ${fmt(price.input)} / 出力 ${fmt(price.output)} per MTok`;
+  return t().lib.pricing.hint(fmt(price.input), fmt(price.output));
 }

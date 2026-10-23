@@ -1,0 +1,51 @@
+export const onboarding = {
+  steps: { plan: "プラン", day: "付与日", key: "APIキー" },
+  keyConnected: (n: number) => `接続できました（利用可能なモデル ${n} 件）`,
+  eyebrow: (step: number) => `はじめに設定 · ${step} / 3`,
+  plan: {
+    title: "あなたのClaudeプランを選んでください",
+    lead: "プランに応じて、毎月付与されるAPIクレジットの残額と失効日を管理します。",
+    hint: "ⓘ 自分のプランは claude.ai の Settings › Billing で確認できます。あとから「API設定」で変更できます。"
+  },
+  day: {
+    title: "クレジットが付与される日は？",
+    lead: "claude.ai の Settings › Billing に表示される「次回請求日」の“日”を選んでください。",
+    resetDay: "毎月の付与日",
+    teamAmount: "チームの月間合計額（USD・上限 $500）",
+    teamPlaceholder: "例: 260",
+    selectedPlan: "選択中のプラン",
+    perMonth: (amount: string) => `月 ${amount} の APIクレジット`,
+    change: "変更",
+    preview: "今のサイクルのプレビュー",
+    expiresIn: " 失効まで ",
+    days: (n: number) => `${n}日`,
+    grant: (amount: string) => ` · 付与額 ${amount}`,
+    approx: "付与時刻は非公開のため、日単位の目安です。",
+    calibrate: "Console の残高で補正する（任意・あとからでも可）",
+    balancePlaceholder: "$ 残額（例: 132.50）"
+  },
+  key: {
+    title: "Anthropic APIキーを入力",
+    lead: "クレジットが付与された Console 組織で作成したキーを使います。",
+    receiveTitle: "クレジットを受け取る",
+    receiveBody: "claude.ai の Billing で「API credits」から Console 組織をリンクします。",
+    openBilling: "Billing を開く",
+    createTitle: "APIキーを作る",
+    createBefore: "「Create key」→ 名前・期限・",
+    createWorkspace: "ワークスペース",
+    createAfter: "を選んで作成。キーは作成時に一度だけ表示されます。",
+    openKeys: "API keys を開く",
+    testTitle: "貼り付けて接続テスト",
+    testBody: "保存前に、キーでモデル一覧を取得できるか確認します。",
+    testing: "確認中…",
+    test: "接続テスト",
+    storage: "OS の安全な保存領域に暗号化して保存します。",
+    officialSteps: "公式の受け取り手順"
+  },
+  later: "あとで設定",
+  back: "戻る",
+  enterLater: "あとで入力",
+  done: "完了",
+  next: "次へ",
+  saveAndStart: "保存して開始"
+};

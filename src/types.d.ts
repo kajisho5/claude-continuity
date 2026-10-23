@@ -4,24 +4,27 @@ type ContinuityCitation = { url: string; title: string; citedText?: string };
 type ContinuityFile = { fileId: string; name: string; size?: number };
 type ContinuityReply = {
   content: string; thinking?: string; model?: string; costUsd?: number; aborted?: boolean;
-  citations?: ContinuityCitation[]; files?: ContinuityFile[];
+  citations?: ContinuityCitation[]; files?: ContinuityFile[]; steps?: ContinuityStep[]; stopReason?: string;
 };
+type ContinuityStep = import("./lib/steps").ToolStep;
+type ContinuityConnector = import("./lib/connectors").ConnectorView;
+type ContinuityUpdateStatus = import("./lib/update").UpdateStatus;
 type ContinuityMessage = ContinuityReply & {
   role: "user" | "assistant";
   attachments?: ContinuityAttachment[];
   alternates?: ContinuityReply[];
   altIndex?: number;
 };
-type ContinuityTools = { webSearch?: boolean; webFetch?: boolean; files?: boolean; analysis?: boolean; memory?: boolean };
+type ContinuityTools = { research?: boolean; webSearch?: boolean; webFetch?: boolean; files?: boolean; analysis?: boolean; memory?: boolean; connectors?: string[] };
 type ContinuityConversation = {
   id: string; title: string; messages: ContinuityMessage[]; source?: string;
   projectId?: string; style?: string; tools?: ContinuityTools; container?: { id: string; expiresAt?: string };
 };
 type ContinuityProject = { id: string; name: string; instructions: string; knowledge: ContinuityAttachment[]; memory: boolean };
-type ContinuityPrefs = { autoTitle: boolean; customStyle: string };
+type ContinuityPrefs = import("./lib/prefs").Prefs;
 type ContinuityUsage = {
   model: string; inputTokens: number; outputTokens: number;
-  cacheCreationInputTokens: number; cacheReadInputTokens: number; webSearchRequests?: number;
+  cacheCreationInputTokens: number; cacheReadInputTokens: number; webSearchRequests?: number; source?: string;
 };
 type ContinuityModel = {
   id: string; displayName: string; createdAt?: string; maxTokens?: number; maxInputTokens?: number;
@@ -33,7 +36,7 @@ declare global {
   interface Window {
     continuity: {
       chooseExport: () => Promise<{ fileName: string; conversations: ContinuityConversation[]; count: number } | null>;
-      exportChat: (payload: { fileName: string; data: string }) => Promise<{ canceled: boolean; filePath?: string }>;
+      exportChat: (payload: { fileName: string; data: string; format?: "json" | "html" }) => Promise<{ canceled: boolean; filePath?: string }>;
       saveApiKey: (key: string) => Promise<boolean>;
       testApiKey: (key: string) => Promise<{ ok: boolean; modelCount: number }>;
       keyStatus: () => Promise<{ configured: boolean; secureStorage: boolean }>;
@@ -43,6 +46,35 @@ declare global {
       loadCredit: () => Promise<ContinuityCreditSettings | null>;
       saveCredit: (settings: ContinuityCreditSettings) => Promise<ContinuityCreditSettings>;
       loadPrefs: () => Promise<ContinuityPrefs>;
+      backupData: () => Promise<{ canceled: true } | { canceled: false; filePath: string; count: number }>;
+      restoreData: () => Promise<{ canceled: true } | { canceled: false; count: number; safetyPath: string }>;
+      openDataFolder: () => Promise<boolean>;
+      focusWindow: () => Promise<boolean>;
+      captureScreen: () => Promise<AttachResult>;
+      shortcutStatus: () => Promise<string>;
+      onQuick: (listener: () => void) => () => void;
+      listConnectors: () => Promise<ContinuityConnector[]>;
+      saveConnector: (input: { id?: string; name: string; enabled?: boolean; transport?: "remote" | "local"; url?: string; token?: string | null; command?: string; args?: string; env?: string | null }) => Promise<ContinuityConnector[]>;
+      listSkills: () => Promise<{ id: string; name: string; updatedAt: string }[]>;
+      uploadSkill: (kind: "folder" | "file") => Promise<{ id: string; name: string; updatedAt: string } | null>;
+      deleteSkill: (id: string) => Promise<boolean>;
+      importDesktopConnectors: () => Promise<{ list: ContinuityConnector[]; added: number; found: number; file: string }>;
+      resetAllowedTools: (id: string) => Promise<ContinuityConnector[]>;
+      answerApproval: (approvalId: string, decision: import("./lib/connectors").ApprovalDecision) => Promise<boolean>;
+      onApproval: (listener: (approval: import("./lib/connectors").ToolApproval) => void) => () => void;
+      deleteConnector: (id: string) => Promise<ContinuityConnector[]>;
+      testConnector: (id: string) => Promise<{ tools: string[] }>;
+      styleFromSample: (payload: { sample: string; model: string }) => Promise<{ prompt: string; usage: Omit<ContinuityUsage, "createdAt"> }>;
+      attachmentText: (id: string) => Promise<{ text: string; truncated: boolean }>;
+      openAttachmentPdf: (id: string, name: string) => Promise<boolean>;
+      appVersion: () => Promise<string>;
+      updateStatus: () => Promise<ContinuityUpdateStatus>;
+      checkForUpdates: () => Promise<ContinuityUpdateStatus>;
+      downloadUpdate: () => Promise<ContinuityUpdateStatus>;
+      installUpdate: () => Promise<ContinuityUpdateStatus>;
+      onUpdateStatus: (listener: (status: ContinuityUpdateStatus) => void) => () => void;
+      summarizeHandoff: (payload: { model: string; title: string; transcript: string }) => Promise<{ text: string; usage: Omit<ContinuityUsage, "createdAt"> }>;
+      openHandoff: (payload: { text: string; target: "desktop" | "web" }) => Promise<boolean>;
       savePrefs: (prefs: ContinuityPrefs) => Promise<ContinuityPrefs>;
       loadProjects: () => Promise<ContinuityProject[]>;
       saveProjects: (projects: ContinuityProject[]) => Promise<ContinuityProject[]>;
@@ -52,14 +84,17 @@ declare global {
       attachmentPreview: (id: string) => Promise<string | null>;
       listMemory: () => Promise<{ path: string; size: number; content: string }[]>;
       deleteMemory: (path: string) => Promise<boolean>;
+      writeMemory: (path: string, text: string) => Promise<boolean>;
       saveGeneratedFile: (fileId: string, name: string) => Promise<{ canceled: boolean; filePath?: string }>;
+      mcpInfo: () => Promise<{ serverPath: string; runtimePath: string; dataDir: string; platform: string }>;
+      pickMcpFolders: () => Promise<string[]>;
       listModels: () => Promise<ContinuityModel[]>;
       reply: (payload: {
         requestId: string; messages: { role: "user" | "assistant"; content: string; attachments?: ContinuityAttachment[] }[];
-        model?: string; effort?: string; style?: string; projectId?: string; tools?: ContinuityTools; containerId?: string;
+        model?: string; effort?: string; style?: string; projectId?: string; tools?: ContinuityTools; containerId?: string; chatId?: string; incognito?: boolean;
       }) => Promise<{
         text: string; thinking: string; aborted: boolean; usage: ContinuityUsage; citations: ContinuityCitation[]; files: ContinuityFile[];
-        container?: { id: string; expiresAt?: string }; notices: string[];
+        container?: { id: string; expiresAt?: string }; notices: string[]; steps: ContinuityStep[]; stopReason?: string;
       }>;
       generateTitle: (user: string, assistant: string) => Promise<{ title: string | null; usage: { model: string; inputTokens: number; outputTokens: number } } | null>;
       abortReply: (requestId: string) => Promise<boolean>;

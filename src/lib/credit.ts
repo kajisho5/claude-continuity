@@ -1,4 +1,5 @@
 import { costOf, type UsageTokens } from "./pricing";
+import { t } from "../i18n";
 
 export type PlanId = "max5x" | "max20x" | "team" | "custom" | "none";
 export type CreditSettings = {
@@ -9,7 +10,7 @@ export type CreditSettings = {
   calibration?: { balanceUsd: number; observedAt: string };
   onboardingDone: boolean;
 };
-export type UsageRow = UsageTokens & { model: string; createdAt: string; sessionId?: string };
+export type UsageRow = UsageTokens & { model: string; createdAt: string; sessionId?: string; source?: string };
 export type Pace = "under" | "on" | "over";
 export type CreditSummary = {
   plan: PlanId;
@@ -30,7 +31,9 @@ export type CreditSummary = {
 
 export const PLAN_PRESETS: Record<Exclude<PlanId, "team" | "custom">, number> = { max5x: 100, max20x: 200, none: 0 };
 export const PLAN_LABELS: Record<PlanId, string> = {
-  max5x: "Max 5x", max20x: "Max 20x", team: "Team", custom: "カスタム", none: "対象外"
+  max5x: "Max 5x", max20x: "Max 20x", team: "Team",
+  // Getters so the labels follow the current language wherever they are read.
+  get custom() { return t().lib.credit.custom; }, get none() { return t().lib.credit.none; }
 };
 const DAY_MS = 24 * 60 * 60 * 1000;
 // Pace bands: more than 10 points behind or ahead of the elapsed share of the cycle.
