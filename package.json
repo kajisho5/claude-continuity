@@ -5,14 +5,15 @@
   "description": "Local-first desktop app for importing Claude conversation exports and continuing them with the Anthropic API.",
   "main": "dist-electron/main.js",
   "scripts": {
-    "dev": "concurrently -k \"vite --host 127.0.0.1\" \"wait-on http://127.0.0.1:5173 && electron . --dev\"",
-    "build": "tsc --noEmit -p tsconfig.json && tsc -p tsconfig.electron.json && vite build && esbuild electron/main.ts --bundle --platform=node --external:electron --outfile=dist-electron/main.js && esbuild electron/preload.ts --bundle --platform=node --external:electron --outfile=dist-electron/preload.js && npm run build:mcp",
+    "dev": "npm run build:runtime && concurrently -k \"vite --host 127.0.0.1\" \"wait-on http://127.0.0.1:5173 && electron . --dev\"",
+    "build": "npm run build:runtime && tsc --noEmit -p tsconfig.json && tsc -p tsconfig.electron.json && vite build && esbuild electron/main.ts --bundle --platform=node --external:electron --outfile=dist-electron/main.js && esbuild electron/preload.ts --bundle --platform=node --external:electron --outfile=dist-electron/preload.js && npm run build:mcp",
     "start": "electron .",
     "dist:win": "npm run build && electron-builder --win nsis --publish never",
     "dist:mac": "npm run build && electron-builder --mac dmg",
     "dist:linux": "npm run build && electron-builder --linux AppImage",
     "test": "vitest run",
-    "build:mcp": "esbuild mcp/server.ts --bundle --platform=node --target=node18 --outfile=dist-mcp/server.js"
+    "build:mcp": "esbuild mcp/server.ts --bundle --platform=node --target=node18 --outfile=dist-mcp/server.js",
+    "build:runtime": "esbuild src/artifact-runtime/runtime.tsx --bundle --minify --format=iife --platform=browser --define:process.env.NODE_ENV=\\\"production\\\" --outfile=src/generated/artifact-runtime.js --log-level=warning"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.137.0",
@@ -37,6 +38,7 @@
     "zod": "^4.6.7"
   },
   "devDependencies": {
+    "@tailwindcss/browser": "^4.3.3",
     "@tailwindcss/vite": "^4.3.3",
     "@types/adm-zip": "^0.5.5",
     "@types/react": "^19.0.0",
@@ -46,6 +48,8 @@
     "electron": "^34.0.0",
     "electron-builder": "^25.1.8",
     "esbuild": "^0.24.2",
+    "recharts": "^3.10.1",
+    "sucrase": "^3.35.1",
     "tailwindcss": "^4.3.3",
     "typescript": "~5.7.2",
     "vite": "^6.0.7",

@@ -41,6 +41,35 @@ function MermaidPreview({ artifact }: { artifact: ArtifactRequest }) {
   return <iframe className={FRAME} title={artifact.title} sandbox="" srcDoc={previewDocument({ language: "svg", code: svg })} />;
 }
 
+// React artifacts also need eval (JSX is compiled inside the frame); the frame still has no network or app access.
+const REACT_CSP = "default-src 'none'; img-src data: blob:; style-src 'unsafe-inline'; script-src 'unsafe-inline' 'unsafe-eval'; font-src data:";
+const inlineScript = (code: string) => code.replace(/<\/script/gi, "<\\/script");
+
+/** A self-contained page that compiles and renders the component with the bundled runtime (React, lucide-react, recharts, Tailwind). */
+export async function reactDocument(code: string): Promise<string> {
+  const [{ default: runtime }, { default: tailwind }] = await Promise.all([
+    import("../generated/artifact-runtime.js?raw"),
+    import("@tailwindcss/browser?raw")
+  ]);
+  const source = JSON.stringify(code).replace(/</g, "\\u003c");
+  return `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${REACT_CSP}">`
+    + `<style>html,body{margin:0;background:#fff;color:#111;font-family:system-ui,-apple-system,"Hiragino Sans","Yu Gothic UI",sans-serif}</style>`
+    + `<script>${inlineScript(tailwind)}</script><script>${inlineScript(runtime)}</script></head>`
+    + `<body><div id="root"></div><script>window.__runArtifact(${source})</script></body></html>`;
+}
+
+function ReactPreview({ artifact }: { artifact: ArtifactRequest }) {
+  const [doc, setDoc] = useState<string | null>(null);
+  useEffect(() => {
+    let alive = true;
+    setDoc(null);
+    void reactDocument(artifact.code).then(d => { if (alive) setDoc(d); });
+    return () => { alive = false; };
+  }, [artifact.code]);
+  if (!doc) return <div className={"artifact-loading " + PLACEHOLDER}>コンポーネントを準備しています…</div>;
+  return <iframe className={FRAME} title={artifact.title} sandbox="allow-scripts" srcDoc={doc} />;
+}
+
 const FRAME = "artifact-frame min-h-0 w-full flex-1 rounded-[10px] border-0 bg-white";
 /** `.artifact-loading, .artifact-error` */
 const PLACEHOLDER = "grid flex-1 place-items-center content-center gap-[8px] rounded-[10px] border border-dashed border-line-strong p-[20px] text-[13px] text-muted";
@@ -51,7 +80,7 @@ export default function ArtifactPanel({ artifact, versions, onSelect, onClose }:
   const [tab, setTab] = useState<"preview" | "code">("preview");
   const index = Math.max(0, versions.findIndex(v => v.code === artifact.code));
   function download() {
-    const type = { html: "text/html", svg: "image/svg+xml", markdown: "text/markdown", mermaid: "text/plain" }[artifact.language];
+    const type = { html: "text/html", svg: "image/svg+xml", markdown: "text/markdown", mermaid: "text/plain", react: "text/javascript" }[artifact.language];
     const url = URL.createObjectURL(new Blob([artifact.code], { type }));
     const link = document.createElement("a");
     const base = artifact.title.replace(/[\\/:*?"<>|]/g, "_").slice(0, 80) || "artifact";
@@ -81,8 +110,10 @@ export default function ArtifactPanel({ artifact, versions, onSelect, onClose }:
         ? <div className="artifact-doc min-h-0 flex-1 overflow-auto rounded-[10px] border border-line bg-surface px-[22px] py-[18px]"><Markdown text={artifact.code} className="font-chat text-[14.5px] leading-[1.8] text-ink-3" /></div>
         : artifact.language === "mermaid"
           ? <MermaidPreview artifact={artifact} />
+          : artifact.language === "react"
+          ? <ReactPreview artifact={artifact} />
           : <iframe className={FRAME} title={artifact.title} sandbox="allow-scripts" srcDoc={previewDocument({ language: artifact.language, code: artifact.code })} />}
-    {(artifact.language === "html" || artifact.language === "svg" || artifact.language === "mermaid") && <p className="hint mb-0">sandbox 付き iframe で表示しています（ネットワーク・アプリ本体へのアクセスなし）</p>}
+    {artifact.language !== "markdown" && <p className="hint mb-0">sandbox 付き iframe で表示しています（ネットワーク・アプリ本体へのアクセスなし）{artifact.language === "react" && " · 使えるライブラリ: React・lucide-react・recharts・Tailwind"}</p>}
     <div className="artifact-actions flex items-center gap-[8px]">
       <button className="btn-secondary" onClick={download}><Download size={14} /> .{KIND_EXT[artifact.language]} で保存</button>
       <CopyButton text={artifact.code} />

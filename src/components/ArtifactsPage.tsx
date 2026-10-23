@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Code2, FileText, Image as ImageIcon, Search, Workflow } from "lucide-react";
+import { Atom, Code2, FileText, Image as ImageIcon, Search, Workflow } from "lucide-react";
 import { KIND_LABEL, type ArtifactRequest } from "../lib/artifacts";
 import { relativeTime } from "../lib/time";
 import { PAGE, PAGE_HEAD, PAGE_TITLE, SEARCH, SEARCH_INPUT } from "./ChatsPage";
@@ -7,7 +7,7 @@ import { CARD, CARD_DESC, CARD_META, CARD_TITLE, EMPTY, EMPTY_TEXT, EMPTY_TITLE,
 import { ARTIFACT_THUMB } from "./MessageContent";
 
 export type ArtifactEntry = { key: string; chatId: string; chatTitle: string; updatedAt?: string; latest: ArtifactRequest; versions: number };
-const ICON = { html: Code2, svg: ImageIcon, markdown: FileText, mermaid: Workflow } as const;
+const ICON = { html: Code2, svg: ImageIcon, markdown: FileText, mermaid: Workflow, react: Atom } as const;
 
 /** Every artifact across saved chats (latest version of each), like the Claude apps' artifact list. */
 export default function ArtifactsPage({ entries, now, onOpen }: { entries: ArtifactEntry[]; now: number; onOpen: (entry: ArtifactEntry) => void }) {

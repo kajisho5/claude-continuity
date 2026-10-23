@@ -9,6 +9,10 @@ describe("artifactKind", () => {
     expect(artifactKind("md", "# a")).toBeNull();
     expect(artifactKind("markdown", Array(12).fill("line").join("\n"))).toBe("markdown");
     expect(artifactKind("python", "print(1)")).toBeNull();
+    expect(artifactKind("jsx", "export default function App(){ return <div/> }")).toBe("react");
+    expect(artifactKind("tsx", "const x = 1")).toBeNull();
+    expect(artifactKind("javascript", "import { useState } from 'react';\nexport default function Counter(){ return <p/> }")).toBe("react");
+    expect(artifactKind("javascript", "export default { a: 1 }")).toBeNull();
   });
 });
 
@@ -19,6 +23,9 @@ describe("artifactTitle", () => {
     expect(artifactTitle("markdown", "前置き\n## 議事録\n本文")).toBe("議事録");
     expect(artifactTitle("mermaid", "sequenceDiagram\nA->>B: hi")).toBe("図（sequenceDiagram）");
     expect(artifactTitle("mermaid", "---\ntitle: 承認フロー\n---\nflowchart LR")).toBe("承認フロー");
+    expect(artifactTitle("react", "export default function SalesChart() {}")).toBe("SalesChart");
+    expect(artifactTitle("react", "const Board = () => null;\nexport default Board;")).toBe("Board");
+    expect(artifactTitle("react", "export default () => null")).toBe("React コンポーネント");
   });
 });
 

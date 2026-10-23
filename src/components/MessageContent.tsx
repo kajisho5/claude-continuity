@@ -6,7 +6,7 @@ import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
 import "katex/dist/katex.min.css";
 import { normalizeMath } from "../lib/math";
-import { Check, ChevronDown, Code2, Copy, Eye, FileText, Image as ImageIcon, Workflow } from "lucide-react";
+import { Atom, Check, ChevronDown, Code2, Copy, Eye, FileText, Image as ImageIcon, Workflow } from "lucide-react";
 
 import { artifactKind, artifactTitle, KIND_LABEL, type ArtifactKind, type ArtifactRequest } from "../lib/artifacts";
 export type { ArtifactRequest };
@@ -54,7 +54,7 @@ function ArtifactCard({ language, code, children }: { language: ArtifactKind; co
   return <div className="artifact-card-wrap my-[.9em] font-sans">
     <div className="artifact-card group/card flex max-w-[440px] cursor-pointer items-center gap-[14px] rounded-[14px] border border-line-strong bg-surface py-[10px] pr-[14px] pl-[10px] transition-[border-color,transform,box-shadow] duration-150 ease-[ease] hover:border-line-input hover:shadow-[0_6px_20px_#0004] hover:[transform:translateY(-1px)]" role="button" tabIndex={0} onClick={() => openArtifact({ title, language, code })}
       onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openArtifact({ title, language, code }); } }}>
-      <span className={ARTIFACT_THUMB + " size-[52px]"}>{language === "svg" ? <ImageIcon size={20} /> : language === "markdown" ? <FileText size={20} /> : language === "mermaid" ? <Workflow size={20} /> : <Code2 size={20} />}</span>
+      <span className={ARTIFACT_THUMB + " size-[52px]"}>{language === "svg" ? <ImageIcon size={20} /> : language === "markdown" ? <FileText size={20} /> : language === "mermaid" ? <Workflow size={20} /> : language === "react" ? <Atom size={20} /> : <Code2 size={20} />}</span>
       <span className="artifact-meta flex min-w-0 flex-1 flex-col gap-[3px]"><b className="truncate text-[14px] font-semibold text-ink">{title}</b><small className="text-[11.5px] text-muted">{KIND_LABEL[language]} · {lines} 行 · クリックして開く</small></span>
       <Eye size={16} className="artifact-open shrink-0 text-subtle group-hover/card:text-ink-3" />
     </div>
