@@ -189,6 +189,23 @@ function sanitizeReply(m: any) {
     ...(Array.isArray(m.files) ? { files: m.files.slice(0, 50).map((f: any) => ({ fileId: str(f?.fileId, 200) ?? "", name: str(f?.name, 300) ?? "file", ...(typeof f?.size === "number" ? { size: f.size } : {}) })) } : {})
   };
 }
+/** Edited user turns keep earlier versions with the replies that followed them; nesting is capped. */
+function sanitizeMessage(m: any, depth: number): any {
+  const role = m?.role === "assistant" ? "assistant" : "user";
+  const attachments = role === "user" ? sanitizeAttachments(m?.attachments) : undefined;
+  return {
+    role, ...sanitizeReply(m ?? {}),
+    ...(attachments?.length ? { attachments } : {}),
+    ...(role === "assistant" && Array.isArray(m.alternates) ? { alternates: m.alternates.slice(0, 20).map(sanitizeReply), altIndex: Number(m.altIndex) || 0 } : {}),
+    ...(role === "user" && Array.isArray(m.versions) && m.versions.length > 1 && depth < 4 ? {
+      versions: m.versions.slice(0, 20).map((v: any) => {
+        const va = sanitizeAttachments(v?.attachments);
+        return { content: str(v?.content, 2_000_000) ?? "", ...(va?.length ? { attachments: va } : {}), tail: Array.isArray(v?.tail) ? v.tail.slice(0, 2000).map((t: any) => sanitizeMessage(t, depth + 1)) : [] };
+      }),
+      versionIndex: Math.max(0, Math.min(Number(m.versionIndex) || 0, m.versions.length - 1))
+    } : {})
+  };
+}
 ipcMain.handle("chats:save", async (_event, chats: unknown[]) => {
   if (!Array.isArray(chats)) throw new Error("会話データの形式が正しくありません。");
   const safeChats = chats.map((chat: any) => ({
@@ -201,15 +218,7 @@ ipcMain.handle("chats:save", async (_event, chats: unknown[]) => {
     ...(typeof chat.style === "string" ? { style: chat.style.slice(0, 40) } : {}),
     ...(chat.tools && typeof chat.tools === "object" ? { tools: Object.fromEntries(["webSearch", "webFetch", "files", "analysis", "memory"].map(k => [k, chat.tools[k] === true])) } : {}),
     ...(chat.container && typeof chat.container.id === "string" ? { container: { id: chat.container.id.slice(0, 200), expiresAt: str(chat.container.expiresAt, 60) } } : {}),
-    messages: Array.isArray(chat.messages) ? chat.messages.slice(-5000).map((m: any) => {
-      const role = m.role === "assistant" ? "assistant" : "user";
-      const attachments = role === "user" ? sanitizeAttachments(m.attachments) : undefined;
-      return {
-        role, ...sanitizeReply(m),
-        ...(attachments?.length ? { attachments } : {}),
-        ...(role === "assistant" && Array.isArray(m.alternates) ? { alternates: m.alternates.slice(0, 20).map(sanitizeReply), altIndex: Number(m.altIndex) || 0 } : {})
-      };
-    }) : []
+    messages: Array.isArray(chat.messages) ? chat.messages.slice(-5000).map((m: any) => sanitizeMessage(m, 0)) : []
   }));
   await fs.writeFile(chatsFile(), JSON.stringify(safeChats), "utf8");
   return true;
@@ -453,6 +462,26 @@ ipcMain.handle("attachments:preview", async (_event, id: string) => {
   const head = buffer.subarray(0, 12);
   const type = head[0] === 0x89 ? "image/png" : head[0] === 0xff ? "image/jpeg" : head.toString("latin1", 0, 3) === "GIF" ? "image/gif" : "image/webp";
   return `data:${type};base64,${buffer.toString("base64")}`;
+});
+
+ipcMain.handle("attachments:text", async (_event, id: string) => {
+  // In-app viewer for text attachments; capped so a huge log does not freeze the window.
+  const buffer = await attachments().read(String(id));
+  const text = buffer.subarray(0, 400_000).toString("utf8");
+  return { text: text.slice(0, 200_000), truncated: buffer.length > 400_000 || text.length > 200_000 };
+});
+ipcMain.handle("attachments:openPdf", async (_event, id: string, name: string) => {
+  // Only real PDFs are handed to the OS viewer, under a forced .pdf name, so an attachment can never be executed.
+  const buffer = await attachments().read(String(id));
+  if (buffer.subarray(0, 5).toString("latin1") !== "%PDF-") throw new Error("PDF ファイルではありません。");
+  const safe = (path.basename(String(name ?? "document")).replace(/[^\p{L}\p{N} ._-]/gu, "_").replace(/\.pdf$/i, "").slice(0, 80) || "document") + ".pdf";
+  const dir = path.join(app.getPath("temp"), "claude-continuity-view", String(id).replace(/[^\w-]/g, "").slice(0, 64));
+  await fs.mkdir(dir, { recursive: true });
+  const target = path.join(dir, safe);
+  await fs.writeFile(target, buffer);
+  const error = await shell.openPath(target);
+  if (error) throw new Error(error);
+  return true;
 });
 
 // ---- Memory ----

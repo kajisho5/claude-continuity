@@ -25,6 +25,7 @@ import { costOf, formatUsd, priceHint } from "./lib/pricing";
 import { DEFAULT_PREFS, type Prefs } from "./lib/prefs";
 import { CONTINUE_PROMPT, mergeContinuation } from "./lib/continue";
 import { plainPreview } from "./lib/time";
+import { editUserMessage, selectUserVersion } from "./lib/versions";
 
 type Attachment = NonNullable<Msg["attachments"]>[number];
 type Chat = { id: string; title: string; messages: Msg[]; source?: string; projectId?: string; starred?: boolean; updatedAt?: string; incognito?: boolean; style?: string; tools?: Tools; container?: { id: string; expiresAt?: string } };
@@ -311,10 +312,13 @@ export default function App() {
  }
  function editAndResend(index:number,text:string){
    if(busy)return;
-   const original=chat.messages[index];
-   const history=[...chat.messages.slice(0,index),{...original,content:text}];
+   const history=editUserMessage(chat.messages,index,text);
    patchChat(chat.id,c=>({...c,messages:history}));
    void runReply(chat,history,{kind:"append"});
+ }
+ function selectVersion(index:number,version:number){
+   if(busy)return;
+   patchChat(chat.id,c=>({...c,messages:selectUserVersion(c.messages,index,version)}));
  }
  function selectAlternate(index:number,alt:number){
    patchChat(chat.id,c=>({...c,messages:c.messages.map((m,i)=>{
@@ -429,7 +433,7 @@ export default function App() {
        <section className="messages" ref={messagesRef} onScroll={e=>{const el=e.currentTarget;setAtBottom(el.scrollHeight-el.scrollTop-el.clientHeight<120);}}>
         <div className="thread">
          {chat.messages.map((m,i)=><MessageItem key={`${chat.id}-${i}`} message={m} isLast={i===lastAssistant&&!showPending} busy={busy}
-           onRegenerate={()=>regenerate(i)} onEdit={text=>editAndResend(i,text)} onSelectAlternate={alt=>selectAlternate(i,alt)} onSaveFile={(id,name)=>void saveFile(id,name)} onContinue={()=>continueReply(i)}/>)}
+           onRegenerate={()=>regenerate(i)} onEdit={text=>editAndResend(i,text)} onSelectAlternate={alt=>selectAlternate(i,alt)} onSaveFile={(id,name)=>void saveFile(id,name)} onContinue={()=>continueReply(i)} onSelectVersion={v=>selectVersion(i,v)}/>)}
          {showPending&&<article className="message assistant pending">
            {(pending.thinking||!pending.text)&&<ThinkingBlock text={pending.thinking} live={!pending.text} seconds={pending.firstTextAt?(pending.firstTextAt-pending.startedAt)/1000:undefined}/>}
            {pending.activity&&<p className="activity">{pending.activity}</p>}

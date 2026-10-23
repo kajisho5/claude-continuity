@@ -49,6 +49,8 @@ declare global {
       restoreData: () => Promise<{ canceled: true } | { canceled: false; count: number; safetyPath: string }>;
       openDataFolder: () => Promise<boolean>;
       focusWindow: () => Promise<boolean>;
+      attachmentText: (id: string) => Promise<{ text: string; truncated: boolean }>;
+      openAttachmentPdf: (id: string, name: string) => Promise<boolean>;
       appVersion: () => Promise<string>;
       updateStatus: () => Promise<ContinuityUpdateStatus>;
       checkForUpdates: () => Promise<ContinuityUpdateStatus>;
