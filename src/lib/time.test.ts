@@ -21,3 +21,10 @@ describe("relativeTime", () => {
     expect(relativeTime(new Date(now + 60_000).toISOString(), now)).toBe("たった今");
   });
 });
+
+describe("plainPreview", async () => {
+  const { plainPreview } = await import("./time");
+  it("strips Markdown noise", () => {
+    expect(plainPreview("## 見出し\n\n| a | b |\n|---|---|\n| 1 | **2** |\n\n```js\nx\n```\n[リンク](https://x) と出典[1]", 100)).toBe("見出し a b 1 2 リンク と出典");
+  });
+});

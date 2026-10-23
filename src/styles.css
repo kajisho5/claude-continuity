@@ -821,3 +821,12 @@ html[data-theme="light"] .artifact-code,html[data-theme="light"] .snippet pre{co
 /* Right-edge tooltips anchor to the right so they never widen the page. */
 .header-actions .tip[data-tip]:hover::after,.header-actions .tip[data-tip]:focus-visible::after{left:auto;right:0;transform:none;animation-name:fadeIn}
 html,body{overflow:hidden}
+
+/* Updates */
+.update-section{margin:0 0 18px;padding:14px 16px;border:1px solid var(--border-strong);border-radius:12px;background:var(--surface)}
+.update-row{display:flex;align-items:center;justify-content:space-between;gap:12px;font-size:13px;color:var(--text-3)}
+.update-row b{color:var(--text);font-weight:600}
+.update-text{margin:10px 0 0}
+.update-text.error{color:var(--warn)}
+.update-section>.muted:last-child{margin:8px 0 0;font-size:11px;color:var(--subtle)}
+.update-banner{position:absolute;top:58px;left:50%;transform:translateX(-50%);z-index:6;display:flex;align-items:center;gap:12px;padding:8px 8px 8px 16px;background:var(--modal);border:1px solid var(--border-strong);border-radius:12px;box-shadow:0 8px 24px var(--shadow);font-size:12.5px;color:var(--text-2);animation:toastIn .22s var(--ease) both;white-space:nowrap}

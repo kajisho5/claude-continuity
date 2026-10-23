@@ -1,2 +1,2 @@
-export type Prefs = { autoTitle: boolean; customStyle: string; displayName: string; theme: "system" | "light" | "dark"; chatFont: "serif" | "sans" | "system"; shareName: boolean; preferences: string; searchPastChats: boolean };
-export const DEFAULT_PREFS: Prefs = { autoTitle: true, customStyle: "", displayName: "", theme: "dark", chatFont: "serif", shareName: false, preferences: "", searchPastChats: true };
+export type Prefs = { autoTitle: boolean; customStyle: string; displayName: string; theme: "system" | "light" | "dark"; chatFont: "serif" | "sans" | "system"; shareName: boolean; preferences: string; searchPastChats: boolean; notifyOnReply: boolean };
+export const DEFAULT_PREFS: Prefs = { autoTitle: true, customStyle: "", displayName: "", theme: "dark", chatFont: "serif", shareName: false, preferences: "", searchPastChats: true, notifyOnReply: true };

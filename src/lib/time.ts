@@ -14,3 +14,16 @@ export function relativeTime(iso: string | undefined, now = Date.now()): string 
   const d = new Date(time);
   return d.getFullYear() === new Date(now).getFullYear() ? `${d.getMonth() + 1}月${d.getDate()}日` : `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日`;
 }
+
+/** One-line plain-text preview of a Markdown reply (code blocks, table pipes, emphasis and citation markers removed). */
+export function plainPreview(markdown: string, max: number): string {
+  return markdown
+    .replace(/```[\s\S]*?(```|$)/g, " ")
+    .replace(/\[(\d+)\]/g, "")
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
+    .replace(/^\s*\|?[-:| ]+\|?\s*$/gm, " ")
+    .replace(/[#>*`|_~]/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, max);
+}

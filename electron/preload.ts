@@ -15,6 +15,17 @@ contextBridge.exposeInMainWorld("continuity", {
   backupData: () => ipcRenderer.invoke("data:backup"),
   restoreData: () => ipcRenderer.invoke("data:restore"),
   openDataFolder: () => ipcRenderer.invoke("data:openFolder"),
+  focusWindow: () => ipcRenderer.invoke("window:focus"),
+  appVersion: () => ipcRenderer.invoke("app:version"),
+  updateStatus: () => ipcRenderer.invoke("update:status"),
+  checkForUpdates: () => ipcRenderer.invoke("update:check"),
+  downloadUpdate: () => ipcRenderer.invoke("update:download"),
+  installUpdate: () => ipcRenderer.invoke("update:install"),
+  onUpdateStatus: (listener: (status: unknown) => void) => {
+    const handler = (_event: unknown, status: unknown) => listener(status);
+    ipcRenderer.on("update:status", handler);
+    return () => { ipcRenderer.removeListener("update:status", handler); };
+  },
   summarizeHandoff: (payload: unknown) => ipcRenderer.invoke("handoff:summarize", payload),
   openHandoff: (payload: unknown) => ipcRenderer.invoke("handoff:open", payload),
   savePrefs: (prefs: unknown) => ipcRenderer.invoke("prefs:save", prefs),

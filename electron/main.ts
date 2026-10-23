@@ -9,6 +9,7 @@ import { AttachmentStore, type Attachment } from "./attachments";
 import { listMemoryFiles, runMemoryCommand } from "./memory";
 import { createBackup, readBackup, restoreEntries } from "./backup";
 import { formatHits, searchPastChats } from "./pastChats";
+import { setupUpdater } from "./updater";
 import { HANDOFF_PREFIX, fitsHandoff } from "../src/lib/handoff";
 import { activityLabel, buildMessages, buildSystem, buildTools, extractFileIds, extractSteps, extractText, type ChatTurn, type Project, type StyleId, type ToolFlags } from "./request";
 
@@ -42,6 +43,7 @@ app.whenReady().then(async () => {
   // The renderer follows prefers-color-scheme, which nativeTheme.themeSource controls.
   nativeTheme.themeSource = (await loadPrefs()).theme;
   createWindow();
+  setupUpdater(() => mainWindow);
   app.on("activate", () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
 });
 app.on("window-all-closed", () => { if (process.platform !== "darwin") app.quit(); });
@@ -237,6 +239,12 @@ ipcMain.handle("data:backup", async () => {
   await fs.writeFile(result.filePath, zip.toBuffer());
   return { canceled: false, filePath: result.filePath, count };
 });
+ipcMain.handle("window:focus", () => {
+  if (!mainWindow) return false;
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.show(); mainWindow.focus();
+  return true;
+});
 ipcMain.handle("data:openFolder", async () => {
   const error = await shell.openPath(dataDir());
   if (error) throw new Error(error);
@@ -367,7 +375,7 @@ ipcMain.handle("credit:save", async (_event, value: any) => {
 const prefsFile = () => path.join(dataDir(), "prefs.json");
 type Theme = "system" | "light" | "dark";
 type ChatFont = "serif" | "sans" | "system";
-type Prefs = { autoTitle: boolean; customStyle: string; displayName: string; theme: Theme; chatFont: ChatFont; shareName: boolean; preferences: string; searchPastChats: boolean };
+type Prefs = { autoTitle: boolean; customStyle: string; displayName: string; theme: Theme; chatFont: ChatFont; shareName: boolean; preferences: string; searchPastChats: boolean; notifyOnReply: boolean };
 const THEMES: Theme[] = ["system", "light", "dark"];
 const FONTS: ChatFont[] = ["serif", "sans", "system"];
 function sanitizePrefs(raw: any): Prefs {
@@ -380,7 +388,8 @@ function sanitizePrefs(raw: any): Prefs {
     // The display name stays local unless the user opts in to Claude using it.
     shareName: raw?.shareName === true,
     preferences: typeof raw?.preferences === "string" ? raw.preferences.slice(0, 4000) : "",
-    searchPastChats: raw?.searchPastChats !== false
+    searchPastChats: raw?.searchPastChats !== false,
+    notifyOnReply: raw?.notifyOnReply !== false
   };
 }
 async function loadPrefs(): Promise<Prefs> {

@@ -1,5 +1,6 @@
 name: Release Windows installer
 # Push a tag like v0.2.0 (matching package.json "version") to publish the installer on the Releases page.
+# latest.yml and the blockmap let installed copies update themselves (electron-updater, GitHub provider).
 on:
   push:
     tags: ["v*"]
@@ -38,7 +39,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release upload "$TAG" release/*.exe --clobber
+            gh release upload "$TAG" release/*.exe release/*.exe.blockmap release/latest.yml --clobber
           else
-            gh release create "$TAG" release/*.exe --title "Claude Continuity $TAG" --generate-notes
+            gh release create "$TAG" release/*.exe release/*.exe.blockmap release/latest.yml --title "Claude Continuity $TAG" --generate-notes
           fi

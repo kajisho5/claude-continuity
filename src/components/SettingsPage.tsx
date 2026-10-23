@@ -4,6 +4,7 @@ import CreditSettingsForm from "./CreditSettingsForm";
 import PreferencesSection from "./PreferencesSection";
 import McpSection from "./McpSection";
 import DataSection from "./DataSection";
+import UpdateSection from "./UpdateSection";
 import type { CreditSettings } from "../lib/credit";
 import { type Prefs } from "../lib/prefs";
 
@@ -83,6 +84,8 @@ export default function SettingsPage(p: Props) {
           </div>
           <label className="toggle-row"><span><b>過去の会話を検索して参照する</b><small>関連しそうなとき、Claude がこの PC に保存された過去の会話を検索して文脈に使います。プロジェクト内の会話はそのプロジェクトの中だけを検索します。シークレットチャットでは使いません。</small></span>
             <input type="checkbox" className="switch" checked={p.prefs.searchPastChats} onChange={e => update({ searchPastChats: e.target.checked })} /></label>
+          <label className="toggle-row"><span><b>回答が終わったら通知する</b><small>アプリが前面にないとき、OS の通知でお知らせします。通知をクリックするとその会話を開きます。</small></span>
+            <input type="checkbox" className="switch" checked={p.prefs.notifyOnReply} onChange={e => update({ notifyOnReply: e.target.checked })} /></label>
           <label className="toggle-row"><span><b>会話タイトルを自動で付ける</b><small>最初の回答のあと、Haiku で短いタイトルを付けます（ごく少額のクレジットを使います）</small></span>
             <input type="checkbox" className="switch" checked={p.prefs.autoTitle} onChange={e => update({ autoTitle: e.target.checked })} /></label>
         </>}
@@ -109,6 +112,7 @@ export default function SettingsPage(p: Props) {
         {tab === "mcp" && <McpSection />}
         {tab === "about" && <>
           <h3>Claude Continuity</h3>
+          <UpdateSection />
           <p className="muted">Claude のエクスポートを読み込み、Anthropic API で会話を続けるデスクトップアプリです。Anthropic の公式製品ではありません。</p>
           <small className="fineprint">このアプリは API キーで Anthropic API を呼び出します。リンク済み組織のクレジットが利用されます。購入済み残高への自動リロードはこのアプリから設定・変更しません。送信した会話文脈と添付ファイルは Anthropic API へ送られます。</small>
         </>}

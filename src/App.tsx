@@ -13,6 +13,8 @@ import Toaster, { type Toast } from "./components/Toaster";
 import ChatsPage from "./components/ChatsPage";
 import { ProjectPage, ProjectsPage } from "./components/ProjectsPage";
 import ShortcutsDialog from "./components/ShortcutsDialog";
+import { statusText } from "./components/UpdateSection";
+import type { UpdateStatus } from "./lib/update";
 import HandoffDialog from "./components/HandoffDialog";
 import ArtifactPanel from "./components/ArtifactPanel";
 import ChatMenu from "./components/ChatMenu";
@@ -22,6 +24,7 @@ import { PLAN_LABELS, summarizeCredit, type CreditSettings, type UsageRow } from
 import { costOf, formatUsd, priceHint } from "./lib/pricing";
 import { DEFAULT_PREFS, type Prefs } from "./lib/prefs";
 import { CONTINUE_PROMPT, mergeContinuation } from "./lib/continue";
+import { plainPreview } from "./lib/time";
 
 type Attachment = NonNullable<Msg["attachments"]>[number];
 type Chat = { id: string; title: string; messages: Msg[]; source?: string; projectId?: string; starred?: boolean; updatedAt?: string; incognito?: boolean; style?: string; tools?: Tools; container?: { id: string; expiresAt?: string } };
@@ -98,6 +101,8 @@ export default function App() {
  const [renaming,setRenaming]=useState<string|null>(null);
  const [confirmDelete,setConfirmDelete]=useState<string|null>(null);
  const [handoff,setHandoff]=useState(false);
+ const [update,setUpdate]=useState<UpdateStatus>({state:"idle"});
+ const [updateDismissed,setUpdateDismissed]=useState(false);
  const pendingRef=useRef<Pending|null>(null);
  const composerRef=useRef<ComposerHandle>(null);
  const searchRef=useRef<HTMLInputElement>(null);
@@ -121,7 +126,8 @@ export default function App() {
      const next=event.kind==="activity"?{...current,activity:event.delta}:{...current,[event.kind]:current[event.kind]+event.delta,...(event.kind==="text"?{activity:"",firstTextAt:current.firstTextAt??Date.now()}:{})};
      pendingRef.current=next;setPending(next);
    });
-   return ()=>{window.clearInterval(timer);unsubscribe();};
+   const offUpdate=window.continuity.onUpdateStatus(setUpdate);
+   return ()=>{window.clearInterval(timer);unsubscribe();offUpdate();};
  },[]);
  async function refreshModels(announce=false){
    if(!configured){setSettings("api");setStatus("先にAnthropic APIキーを設定してください");return;}
@@ -257,6 +263,11 @@ export default function App() {
      const searches=response.usage.webSearchRequests?` · 検索 ${response.usage.webSearchRequests}回`:"";
      const notices=response.notices.length?` · ${response.notices.join(" / ")}`:"";
      setStatus((response.aborted?`応答を停止しました${costText}`:`応答完了 · ${response.usage.inputTokens.toLocaleString()} input / ${response.usage.outputTokens.toLocaleString()} output tokens${searches}${costText}`)+notices);
+     if(prefs.notifyOnReply&&!response.aborted&&!document.hasFocus()&&typeof Notification!=="undefined"){
+       // The body is left out for incognito chats so nothing private lingers in the OS notification center.
+       const note=new Notification(target.incognito?"Claude が回答しました":target.title,{body:target.incognito?"シークレットチャット":(plainPreview(response.text,120)||"回答が完了しました")});
+       note.onclick=()=>{void window.continuity.focusWindow();setActive(target.id);setView("chat");};
+     }
      if(mode.kind==="append"&&mode.retitle&&prefs.autoTitle&&!target.incognito&&response.text&&!response.aborted) void autoTitle(target.id,history[history.length-1].content,response.text);
    }catch(e){
      // A failed regeneration keeps the previous answer; a failed new turn shows the error in place of a reply.
@@ -345,7 +356,7 @@ export default function App() {
  // Untouched new chats stay out of the lists until the first message, as in the Claude apps.
  const visibleChats=chats.filter(c=>c.messages.length>0&&!c.incognito&&(c.title.toLowerCase().includes(query)||c.messages.some(m=>m.content.toLowerCase().includes(query))));
  const chatRows=chats.filter(c=>c.messages.length>0&&!c.incognito).map(c=>({id:c.id,title:c.title,projectId:c.projectId,updatedAt:c.updatedAt,starred:c.starred,
-   preview:([...c.messages].reverse().find(m=>m.role==="assistant")?.content??c.messages[0]?.content??"").replace(/```[\s\S]*?(```|$)/g," ").replace(/\[(\d+)\]/g,"").replace(/[#>*`|_~]/g,"").replace(/\s+/g," ").trim().slice(0,140)}));
+   preview:plainPreview([...c.messages].reverse().find(m=>m.role==="assistant")?.content??c.messages[0]?.content??"",140)}));
  const openProjectData=projects.find(p=>p.id===openProject)??null;
  const starredChats=visibleChats.filter(c=>c.starred);
  const recentChats=visibleChats.filter(c=>!c.starred);
@@ -434,6 +445,12 @@ export default function App() {
       </>}
     </div>
     {artifact&&<ArtifactPanel artifact={artifact} onClose={()=>setArtifact(null)}/>}
+   </div>}
+   {!updateDismissed&&(update.state==="available"||update.state==="downloading"||update.state==="ready")&&<div className="update-banner" role="status">
+     <span>{statusText(update)}</span>
+     {update.state==="available"&&<button className="btn-primary small" onClick={()=>void window.continuity.downloadUpdate()}>ダウンロード</button>}
+     {update.state==="ready"&&<button className="btn-primary small" onClick={()=>void window.continuity.installUpdate()}>再起動して更新</button>}
+     <button className="ghost-btn small" aria-label="閉じる" onClick={()=>setUpdateDismissed(true)}>×</button>
    </div>}
    {dragging&&<div className="drop-hint">ここにドロップして添付</div>}
   </main>

@@ -7,6 +7,7 @@ type ContinuityReply = {
   citations?: ContinuityCitation[]; files?: ContinuityFile[]; steps?: ContinuityStep[]; stopReason?: string;
 };
 type ContinuityStep = import("./lib/steps").ToolStep;
+type ContinuityUpdateStatus = import("./lib/update").UpdateStatus;
 type ContinuityMessage = ContinuityReply & {
   role: "user" | "assistant";
   attachments?: ContinuityAttachment[];
@@ -47,6 +48,13 @@ declare global {
       backupData: () => Promise<{ canceled: true } | { canceled: false; filePath: string; count: number }>;
       restoreData: () => Promise<{ canceled: true } | { canceled: false; count: number; safetyPath: string }>;
       openDataFolder: () => Promise<boolean>;
+      focusWindow: () => Promise<boolean>;
+      appVersion: () => Promise<string>;
+      updateStatus: () => Promise<ContinuityUpdateStatus>;
+      checkForUpdates: () => Promise<ContinuityUpdateStatus>;
+      downloadUpdate: () => Promise<ContinuityUpdateStatus>;
+      installUpdate: () => Promise<ContinuityUpdateStatus>;
+      onUpdateStatus: (listener: (status: ContinuityUpdateStatus) => void) => () => void;
       summarizeHandoff: (payload: { model: string; title: string; transcript: string }) => Promise<{ text: string; usage: Omit<ContinuityUsage, "createdAt"> }>;
       openHandoff: (payload: { text: string; target: "desktop" | "web" }) => Promise<boolean>;
       savePrefs: (prefs: ContinuityPrefs) => Promise<ContinuityPrefs>;
