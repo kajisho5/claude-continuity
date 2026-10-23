@@ -17,7 +17,8 @@ module.exports = async function ui(ctx) {
   await w.keyboard.press("Enter");
   await w.waitForSelector(".message.pending", { timeout: 5000 }); // the slow variant streams for a few seconds
   await waitReply(w);
-  assert.equal(await text(w.locator(".thinking summary").first()), "思考プロセス");
+  // Thinking that took a second or more is labelled with its length (slow CI runners get there).
+  assert.match(await text(w.locator(".thinking summary").first()), /^(思考プロセス|\d+秒間考えました)$/);
   assert.ok((await text(w.locator(".message.assistant .markdown").last())).includes("第3四半期の論点"));
   assert.equal(await w.locator(".message.assistant .markdown table").count(), 1, "the reply renders a table");
 
