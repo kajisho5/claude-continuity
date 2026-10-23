@@ -114,3 +114,13 @@ describe("daysLeft across a daylight-saving change", () => {
     expect(summary?.daysLeft).toBe(5);
   });
 });
+
+describe("parseAmount", () => {
+  it("accepts full-width digits, $ and separators", async () => {
+    const { parseAmount } = await import("./credit");
+    expect(parseAmount("１００")).toBe(100);
+    expect(parseAmount("$12.50")).toBe(12.5);
+    expect(parseAmount("1,000")).toBe(1000);
+    expect(parseAmount("")).toBeNaN();
+  });
+});

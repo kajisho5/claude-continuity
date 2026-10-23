@@ -1,28 +1,42 @@
-import { app, BrowserWindow, desktopCapturer, dialog, globalShortcut, ipcMain, nativeTheme, safeStorage, screen, shell } from "electron";
+import { app, BrowserWindow, desktopCapturer, dialog, globalShortcut, ipcMain, nativeImage, nativeTheme, safeStorage, screen, session, shell } from "electron";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 import fs from "node:fs/promises";
 import { createHash, randomUUID } from "node:crypto";
 import Anthropic from "@anthropic-ai/sdk";
 import AdmZip from "adm-zip";
 import type { MessageParam, ContentBlock, Message } from "@anthropic-ai/sdk/resources/messages";
 import type { MessageStream } from "@anthropic-ai/sdk/lib/MessageStream";
-import { AttachmentStore, type Attachment } from "./attachments";
+import { AttachmentStore, sniffImage, type Attachment } from "./attachments";
 import { listMemoryFiles, runMemoryCommand } from "./memory";
 import { createBackup, readBackup, restoreEntries } from "./backup";
+import { entryData } from "./zipSafe";
 import { formatHits, searchPastChats } from "./pastChats";
 import { setupUpdater } from "./updater";
 import { getMainLocale, mainT, resolveMainLocale, setMainLocale } from "./i18n";
-import { readJsonFile, saveFile, withFileLock, writeFileAtomic } from "./fileStore";
+import { drainFileWrites, readJsonFile, saveFile, withFileLock, withFileLocks, writeFileAtomic } from "./fileStore";
 import { connectorRequest, MCP_CONNECTOR_BETA, serverName, validateConnector, type Connector, type ConnectorView } from "./connectors";
 import { containerSkills, readSkillSource } from "./skills";
 import { buildIndex, formatKnowledgeHits, knowledgeTool, pdfText, searchKnowledge, type KnowledgeIndex } from "./knowledge";
 import { desktopConfigPath, LocalMcpPool, parseDesktopConfig, parseEnv, toolDefinitions, toToolResult, validateLocal, type LocalServer, type LocalToolRef } from "./localMcp";
 import { HANDOFF_PREFIX, fitsHandoff } from "../src/lib/handoff";
 import { activityLabel, buildMessages, historyBudget, buildSystem, buildTools, extractFileIds, extractSteps, extractText, RESEARCH_MAX_USES, type ChatTurn, type Project, type StyleId, type ToolFlags } from "./request";
-import { costOf } from "../src/lib/pricing";
+import { costOf, priceFor } from "../src/lib/pricing";
 
 // Only `npm run dev` passes --dev; `npm start` after a build must load the bundled renderer.
 const isDev = !app.isPackaged && process.argv.includes("--dev");
+
+// IPC is answered only for the app's own page in its top frame. Artifact previews run model-written code in
+// sandboxed frames; even if one broke out of its sandbox it could not drive these handlers (start commands,
+// read files). Every handler below goes through this check.
+const APP_PAGE = isDev ? "http://127.0.0.1:5173/" : pathToFileURL(path.join(__dirname, "../dist/index.html")).href;
+const rawHandle = ipcMain.handle.bind(ipcMain);
+ipcMain.handle = ((channel: string, listener: (event: Electron.IpcMainInvokeEvent, ...args: any[]) => unknown) =>
+  rawHandle(channel, (event, ...args) => {
+    const frame = event.senderFrame;
+    if (!frame || frame !== event.sender.mainFrame || !frame.url.startsWith(APP_PAGE.replace(/[#?].*$/, ""))) throw new Error("Not allowed");
+    return listener(event, ...args);
+  })) as typeof ipcMain.handle;
 let mainWindow: BrowserWindow | null = null;
 const dataDir = () => path.join(app.getPath("userData"), "claude-continuity");
 const sessionId = randomUUID();
@@ -48,10 +62,25 @@ function createWindow() {
   mainWindow.webContents.on("will-frame-navigate", details => {
     if (!details.isMainFrame && !/^about:(srcdoc|blank)$/.test(details.url)) details.preventDefault();
   });
+  // On macOS the app outlives its window; a closed window must not be used (it throws once destroyed).
+  const created = mainWindow;
+  created.on("closed", () => { if (mainWindow === created) mainWindow = null; });
   if (isDev) void mainWindow.loadURL("http://127.0.0.1:5173");
   else void mainWindow.loadFile(path.join(__dirname, "../dist/index.html"));
 }
+// One instance only: two processes would each save their own copy of the chats over the other's.
+const primaryInstance = app.requestSingleInstanceLock();
+if (!primaryInstance) app.quit();
+else app.on("second-instance", () => { if (app.isReady()) showWindow(); });
+// Windows ties notifications to the installer's shortcut by this id; without it toasts can be dropped.
+if (process.platform === "win32") app.setAppUserModelId("com.seventhwell.claude-continuity");
 app.whenReady().then(async () => {
+  if (!primaryInstance) return;
+  // Only what the app uses (notifications, copy buttons) is allowed; camera, microphone, location, screen capture
+  // from web content and the rest are refused.
+  const allowed = new Set(["notifications", "clipboard-sanitized-write"]);
+  session.defaultSession.setPermissionRequestHandler((_wc, permission, callback) => callback(allowed.has(permission)));
+  session.defaultSession.setPermissionCheckHandler((_wc, permission) => allowed.has(permission));
   await ensureDataDir();
   // The renderer follows prefers-color-scheme, which nativeTheme.themeSource controls.
   const prefs = await loadPrefs();
@@ -59,7 +88,7 @@ app.whenReady().then(async () => {
   applyLanguage(prefs.language);
   createWindow();
   applyQuickShortcut(prefs.quickShortcut);
-  setupUpdater(() => mainWindow, { enabled: async () => (await loadPrefs()).checkUpdates });
+  setupUpdater(() => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null), { enabled: async () => (await loadPrefs()).checkUpdates, show: () => showWindow() });
   app.on("activate", () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
 });
 app.on("window-all-closed", () => { if (process.platform !== "darwin") app.quit(); });
@@ -68,10 +97,11 @@ app.on("window-all-closed", () => { if (process.platform !== "darwin") app.quit(
 let quitting = false;
 app.on("will-quit", event => {
   globalShortcut.unregisterAll();
-  if (quitting) return;
+  if (quitting || !primaryInstance) return;
   quitting = true;
   event.preventDefault();
-  void Promise.race([localPool.closeAll(), new Promise(r => setTimeout(r, 3000))]).finally(() => app.exit());
+  // Saves already sent finish too, so the last change is not lost on quit.
+  void Promise.race([Promise.all([localPool.closeAll(), drainFileWrites()]), new Promise(r => setTimeout(r, 3000))]).finally(() => app.exit());
 });
 
 // ---- Quick access: a global shortcut and screenshots ----
@@ -223,8 +253,9 @@ ipcMain.handle("dialog:import-export", async () => {
     const zip = new AdmZip(filePath);
     const entries = zip.getEntries().filter(entry => !entry.isDirectory && entry.entryName.toLowerCase().endsWith(".json"));
     for (const entry of entries) {
-      if (entry.header.size > 25 * 1024 * 1024) continue;
-      imported.push(...parseExportText(entry.getData().toString("utf8"), entry.entryName));
+      let text: string;
+      try { text = entryData(entry, 25 * 1024 * 1024).toString("utf8"); } catch { continue; }
+      imported.push(...parseExportText(text, entry.entryName));
     }
   } else {
     const stat = await fs.stat(filePath);
@@ -359,35 +390,73 @@ ipcMain.handle("data:restore", async event => {
   await fs.writeFile(safetyPath, (await createBackup(dataDir(), app.getVersion())).zip.toBuffer());
   const sender = event.sender;
   staleWindows.add(sender);
+  // Replies in flight would record usage and attachment ids into files that are about to be replaced.
+  for (const controller of activeReplies.values()) controller.abort();
+  const attachmentIndex = path.join(dataDir(), "attachments", "index.json");
+  const locked = [chatsFile(), prefsFile(), projectsFile(), creditFile(), usageFile(), attachmentIndex + ":update", attachmentIndex];
   try {
-    // Let saves already queued finish first, so none of them lands after the restored files.
-    await Promise.all([chatsFile(), prefsFile(), projectsFile(), creditFile(), usageFile()].map(f => withFileLock(f, async () => {})));
-    await restoreEntries(dataDir(), entries);
+    // The files' locks are held while they are replaced, so no save lands in the middle of the restore.
+    await withFileLocks(locked, async () => {
+      try { await restoreEntries(dataDir(), entries); }
+      catch (error) {
+        // A restore that fails partway would leave a mix of old and new data; put the previous state back.
+        await restoreEntries(dataDir(), readBackup(new AdmZip(safetyPath))).catch(() => {});
+        throw error;
+      }
+    });
   } catch (error) { staleWindows.delete(sender); throw error; }
   sender.once("did-finish-load", () => staleWindows.delete(sender));
+  // Files API ids in the restored data may belong to another key's workspace; they are uploaded again when used.
+  await attachments().clearFileIds().catch(() => {});
   const restoredPrefs = await loadPrefs();
   nativeTheme.themeSource = restoredPrefs.theme;
   applyLanguage(restoredPrefs.language);
   applyQuickShortcut(restoredPrefs.quickShortcut);
   return { canceled: false, count: entries.length, safetyPath };
 });
-ipcMain.handle("mcp:info", () => {
+ipcMain.handle("mcp:info", async () => {
   // Packaged builds unpack dist-mcp from the asar archive so the Electron binary can run it as Node.
   const appPath = app.getAppPath();
   const base = app.isPackaged ? appPath.replace(/app\.asar$/, "app.asar.unpacked") : appPath;
-  return { serverPath: path.join(base, "dist-mcp", "server.js"), runtimePath: process.execPath, dataDir: dataDir(), platform: process.platform };
+  let serverPath = path.join(base, "dist-mcp", "server.js");
+  let runtimePath = process.execPath;
+  // An AppImage runs from a mount that changes on every launch: point the config at the AppImage file itself and
+  // at a copy of the server in the data folder, so the pasted config keeps working.
+  if (process.env.APPIMAGE) {
+    runtimePath = process.env.APPIMAGE;
+    const copy = path.join(dataDir(), "mcp", "server.js");
+    await fs.mkdir(path.dirname(copy), { recursive: true });
+    await fs.copyFile(serverPath, copy);
+    serverPath = copy;
+  }
+  // Run from the dmg or from a quarantined download (App Translocation), the app's path is temporary.
+  const unstable = process.platform === "darwin" && (process.execPath.startsWith("/Volumes/") || process.execPath.includes("/AppTranslocation/"));
+  return { serverPath, runtimePath, dataDir: dataDir(), platform: process.platform, unstable };
 });
 // ---- Custom Skills (Skills API; uploaded to the API organization, used through code execution) ----
 const skillsClient = async () => new Anthropic({ apiKey: await getApiKey() });
-ipcMain.handle("skills:list", async () => {
+ipcMain.handle("skills:list", () => listSkills());
+/** Changes saved settings from the main process; one change at a time, so none overwrites another. */
+function updatePrefs(change: (prefs: Prefs) => Prefs) {
+  return withFileLock(prefsFile() + ":update", async () => {
+    const before = await loadPrefs();
+    const after = sanitizePrefs(change(before));
+    if (JSON.stringify(after) !== JSON.stringify(before)) await saveFile(prefsFile(), JSON.stringify(after));
+  });
+}
+/** The organization's custom Skills; turned-on ids that no longer exist for this key are dropped from prefs. */
+async function listSkills() {
   const client = await skillsClient();
   const out: { id: string; name: string; updatedAt: string }[] = [];
   for await (const skill of client.beta.skills.list({ source: "custom" })) {
     out.push({ id: skill.id, name: skill.display_name, updatedAt: skill.updated_at });
     if (out.length >= 100) break;
   }
+  // A Skill deleted in the Console (or from another workspace) would make every request fail; drop it.
+  const known = new Set(out.map(s => s.id));
+  if (out.length < 100) await updatePrefs(prefs => ({ ...prefs, enabledSkills: prefs.enabledSkills.filter(id => known.has(id)) }));
   return out;
-});
+}
 /** Picks a skill folder, SKILL.md or .zip/.skill archive and uploads it; the new skill is turned on. */
 ipcMain.handle("skills:upload", async (_event, kind: "folder" | "file") => {
   const result = await dialog.showOpenDialog(kind === "folder"
@@ -398,8 +467,7 @@ ipcMain.handle("skills:upload", async (_event, kind: "folder" | "file") => {
   const client = await skillsClient();
   const { toFile } = await import("@anthropic-ai/sdk");
   const skill = await client.beta.skills.create({ files: await Promise.all(files.map(f => toFile(f.data, f.name))) });
-  const prefs = await loadPrefs();
-  await saveFile(prefsFile(), JSON.stringify(sanitizePrefs({ ...prefs, enabledSkills: [...prefs.enabledSkills, skill.id] })));
+  await updatePrefs(prefs => ({ ...prefs, enabledSkills: [...prefs.enabledSkills, skill.id] }));
   return { id: skill.id, name: skill.display_name, updatedAt: skill.updated_at };
 });
 /** A skill can only be deleted once its versions are gone. */
@@ -410,8 +478,7 @@ ipcMain.handle("skills:delete", async (_event, id: string) => {
   for await (const v of client.beta.skills.versions.list(skillId)) versions.push(v.id);
   for (const version of versions) await client.beta.skills.versions.delete(version, { skill_id: skillId });
   await client.beta.skills.delete(skillId);
-  const prefs = await loadPrefs();
-  await saveFile(prefsFile(), JSON.stringify(sanitizePrefs({ ...prefs, enabledSkills: prefs.enabledSkills.filter(s => s !== skillId) })));
+  await updatePrefs(prefs => ({ ...prefs, enabledSkills: prefs.enabledSkills.filter(s => s !== skillId) }));
   return true;
 });
 
@@ -433,7 +500,12 @@ function recordUsage(entry: UsageEntry) {
 ipcMain.handle("key:save", async (_event, apiKey: string) => {
   if (!safeStorage.isEncryptionAvailable()) throw new Error(mainT().main.keyStorageUnavailable);
   if (!apiKey || !apiKey.startsWith("sk-ant-")) throw new Error(mainT().main.badKey);
-  await saveFile(keyFile(), safeStorage.encryptString(apiKey)); return true;
+  await saveFile(keyFile(), safeStorage.encryptString(apiKey));
+  // Uploaded files and custom Skills belong to the key's workspace: files are uploaded again when used, and
+  // turned-on Skills the new key cannot see are dropped.
+  await attachments().clearFileIds().catch(() => {});
+  await listSkills().catch(() => {});
+  return true;
 });
 ipcMain.handle("key:status", async () => {
   try {
@@ -449,6 +521,8 @@ async function getApiKey() {
 type ModelSummary = {
   id: string; displayName: string; createdAt?: string;
   maxTokens?: number; maxInputTokens?: number; effortLevels: string[]; adaptiveThinking: boolean;
+  /** thinking.type "disabled" / "between_tools" are accepted (several newer models reject "disabled" with a 400). */
+  thinkingOff: boolean; betweenTools: boolean;
   webSearch: boolean; codeExecution: boolean; imageInput: boolean; pdfInput: boolean;
 };
 const EFFORT_LEVELS = ["low", "medium", "high", "xhigh", "max"];
@@ -464,6 +538,8 @@ function summarizeModel(model: any): ModelSummary {
     maxInputTokens: typeof model.max_input_tokens === "number" && model.max_input_tokens > 0 ? model.max_input_tokens : undefined,
     effortLevels: caps.effort?.supported ? EFFORT_LEVELS.filter(level => caps.effort?.[level]?.supported) : [],
     adaptiveThinking: caps.thinking?.types?.adaptive?.supported === true,
+    thinkingOff: caps.thinking?.types?.disabled?.supported === true,
+    betweenTools: caps.thinking?.types?.between_tools?.supported === true,
     // When capabilities are missing, assume support and let the API report errors.
     webSearch: known ? caps.server_tools?.web_search?.supported === true : true,
     codeExecution: known ? caps.server_tools?.code_execution?.supported === true : true,
@@ -472,6 +548,19 @@ function summarizeModel(model: any): ModelSummary {
   };
 }
 const modelCache = new Map<string, ModelSummary>();
+/**
+ * Settings for short helper calls (titles, summaries) that need no deep thinking: thinking off where the model
+ * allows it, otherwise its lowest setting, with low effort. Models that cannot turn thinking off still think,
+ * so callers give them room in max_tokens (see https://platform.claude.com/docs/en/build-with-claude/thinking).
+ */
+function lightThinking(info: ModelSummary | undefined) {
+  if (!info?.adaptiveThinking) return {};
+  const effort = info.effortLevels.includes("low") ? { output_config: { effort: "low" as const } } : {};
+  if (info.thinkingOff) return { thinking: { type: "disabled" as const }, ...effort };
+  if (info.betweenTools) return { thinking: { type: "between_tools" }, ...effort } as Record<string, unknown>;
+  return effort;
+}
+const lightMaxTokens = (info: ModelSummary | undefined, wanted: number) => info?.adaptiveThinking && !info.thinkingOff && !info.betweenTools ? Math.max(wanted, 16_000) : wanted;
 async function listModels(apiKey: string): Promise<ModelSummary[]> {
   // Follow every page so the selector shows all models the key can access.
   const client = new Anthropic({ apiKey });
@@ -497,7 +586,7 @@ ipcMain.handle("credit:load", async () => {
   try { return JSON.parse(await fs.readFile(creditFile(), "utf8")); } catch { return null; }
 });
 ipcMain.handle("credit:save", async (event, value: any) => {
-  if (staleWindows.has(event.sender)) return false;
+  if (staleWindows.has(event.sender)) throw new Error(mainT().main.reloadingAfterRestore);
   if (!value || typeof value !== "object") throw new Error(mainT().main.badCredit);
   const plan = value.plan == null ? null : String(value.plan);
   if (plan !== null && !PLANS.includes(plan)) throw new Error(mainT().main.badPlan);
@@ -556,7 +645,8 @@ function sanitizePrefs(raw: any): Prefs {
     notifyOnReply: raw?.notifyOnReply !== false,
     checkUpdates: raw?.checkUpdates !== false,
     language: LANGUAGES.includes(raw?.language) ? raw.language : "system",
-    quickShortcut: QUICK_SHORTCUTS.includes(raw?.quickShortcut) ? raw.quickShortcut : "CommandOrControl+Alt+Space",
+    // ⌘⌥Space is macOS's Finder search shortcut, which wins over the app's.
+    quickShortcut: QUICK_SHORTCUTS.includes(raw?.quickShortcut) ? raw.quickShortcut : process.platform === "darwin" ? "CommandOrControl+Shift+Space" : "CommandOrControl+Alt+Space",
     enabledSkills: Array.isArray(raw?.enabledSkills) ? [...new Set(raw.enabledSkills.filter((s: unknown) => typeof s === "string" && /^[\w-]{1,100}$/.test(s)) as string[])].slice(0, 16) : []
   };
 }
@@ -570,7 +660,7 @@ function applyLanguage(language: Language) {
 }
 ipcMain.handle("prefs:load", () => loadPrefs());
 ipcMain.handle("prefs:save", async (event, value: unknown) => {
-  if (staleWindows.has(event.sender)) return false;
+  if (staleWindows.has(event.sender)) throw new Error(mainT().main.reloadingAfterRestore);
   const prefs = sanitizePrefs(value);
   await saveFile(prefsFile(), JSON.stringify(prefs));
   nativeTheme.themeSource = prefs.theme;
@@ -587,7 +677,7 @@ async function loadProjects(): Promise<Project[]> {
 }
 ipcMain.handle("projects:load", () => loadProjects());
 ipcMain.handle("projects:save", async (event, list: unknown) => {
-  if (staleWindows.has(event.sender)) return false;
+  if (staleWindows.has(event.sender)) throw new Error(mainT().main.reloadingAfterRestore);
   if (!Array.isArray(list)) throw new Error(mainT().main.badProjects);
   const projects: Project[] = list.slice(0, 200).map((p: any) => ({
     id: String(p?.id ?? randomUUID()).slice(0, 100),
@@ -621,12 +711,17 @@ ipcMain.handle("attachments:addData", async (_event, payload: { name: string; da
   try { return { added: [await attachments().add(String(payload?.name ?? "pasted.png"), Buffer.from(payload.data))], errors: [] }; }
   catch (e) { return { added: [], errors: [e instanceof Error ? e.message : String(e)] }; }
 });
-ipcMain.handle("attachments:preview", async (_event, id: string) => {
-  // Small data URL for image thumbnails in the composer and history.
+ipcMain.handle("attachments:preview", async (_event, id: string, full?: boolean) => {
+  // Thumbnails stay small (a few KB instead of the whole photo kept in the renderer); the viewer asks for the full image.
   const buffer = await attachments().read(String(id));
   if (buffer.length > 10 * 1024 * 1024) return null;
-  const head = buffer.subarray(0, 12);
-  const type = head[0] === 0x89 ? "image/png" : head[0] === 0xff ? "image/jpeg" : head.toString("latin1", 0, 3) === "GIF" ? "image/gif" : "image/webp";
+  if (!full) {
+    const image = nativeImage.createFromBuffer(buffer);
+    if (!image.isEmpty()) return `data:image/jpeg;base64,${image.resize({ width: 96 }).toJPEG(75).toString("base64")}`;
+    // nativeImage decodes PNG and JPEG only; small GIF/WebP files are shown as they are.
+    if (buffer.length > 512 * 1024) return null;
+  }
+  const type = sniffImage(buffer) ?? "image/png";
   return `data:${type};base64,${buffer.toString("base64")}`;
 });
 
@@ -641,10 +736,13 @@ ipcMain.handle("attachments:openPdf", async (_event, id: string, name: string) =
   const buffer = await attachments().read(String(id));
   if (buffer.subarray(0, 5).toString("latin1") !== "%PDF-") throw new Error(mainT().main.notPdf);
   const safe = (path.basename(String(name ?? "document")).replace(/[^\p{L}\p{N} ._-]/gu, "_").replace(/\.pdf$/i, "").slice(0, 80) || "document") + ".pdf";
-  const dir = path.join(app.getPath("temp"), "claude-continuity-view", String(id).replace(/[^\w-]/g, "").slice(0, 64));
-  await fs.mkdir(dir, { recursive: true });
+  // A folder only this user can read (the system temp folder is shared on Linux).
+  const dir = path.join(app.getPath("userData"), "pdf-view", String(id).replace(/[^\w-]/g, "").slice(0, 64));
+  await fs.mkdir(dir, { recursive: true, mode: 0o700 });
   const target = path.join(dir, safe);
-  await fs.writeFile(target, buffer);
+  // A viewer such as Acrobat keeps the open file locked on Windows; the copy already there is the same document.
+  const existing = await fs.stat(target).catch(() => null);
+  if (!existing || existing.size !== buffer.length) await fs.writeFile(target, buffer, { mode: 0o600 });
   const error = await shell.openPath(target);
   if (error) throw new Error(error);
   return true;
@@ -681,6 +779,8 @@ async function readStoredConnectors(): Promise<StoredConnector[]> {
   } catch { return []; }
 }
 const writeStoredConnectors = (list: StoredConnector[]) => saveFile(connectorsFile(), JSON.stringify(list));
+/** Read-modify-write of connectors.json, one at a time (an "always allow" during a save is not lost). */
+const withConnectors = <T>(fn: () => Promise<T>) => withFileLock(connectorsFile() + ":update", fn);
 const decrypt = (value?: string) => {
   try { if (value && safeStorage.isEncryptionAvailable()) return safeStorage.decryptString(Buffer.from(value, "base64")); } catch {}
   return undefined;
@@ -708,7 +808,7 @@ const viewOf = (c: StoredConnector): ConnectorView => ({
 });
 ipcMain.handle("connectors:list", async () => (await readStoredConnectors()).map(viewOf));
 type ConnectorInput = { id?: string; name: string; enabled?: boolean; transport?: "remote" | "local"; url?: string; token?: string | null; command?: string; args?: string | string[]; env?: string | null };
-ipcMain.handle("connectors:save", async (_event, input: ConnectorInput) => {
+ipcMain.handle("connectors:save", (_event, input: ConnectorInput) => withConnectors(async () => {
   const list = await readStoredConnectors();
   const id = typeof input?.id === "string" && list.some(c => c.id === input.id) ? input.id : randomUUID().replace(/-/g, "").slice(0, 12);
   const previous = list.find(c => c.id === id);
@@ -726,7 +826,6 @@ ipcMain.handle("connectors:save", async (_event, input: ConnectorInput) => {
     // A changed command may be a different program: forget its "always allow" choices.
     const same = previous && isLocal(previous) && previous.command === command && JSON.stringify(previous.args ?? []) === JSON.stringify(args);
     next = { id, name, enabled: input.enabled !== false, transport: "local", command, args, ...(envEnc ? { envEnc, envKeys } : {}), ...(same && previous?.allowedTools?.length ? { allowedTools: previous.allowedTools } : {}) };
-    await localPool.close(id);
   } else {
     const { name, url } = validateConnector({ name: input?.name, url: input?.url });
     let tokenEnc = previous?.tokenEnc;
@@ -737,13 +836,32 @@ ipcMain.handle("connectors:save", async (_event, input: ConnectorInput) => {
   }
   const saved = previous ? list.map(c => c.id === id ? next : c) : [...list, next];
   await writeStoredConnectors(saved);
+  // The old process is stopped now unless a reply may be using it; otherwise the changed settings make the pool
+  // start a new one on next use.
+  if (isLocal(next) && !activeReplies.size) await localPool.close(id);
   return saved.map(viewOf);
-});
+}));
+async function msixDesktopConfig(): Promise<string | null> {
+  const packages = path.join(process.env.LOCALAPPDATA || path.join(app.getPath("home"), "AppData", "Local"), "Packages");
+  const names = await fs.readdir(packages).catch(() => [] as string[]);
+  for (const name of names.filter(n => /^Claude_/i.test(n))) {
+    const candidate = path.join(packages, name, "LocalCache", "Roaming", "Claude", "claude_desktop_config.json");
+    if (await fs.stat(candidate).then(s => s.isFile(), () => false)) return candidate;
+  }
+  return null;
+}
 /** Adds the stdio servers from Claude Desktop's config that are not registered yet (same name and command). */
-ipcMain.handle("connectors:importDesktop", async () => {
-  const file = desktopConfigPath(process.platform, process.env, app.getPath("home"));
+ipcMain.handle("connectors:importDesktop", () => withConnectors(async () => {
+  let file = desktopConfigPath(process.platform, process.env, app.getPath("home"));
   let raw: string;
-  try { raw = await fs.readFile(file, "utf8"); } catch { throw new Error(mainT().localMcp.configNotFound(file)); }
+  try { raw = await fs.readFile(file, "utf8"); }
+  catch {
+    // Claude Desktop installed as an MSIX package keeps its AppData under the package's LocalCache.
+    const packaged = process.platform === "win32" ? await msixDesktopConfig() : null;
+    if (!packaged) throw new Error(mainT().localMcp.configNotFound(file));
+    file = packaged;
+    raw = await fs.readFile(file, "utf8");
+  }
   let servers;
   try { servers = parseDesktopConfig(JSON.parse(raw)); } catch { throw new Error(mainT().localMcp.configInvalid); }
   const list = await readStoredConnectors();
@@ -758,13 +876,13 @@ ipcMain.handle("connectors:importDesktop", async () => {
   }
   await writeStoredConnectors(list);
   return { list: list.map(viewOf), added, found: servers.length, file };
-});
-ipcMain.handle("connectors:delete", async (_event, id: string) => {
+}));
+ipcMain.handle("connectors:delete", (_event, id: string) => withConnectors(async () => {
   const saved = (await readStoredConnectors()).filter(c => c.id !== String(id));
   await writeStoredConnectors(saved);
   await localPool.close(String(id));
   return saved.map(viewOf);
-});
+}));
 ipcMain.handle("connectors:test", async (_event, id: string) => {
   // Lists the server's tools from this PC to confirm the URL and token; the API itself connects from Anthropic's side.
   const connector = (await loadConnectors()).find(c => c.id === String(id));
@@ -860,6 +978,17 @@ async function cachedPdfText(k: Attachment, store: AttachmentStore): Promise<str
 }
 
 // ---- Approval for local MCP tools (asked in the chat, like Claude Desktop) ----
+/**
+ * The tool input as shown on the approval card. Short fields come first, so a long value cannot push a path or a
+ * command out of view; long values are cut with a visible note of how much was left out, never silently.
+ */
+export function approvalInput(input: unknown): string {
+  if (!input || typeof input !== "object" || Array.isArray(input)) return JSON.stringify(input ?? {}, null, 2);
+  const entries = Object.entries(input as Record<string, unknown>).map(([k, v]) => [k, JSON.stringify(v) ?? "null"] as const)
+    .sort((a, b) => a[1].length - b[1].length);
+  const LIMIT = 6000;
+  return entries.map(([k, v]) => `${JSON.stringify(k)}: ${v.length > LIMIT ? `${v.slice(0, LIMIT)}… ${mainT().localMcp.inputCut(v.length - LIMIT)}` : v}`).join("\n");
+}
 const approvals = new Map<string, (decision: ApprovalDecision) => void>();
 type ApprovalDecision = "once" | "always" | "deny";
 function requestApproval(sender: Electron.WebContents, requestId: string, ref: LocalToolRef, input: unknown, signal: AbortSignal): Promise<ApprovalDecision> {
@@ -868,18 +997,19 @@ function requestApproval(sender: Electron.WebContents, requestId: string, ref: L
     const approvalId = randomUUID();
     const done = (decision: ApprovalDecision) => {
       approvals.delete(approvalId); signal.removeEventListener("abort", onAbort);
-      sender.off("destroyed", onGone); sender.off("render-process-gone", onGone);
+      sender.off("destroyed", onGone); sender.off("render-process-gone", onGone); sender.off("did-start-navigation", onNavigate);
       resolve(decision);
     };
     const onAbort = () => done("deny");
-    // A closed window (macOS keeps the app running) can no longer answer.
+    // A closed or reloaded window (macOS keeps the app running; a restore reloads it) can no longer answer.
     const onGone = () => done("deny");
+    const onNavigate = (details: { isMainFrame?: boolean; isSameDocument?: boolean }) => { if (details?.isMainFrame && !details.isSameDocument) done("deny"); };
     approvals.set(approvalId, done);
     signal.addEventListener("abort", onAbort);
     sender.once("destroyed", onGone);
     sender.once("render-process-gone", onGone);
-    const shown = JSON.stringify(input ?? {}, null, 2);
-    sender.send("claude:approval", { requestId, approvalId, server: ref.serverName, tool: ref.tool, input: shown.length > 4000 ? shown.slice(0, 4000) + "…" : shown });
+    sender.on("did-start-navigation", onNavigate);
+    sender.send("claude:approval", { requestId, approvalId, server: ref.serverName, tool: ref.tool, input: approvalInput(input) });
   });
 }
 ipcMain.handle("claude:approve", (_event, approvalId: string, decision: string) => {
@@ -887,13 +1017,18 @@ ipcMain.handle("claude:approve", (_event, approvalId: string, decision: string) 
   answer?.(decision === "once" || decision === "always" ? decision : "deny");
   return !!answer;
 });
-async function rememberAllowedTool(id: string, tool: string) {
-  const list = await readStoredConnectors();
-  await writeStoredConnectors(list.map(c => c.id === id ? { ...c, allowedTools: [...new Set([...(c.allowedTools ?? []), tool])].slice(0, 200) } : c));
+function rememberAllowedTool(id: string, tool: string) {
+  return withConnectors(async () => {
+    const list = await readStoredConnectors();
+    await writeStoredConnectors(list.map(c => c.id === id ? { ...c, allowedTools: [...new Set([...(c.allowedTools ?? []), tool])].slice(0, 200) } : c));
+  });
 }
 ipcMain.handle("connectors:resetAllowed", async (_event, id: string) => {
-  const list = (await readStoredConnectors()).map(c => c.id === String(id) ? { ...c, allowedTools: [] } : c);
-  await writeStoredConnectors(list);
+  const list = await withConnectors(async () => {
+    const next = (await readStoredConnectors()).map(c => c.id === String(id) ? { ...c, allowedTools: [] } : c);
+    await writeStoredConnectors(next);
+    return next;
+  });
   return list.map(viewOf);
 });
 
@@ -906,10 +1041,19 @@ async function pastChatsOutcome(input: { query?: unknown; max_results?: unknown 
   return { content: formatHits(searchPastChats(chats, query, { excludeId: chatId, projectId: projectId || undefined, max })) };
 }
 ipcMain.handle("claude:reply", async (event, payload: ReplyPayload) => {
+  const requestId = String(payload?.requestId ?? randomUUID());
+  // Registered before any preparation (uploads, PDF text, starting local servers), so Stop and a restore
+  // reach the reply at every stage; removed however the reply ends.
+  const controller = new AbortController();
+  activeReplies.set(requestId, controller);
+  if (earlyAborts.delete(requestId)) controller.abort();
+  try { return await runReply(event, payload, requestId, controller); }
+  finally { if (activeReplies.get(requestId) === controller) activeReplies.delete(requestId); earlyAborts.delete(requestId); }
+});
+async function runReply(event: Electron.IpcMainInvokeEvent, payload: ReplyPayload, requestId: string, controller: AbortController) {
   const turns = sanitizeTurns(payload?.messages);
   if (!turns.length) throw new Error(mainT().main.noTurns);
   if (!turns.some(m => m.role === "user")) throw new Error(mainT().main.noUserMessage);
-  const requestId = String(payload.requestId ?? randomUUID());
   const model = payload.model || "claude-sonnet-4-5";
   const info = modelCache.get(model);
   const caps = { webSearch: info?.webSearch ?? true, codeExecution: info?.codeExecution ?? true, imageInput: info?.imageInput ?? true, pdfInput: info?.pdfInput ?? true };
@@ -959,9 +1103,6 @@ ipcMain.handle("claude:reply", async (event, payload: ReplyPayload) => {
   ].filter(Boolean).join("\n\n") || undefined;
   const containerId = typeof payload.containerId === "string" && payload.containerId ? payload.containerId : undefined;
 
-  const controller = new AbortController();
-  activeReplies.set(requestId, controller);
-  if (earlyAborts.delete(requestId)) controller.abort();
   const send = (kind: "text" | "thinking" | "activity", delta: string) => {
     if (!event.sender.isDestroyed()) event.sender.send("claude:stream", { requestId, kind, delta });
   };
@@ -1021,21 +1162,18 @@ ipcMain.handle("claude:reply", async (event, payload: ReplyPayload) => {
   let container: { id: string; expiresAt?: string } | undefined = containerId ? { id: containerId } : undefined;
   let pendingUsage: any = null;
   let snapshotContent: ContentBlock[] = [];
+  let containerRetried = false;
+  const failNotices: string[] = [];
   let lastStop: string | null = null;
   let stopReason: string | null = null;
   const clientResults = new Map<string, { content: string; isError?: boolean }>();
   try {
     for (let iteration = 0; iteration < (research ? RESEARCH_MAX_LOOP : MAX_LOOP); iteration++) {
       // Thinking counts toward max_tokens, so allow the model's full output budget; streaming keeps long replies within SDK limits.
-      // Research's search and page-read budgets are per turn, while max_uses counts per request; give each
-      // continuation only what is left.
-      const roundTools = research ? tools.map(t =>
-        t.type === "web_search_20250305" ? { ...t, max_uses: Math.max(1, RESEARCH_MAX_USES - progress.searches) }
-        : t.type === "web_fetch_20250910" ? { ...t, max_uses: Math.max(1, RESEARCH_MAX_USES - progress.fetches) } : t) : tools;
       const params = {
         model, max_tokens: info?.maxTokens ?? 8192, messages,
         ...(system ? { system } : {}),
-        ...(roundTools.length || mcp || local.tools.length ? { tools: [...roundTools, ...local.tools, ...(mcp?.tools ?? [])] } : {}),
+        ...(tools.length || mcp || local.tools.length ? { tools: [...tools, ...local.tools, ...(mcp?.tools ?? [])] } : {}),
         ...(mcp ? { mcp_servers: mcp.mcp_servers } : {}),
         ...(skills.length || customSkills.length || container ? { container: { ...(container ? { id: container.id } : {}), ...(skills.length || customSkills.length ? { skills: containerSkills(skills, customSkills) } : {}) } } : {}),
         // Newer models default to display "omitted" (empty thinking text); ask for the readable summary instead.
@@ -1063,7 +1201,17 @@ ipcMain.handle("claude:reply", async (event, payload: ReplyPayload) => {
           if (label && (block.type === "server_tool_use" || block.type === "tool_use" || block.type === "mcp_tool_use")) send("activity", label);
         }
       });
-      const final: Message = await stream.finalMessage();
+      let final: Message;
+      try { final = await stream.finalMessage(); }
+      catch (error) {
+        // A stored container can no longer be resumed (the API keeps one for 30 days): run without it once, which
+        // starts a new one.
+        if (!controller.signal.aborted && container && !containerRetried && /container/i.test(String((error as Error)?.message ?? error))) {
+          containerRetried = true; container = undefined; pendingUsage = null; snapshotContent = [];
+          iteration--; continue;
+        }
+        throw error;
+      }
       pendingUsage = null; snapshotContent = [];
       finalModel = final.model || model;
       await addUsage(final.usage, finalModel);
@@ -1075,8 +1223,9 @@ ipcMain.handle("claude:reply", async (event, payload: ReplyPayload) => {
       if (final.container?.id) container = { id: final.container.id, expiresAt: final.container.expires_at };
       stopReason = final.stop_reason;
       if (final.stop_reason === "pause_turn") {
-        // With both research budgets spent, stop here; the reply offers to continue.
-        if (research && progress.searches >= RESEARCH_MAX_USES && progress.fetches >= RESEARCH_MAX_USES) break;
+        // max_uses counts per request, so a research turn stops continuing once either budget is spent (the reply
+        // offers to continue). The tool definitions stay the same every round so the prompt cache keeps working.
+        if (research && (progress.searches >= RESEARCH_MAX_USES || progress.fetches >= RESEARCH_MAX_USES)) break;
         messages.push({ role: "assistant", content: final.content });
         continue;
       }
@@ -1114,13 +1263,20 @@ ipcMain.handle("claude:reply", async (event, payload: ReplyPayload) => {
   } catch (error) {
     // A stopped or failed request still consumed tokens; keep what the stream reported so far.
     await addUsage(pendingUsage, finalModel);
-    if (!controller.signal.aborted) throw error;
-    aborted = true;
-    // Keep the text that was already streamed in the round that was stopped.
-    const partial = snapshotContent.filter(b => b.type === "text" && b.text);
-    if (partial.length) {
-      if (lastStop === "tool_use" && turnBlocks.some(b => b.type === "text")) turnBlocks.push({ type: "text", text: "\n\n", citations: null } as ContentBlock);
-      turnBlocks.push(...partial);
+    if (!controller.signal.aborted) {
+      // A failure after earlier rounds finished (e.g. overloaded mid-stream) keeps what those rounds produced; the
+      // reply says it stopped there and offers to continue. A failure with nothing to show is reported as an error.
+      if (!turnBlocks.some(b => b.type === "text" && b.text.trim())) throw error;
+      failNotices.push(mainT().main.noticeRoundFailed(String((error as Error)?.message ?? error).split("\n")[0].slice(0, 200)));
+      stopReason = "pause_turn";
+    } else {
+      aborted = true;
+      // Keep the text that was already streamed in the round that was stopped.
+      const partial = snapshotContent.filter(b => b.type === "text" && b.text);
+      if (partial.length) {
+        if (lastStop === "tool_use" && turnBlocks.some(b => b.type === "text")) turnBlocks.push({ type: "text", text: "\n\n", citations: null } as ContentBlock);
+        turnBlocks.push(...partial);
+      }
     }
   } finally {
     activeReplies.delete(requestId);
@@ -1140,8 +1296,8 @@ ipcMain.handle("claude:reply", async (event, payload: ReplyPayload) => {
   }
   // "pause_turn"/"tool_use" here mean the loop limit cut the turn short; the UI offers to continue.
   const steps = extractSteps(turnBlocks, clientResults, Object.fromEntries(connectorNames), Object.fromEntries([...local.refs].map(([name, ref]) => [name, { server: ref.serverName, tool: ref.tool }])));
-  return { text, thinking, aborted, usage, costUsd, citations, files, container, steps, ...(stopReason && stopReason !== "end_turn" && stopReason !== "stop_sequence" && !aborted ? { stopReason } : {}), notices: [...localNotices, ...(built.omitted ? [mainT().main.noticeOmitted(built.omitted)] : []), ...built.skipped.map(s => mainT().main.noticeSkipped(s)), ...unavailable.map(u => mainT().main.noticeUnavailable(u))] };
-});
+  return { text, thinking, aborted, usage, costUsd, citations, files, container, steps, ...(stopReason && stopReason !== "end_turn" && stopReason !== "stop_sequence" && !aborted ? { stopReason } : {}), notices: [...failNotices, ...localNotices, ...(built.omitted ? [mainT().main.noticeOmitted(built.omitted)] : []), ...built.skipped.map(s => mainT().main.noticeSkipped(s)), ...unavailable.map(u => mainT().main.noticeUnavailable(u))] };
+}
 
 // ---- Hand off to the Claude apps (claude://claude.ai/new?q=…, prefilled, never auto-sent) ----
 ipcMain.handle("handoff:summarize", async (_event, payload: { model: string; title: string; transcript: string }) => {
@@ -1151,8 +1307,8 @@ ipcMain.handle("handoff:summarize", async (_event, payload: { model: string; tit
   // Keep the newest part when the record is long; the summary is about where things stand now.
   const transcript = String(payload?.transcript ?? "").slice(-150_000);
   const response = await client.messages.create({
-    model, max_tokens: 3000,
-    ...(info?.adaptiveThinking ? { thinking: { type: "disabled" as const } } : {}),
+    model, max_tokens: lightMaxTokens(info, 3000),
+    ...lightThinking(info),
     system: mainT().main.handoffSystem,
     messages: [{ role: "user", content: mainT().main.handoffUser(String(payload?.title ?? "").slice(0, 200), transcript) }]
   });
@@ -1180,8 +1336,8 @@ ipcMain.handle("style:fromSample", async (_event, payload: { sample: string; mod
   const info = modelCache.get(model);
   const client = new Anthropic({ apiKey: await getApiKey() });
   const response = await client.messages.create({
-    model, max_tokens: 1200,
-    ...(info?.adaptiveThinking ? { thinking: { type: "disabled" as const } } : {}),
+    model, max_tokens: lightMaxTokens(info, 1200),
+    ...lightThinking(info),
     system: mainT().main.styleFromSampleSystem,
     messages: [{ role: "user", content: `<sample>\n${sample}\n</sample>` }]
   });
@@ -1193,13 +1349,14 @@ ipcMain.handle("style:fromSample", async (_event, payload: { sample: string; mod
 });
 ipcMain.handle("claude:title", async (_event, payload: { user: string; assistant: string }) => {
   // Use the cheapest small model without thinking so a tiny max_tokens still yields text.
-  const candidates = [...modelCache.values()].filter(m => /haiku/.test(m.id)).sort((a, b) => (a.id.includes("4-5") ? -1 : 0) - (b.id.includes("4-5") ? -1 : 0));
+  // The cheapest priced Haiku the key can use.
+  const candidates = [...modelCache.values()].filter(m => /haiku/.test(m.id) && priceFor(m.id)).sort((a, b) => priceFor(a.id)!.input - priceFor(b.id)!.input);
   const pick = candidates[0];
   if (!pick) return null;
   const client = new Anthropic({ apiKey: await getApiKey() });
   const response = await client.messages.create({
     model: pick.id, max_tokens: 60,
-    ...(pick.adaptiveThinking ? { thinking: { type: "disabled" as const }, ...(pick.effortLevels.includes("low") ? { output_config: { effort: "low" as const } } : {}) } : {}),
+    ...lightThinking(pick),
     system: mainT().main.titleSystem,
     messages: [{ role: "user", content: mainT().main.titleUser(String(payload?.user ?? "").slice(0, 2000), String(payload?.assistant ?? "").slice(0, 2000)) }]
   });

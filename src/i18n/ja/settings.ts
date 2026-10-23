@@ -132,6 +132,7 @@ export const settings = {
   },
   mcp: {
     keyPlaceholder: "sk-ant-...（この用途専用のキー）",
+    unstablePath: "アプリが dmg の中や一時的な場所から起動しています。このままだと下の設定はアプリを閉じると使えなくなります。アプリを「アプリケーション」フォルダに移してから開き直し、設定をコピーしてください。",
     heading: "MCP 連携（チャットから API に作業を任せる）",
     introBefore: "Claude Code や Claude Desktop から ",
     introAfter: " を呼ぶと、重い資料の読み込みや長い推論を月間 API クレジットで処理し、要約だけを会話に返します。使った分は上のクレジット残額に合算されます。",

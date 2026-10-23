@@ -1,4 +1,6 @@
 import path from "node:path";
+import { execFileSync } from "node:child_process";
+import os from "node:os";
 import { mainT } from "./i18n";
 import { splitArgs } from "../src/lib/connectors";
 
@@ -140,7 +142,7 @@ export class LocalMcpPool {
     const { StdioClientTransport, getDefaultEnvironment } = await import("@modelcontextprotocol/sdk/client/stdio.js");
     const base = getDefaultEnvironment();
     // Apps started from the macOS Dock do not get the shell's PATH; add the usual Homebrew locations.
-    if (process.platform === "darwin") base.PATH = [base.PATH, "/opt/homebrew/bin", "/usr/local/bin"].filter(Boolean).join(":");
+    if (process.platform === "darwin") base.PATH = macPath(base.PATH);
     const transport = new StdioClientTransport({ command: server.command, args: server.args, env: { ...base, ...server.env }, stderr: "pipe" });
     const entry: Live = { key, client: new Client(this.clientInfo), transport, stderr: "" };
     transport.stderr?.on("data", (chunk: Buffer) => { entry.stderr = (entry.stderr + chunk.toString("utf8")).slice(-2000); });
@@ -170,11 +172,38 @@ export class LocalMcpPool {
   }
 
   async close(id: string) {
+    // A server still starting is waited for, so it is not left running once it finishes starting.
+    await this.starting.get(id)?.promise.catch(() => undefined);
     const entry = this.live.get(id);
     this.live.delete(id);
     await entry?.client.close().catch(() => {});
   }
-  async closeAll() { await Promise.all([...this.live.keys()].map(id => this.close(id))); }
+  async closeAll() {
+    // Servers still starting are waited for (they end up in live) so they are shut down too.
+    await Promise.all([...this.starting.values()].map(s => s.promise.catch(() => undefined)));
+    await Promise.all([...this.live.keys()].map(id => this.close(id)));
+  }
+}
+
+/**
+ * Apps started from the Dock get launchd's short PATH; commands installed by Homebrew, uv, cargo, volta, bun or a
+ * Node version manager are found through the user's login shell PATH (read once) plus the usual folders.
+ */
+let loginShellPath: string | null | undefined;
+function readLoginShellPath(): string | null {
+  if (loginShellPath !== undefined) return loginShellPath;
+  try {
+    const shell = process.env.SHELL || "/bin/zsh";
+    const out = execFileSync(shell, ["-ilc", "printf '%s' \"$PATH\""], { timeout: 3000, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
+    loginShellPath = out.split("\n").pop()?.trim() || null;
+  } catch { loginShellPath = null; }
+  return loginShellPath;
+}
+function macPath(current: string | undefined): string {
+  const home = os.homedir();
+  const extra = ["/opt/homebrew/bin", "/usr/local/bin", `${home}/.local/bin`, `${home}/.cargo/bin`, `${home}/.volta/bin`, `${home}/.bun/bin`];
+  const parts = [...(current ?? "").split(":"), ...(readLoginShellPath() ?? "").split(":"), ...extra].filter(Boolean);
+  return [...new Set(parts)].join(":");
 }
 
 const describe = (error: unknown) => String((error as Error)?.message ?? error).slice(0, 300);

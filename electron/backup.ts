@@ -1,5 +1,6 @@
 import path from "node:path";
 import fs from "node:fs/promises";
+import { entryData } from "./zipSafe";
 import AdmZip from "adm-zip";
 import { mainT } from "./i18n";
 
@@ -58,7 +59,10 @@ export function readBackup(zip: AdmZip): { rel: string; data: Buffer }[] {
     if (entry.header.size > MAX_ENTRY_BYTES) throw new Error(mainT().backup.fileTooLarge(rel));
     total += entry.header.size;
     if (total > MAX_TOTAL_BYTES) throw new Error(mainT().backup.totalTooLarge);
-    const data = entry.getData();
+    let data: Buffer;
+    try { data = entryData(entry, MAX_ENTRY_BYTES); } catch { throw new Error(mainT().backup.fileTooLarge(rel)); }
+    total += data.length - entry.header.size;
+    if (total > MAX_TOTAL_BYTES) throw new Error(mainT().backup.totalTooLarge);
     if (rel.endsWith(".json") && !rel.includes("/")) {
       try { JSON.parse(data.toString("utf8")); } catch { throw new Error(mainT().backup.corrupt(rel)); }
     }

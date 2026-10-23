@@ -59,7 +59,7 @@ contextBridge.exposeInMainWorld("continuity", {
   pickAttachments: () => ipcRenderer.invoke("attachments:pick"),
   addAttachmentFiles: (files: File[]) => ipcRenderer.invoke("attachments:addPaths", files.map(file => webUtils.getPathForFile(file)).filter(Boolean)),
   addAttachmentData: (name: string, data: Uint8Array) => ipcRenderer.invoke("attachments:addData", { name, data }),
-  attachmentPreview: (id: string) => ipcRenderer.invoke("attachments:preview", id),
+  attachmentPreview: (id: string, full?: boolean) => ipcRenderer.invoke("attachments:preview", id, full === true),
   listMemory: () => ipcRenderer.invoke("memory:list"),
   deleteMemory: (path: string) => ipcRenderer.invoke("memory:delete", path),
   writeMemory: (path: string, text: string) => ipcRenderer.invoke("memory:write", path, text),

@@ -95,13 +95,20 @@ export function linkCitations(text: string, citations: { url: string; title: str
   })).join("");
 }
 
+const safeHost = (url: string) => { try { return new URL(url).host; } catch { return url.slice(0, 60); } };
+
 /** Renders assistant Markdown (GFM tables, code highlighting). Raw HTML is never rendered. */
 function MarkdownBody({ text, className }: { text: string; className?: string }) {
   return <div className={"markdown" + (className ? " " + className : "")}>
-    <ReactMarkdown remarkPlugins={[remarkGfm, [remarkMath, { singleDollarTextMath: false }]]} rehypePlugins={[[rehypeKatex, { throwOnError: false, strict: "ignore" }], [rehypeHighlight, { detect: true }]]}
+    <ReactMarkdown remarkPlugins={[remarkGfm, [remarkMath, { singleDollarTextMath: false }]]} rehypePlugins={[[rehypeKatex, { throwOnError: false, strict: "ignore" }], [rehypeHighlight, { detect: false }]]}
       components={{
         pre: ({ children }) => <CodeBlock>{children}</CodeBlock>,
-        a: ({ href, children, title }) => <a href={href} title={title} target="_blank" rel="noreferrer">{children}</a>
+        a: ({ href, children, title }) => <a href={href} title={title} target="_blank" rel="noreferrer">{children}</a>,
+        // Images from the web are not loaded: a reply (steered by an injected page or tool result) could otherwise
+        // put chat contents into an image URL and send them out the moment it renders. A link is shown instead.
+        img: ({ src, alt }) => typeof src === "string" && /^data:image\//i.test(src)
+          ? <img src={src} alt={alt ?? ""} />
+          : <a className="external-image" href={typeof src === "string" ? src : undefined} target="_blank" rel="noreferrer">🖼 {alt || (typeof src === "string" ? safeHost(src) : "")}</a>
       }}>{normalizeMath(text)}</ReactMarkdown>
   </div>;
 }

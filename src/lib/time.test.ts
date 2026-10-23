@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { relativeTime } from "./time";
+import { plainPreview, relativeTime } from "./time";
 
 describe("relativeTime", () => {
   const now = new Date(2026, 9, 23, 12, 0, 0).getTime();
@@ -42,5 +42,17 @@ describe("relativeTime in English", async () => {
       expect(relativeTime(new Date(2026, 2, 4).toISOString(), now)).toBe("Mar 4");
       expect(relativeTime(new Date(2025, 2, 4).toISOString(), now)).toBe("Mar 4, 2025");
     } finally { setLocale("ja"); }
+  });
+});
+
+describe("plainPreview on hostile input", () => {
+  it("stays fast on long runs of spaces and newlines", () => {
+    const t0 = Date.now();
+    plainPreview("hello\n" + " ".repeat(20_000) + "x", 140);
+    plainPreview("\n".repeat(2_000) + " ".repeat(20_000), 140);
+    expect(Date.now() - t0).toBeLessThan(500);
+  });
+  it("still drops table separator rows", () => {
+    expect(plainPreview("| a | b |\n|---|:-:|\n| 1 | 2 |", 140)).toBe("a b 1 2");
   });
 });

@@ -15,7 +15,8 @@ export default function SkillsSection({ prefs, configured, onSavePrefs, onReload
   const [list, setList] = useState<Skill[] | null>(null);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
-  const load = () => { window.continuity.listSkills().then(setList).catch(e => { setList([]); setNotice(message(e)); }); };
+  // Listing also drops turned-on Skills that no longer exist, so the saved settings are read back afterwards.
+  const load = () => { window.continuity.listSkills().then(list => { setList(list); onReloadPrefs(); }).catch(e => { setList([]); setNotice(message(e)); }); };
   useEffect(() => { if (configured) load(); else setList([]); }, [configured]);
   async function upload(kind: "folder" | "file") {
     setBusy(true); setNotice("");

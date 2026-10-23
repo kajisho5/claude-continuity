@@ -1,7 +1,16 @@
 import { describe, expect, it, vi } from "vitest";
 vi.mock("electron", () => ({ app: {}, ipcMain: {}, Notification: class {} }));
 vi.mock("electron-updater", () => ({ autoUpdater: {} }));
-const { notesText, releasePageUrl } = await import("./updater");
+const { isMissingFeed, notesText, releasePageUrl } = await import("./updater");
+
+describe("isMissingFeed", () => {
+  it("recognizes a release without this platform's feed", () => {
+    expect(isMissingFeed(new Error("Cannot find latest-mac.yml in the latest release artifacts (https://github.com/o/r/releases/download/v1/latest-mac.yml): HttpError: 404"))).toBe(true);
+    expect(isMissingFeed(new Error("HttpError: 404 ... latest-linux.yml"))).toBe(true);
+    expect(isMissingFeed(new Error("net::ERR_INTERNET_DISCONNECTED"))).toBe(false);
+    expect(isMissingFeed(new Error("sha512 checksum mismatch"))).toBe(false);
+  });
+});
 
 describe("notesText", () => {
   it("turns GitHub HTML notes into plain text", () => {

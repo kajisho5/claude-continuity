@@ -21,6 +21,15 @@ describe("resolveMemoryPath", () => {
     expect(resolveMemoryPath(root, "/memories/a\\..\\..\\x")).toBeNull();
     expect(resolveMemoryPath(root, 42)).toBeNull();
   });
+  it("refuses names Windows cannot store", () => {
+    expect(resolveMemoryPath(root, "/memories/meeting 10:30.md")).toBeNull();
+    expect(resolveMemoryPath(root, "/memories/CON.md")).toBeNull();
+    expect(resolveMemoryPath(root, "/memories/a?.md")).toBeNull();
+  });
+  it("keeps names with a literal % as written", () => {
+    expect(resolveMemoryPath(root, "/memories/50%_off.md")).toBe(path.join(root, "50%_off.md"));
+    expect(resolveMemoryPath(root, "/memories/a%20b.md")).toBe(path.join(root, "a%20b.md"));
+  });
 });
 
 describe("runMemoryCommand", () => {

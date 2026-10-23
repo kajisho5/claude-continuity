@@ -39,12 +39,22 @@ export const artifactKey = (a: ArtifactRequest) => `${a.language}:${a.title}`;
 
 /** Fenced code blocks in a reply that would render as artifacts, in order. */
 export function extractArtifacts(markdown: string): ArtifactRequest[] {
+  // A single pass over the lines (a regex with a lazy body and a back-reference took minutes on large inputs
+  // full of unclosed fences).
   const found: ArtifactRequest[] = [];
-  const fence = /^(`{3,}|~{3,})[ \t]*([\w-]*)[^\n]*\n([\s\S]*?)\n\1[ \t]*$/gm;
-  for (const match of markdown.matchAll(fence)) {
-    const code = match[3];
-    const kind = artifactKind(match[2] || "text", code);
-    if (kind) found.push({ language: kind, title: artifactTitle(kind, code), code });
+  const lines = markdown.split("\n");
+  let open: { marker: string; lang: string; start: number } | null = null;
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (!open) {
+      const m = /^(`{3,}|~{3,})[ \t]*([\w-]*)/.exec(line);
+      if (m) open = { marker: m[1], lang: m[2], start: i + 1 };
+    } else if (line.replace(/[ \t]+$/, "") === open.marker) {
+      const code = lines.slice(open.start, i).join("\n");
+      const kind = artifactKind(open.lang || "text", code);
+      if (kind) found.push({ language: kind, title: artifactTitle(kind, code), code });
+      open = null;
+    }
   }
   return found;
 }

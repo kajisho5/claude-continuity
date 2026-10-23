@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { ArrowLeft, ArrowRight, Check, ExternalLink, ShieldCheck } from "lucide-react";
 import PlanPicker from "./PlanPicker";
-import { PLAN_LABELS, PLAN_PRESETS, cycleRange, formatShortDate, type CreditSettings, type PlanId } from "../lib/credit";
+import { PLAN_LABELS, PLAN_PRESETS, cycleRange, formatShortDate, type CreditSettings, type PlanId, parseAmount } from "../lib/credit";
 import { formatUsd } from "../lib/pricing";
 import { useT } from "../i18n";
 
@@ -50,14 +50,15 @@ export default function OnboardingWizard({ keyConfigured, onFinish, onSkip }: Pr
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
-  const amount = plan === "team" ? Number(teamAmount) : plan ? PLAN_PRESETS[plan as "max5x" | "max20x" | "none"] : 0;
+  const amount = plan === "team" ? parseAmount(teamAmount) : plan ? PLAN_PRESETS[plan as "max5x" | "max20x" | "none"] : 0;
   const preview = useMemo(() => {
     const now = new Date();
     const { start, end } = cycleRange(resetDay, now);
     return { start, end, daysLeft: Math.ceil((end.getTime() - now.getTime()) / DAY_MS) };
   }, [resetDay]);
-  const teamInvalid = plan === "team" && !(amount > 0 && amount <= 500);
-  const balanceValue = balance.trim() === "" ? null : Number(balance);
+  // Same bounds as Settings > Credits.
+  const teamInvalid = plan === "team" && !(amount > 0 && amount <= 10000);
+  const balanceValue = balance.trim() === "" ? null : parseAmount(balance);
   const balanceInvalid = balanceValue != null && !(Number.isFinite(balanceValue) && balanceValue >= 0);
 
   function settings(): CreditSettings {

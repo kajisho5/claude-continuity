@@ -104,3 +104,9 @@ export function summarizeCredit(rows: UsageRow[], settings: CreditSettings | nul
 export function formatShortDate(date: Date): string {
   return `${date.getMonth() + 1}/${date.getDate()}`;
 }
+
+/** A typed amount: full-width digits (Japanese IME), "$", spaces and thousands separators are accepted. */
+export function parseAmount(input: string): number {
+  const cleaned = input.normalize("NFKC").replace(/[$,\s]/g, "");
+  return cleaned === "" ? NaN : Number(cleaned);
+}

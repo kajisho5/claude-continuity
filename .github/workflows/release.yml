@@ -183,7 +183,8 @@ jobs:
         run: |
           set -euo pipefail
           [ -n "$OWN_CSC_LINK" ] || exit 0
-          { echo "CSC_LINK=$OWN_CSC_LINK"; echo "CSC_KEY_PASSWORD=$OWN_CSC_KEY_PASSWORD"; echo "HAS_CERT=true"; } >> "$GITHUB_ENV"
+          # GITHUB_ENV takes one line per variable; base64 made with GNU base64 wraps at 76 columns.
+          { printf 'CSC_LINK=%s\n' "$(printf %s "$OWN_CSC_LINK" | tr -d '\r\n')"; printf 'CSC_KEY_PASSWORD=%s\n' "$(printf %s "$OWN_CSC_KEY_PASSWORD" | tr -d '\r\n')"; echo "HAS_CERT=true"; } >> "$GITHUB_ENV"
           [ -n "$OWN_TEAM_ID" ] || exit 0
           if [ -n "$OWN_API_KEY" ]; then
             echo "$OWN_API_KEY" | base64 --decode > "$RUNNER_TEMP/notary.p8"

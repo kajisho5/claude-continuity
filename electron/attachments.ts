@@ -9,7 +9,8 @@ export type Attachment = { id: string; name: string; mediaType: string; size: nu
 
 // Limits from https://platform.claude.com/docs/en/build-with-claude/vision and .../pdf-support (request-wide PDF cap is 32MB).
 export const MAX_ATTACHMENT_BYTES = 32 * 1024 * 1024;
-const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
+// The API's 10 MB per image is measured base64-encoded (4/3 of the file).
+const MAX_IMAGE_BYTES = Math.floor(10 * 1024 * 1024 * 3 / 4);
 const MAX_TEXT_BYTES = 2 * 1024 * 1024;
 
 const IMAGE_TYPES: Record<string, string> = { ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".gif": "image/gif", ".webp": "image/webp" };
@@ -24,9 +25,22 @@ const FILE_TYPES: Record<string, string> = {
   ".zip": "application/zip"
 };
 
+/** Image type from the file's first bytes; the API rejects an image whose declared type does not match its data. */
+export function sniffImage(bytes: Uint8Array): string | null {
+  const b = Buffer.from(bytes.buffer, bytes.byteOffset, Math.min(bytes.byteLength, 16));
+  if (b.length >= 8 && b.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) return "image/png";
+  if (b.length >= 3 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) return "image/jpeg";
+  if (b.length >= 6 && (b.subarray(0, 6).toString("latin1") === "GIF87a" || b.subarray(0, 6).toString("latin1") === "GIF89a")) return "image/gif";
+  if (b.length >= 12 && b.subarray(0, 4).toString("latin1") === "RIFF" && b.subarray(8, 12).toString("latin1") === "WEBP") return "image/webp";
+  return null;
+}
+
 export function classify(name: string, bytes: Buffer): { kind: AttachmentKind; mediaType: string } {
   const ext = path.extname(name).toLowerCase();
-  if (IMAGE_TYPES[ext]) return { kind: "image", mediaType: IMAGE_TYPES[ext] };
+  // A JPEG saved as .png (common for web downloads) is still a JPEG; the contents decide.
+  const image = sniffImage(bytes);
+  if (image) return { kind: "image", mediaType: image };
+  if (IMAGE_TYPES[ext]) return { kind: "file", mediaType: "application/octet-stream" };
   if (ext === ".pdf" || bytes.subarray(0, 5).toString("latin1") === "%PDF-") return { kind: "pdf", mediaType: "application/pdf" };
   if (TEXT_EXTENSIONS.has(ext) || (!FILE_TYPES[ext] && !bytes.subarray(0, 8192).includes(0))) return { kind: "text", mediaType: "text/plain" };
   return { kind: "file", mediaType: FILE_TYPES[ext] ?? "application/octet-stream" };
@@ -62,6 +76,14 @@ export class AttachmentStore {
   }
   read(id: string): Promise<Buffer> { return fs.readFile(this.fileFor(id)); }
   async fileId(id: string): Promise<string | undefined> { return (await this.index())[id]?.fileId; }
+  /** Files API ids belong to the API key's workspace; after a key change or a restore they are uploaded again. */
+  async clearFileIds() {
+    await withFileLock(this.indexFile() + ":update", async () => {
+      const index = await this.index();
+      if (!Object.keys(index).length) return;
+      await saveFile(this.indexFile(), JSON.stringify(Object.fromEntries(Object.entries(index).map(([id, v]) => [id, { ...v, fileId: undefined }]))));
+    });
+  }
   async setFileId(id: string, fileId: string) {
     await withFileLock(this.indexFile() + ":update", async () => {
       const index = await this.index();

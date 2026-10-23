@@ -1,6 +1,7 @@
 import path from "node:path";
 import fs from "node:fs/promises";
 import AdmZip from "adm-zip";
+import { entryData } from "./zipSafe";
 import { mainT } from "./i18n";
 
 /**
@@ -61,9 +62,11 @@ export function readArchive(buffer: Buffer, fallbackTop: string): SkillFile[] {
   const nested = tops.size === 1 && entries.every(e => e.entryName.includes("/"));
   let total = 0;
   return entries.map(e => {
-    total += e.header.size;
+    let data: Buffer;
+    try { data = entryData(e, SKILL_UPLOAD_LIMIT - total); } catch { throw new Error(mainT().skills.tooLarge); }
+    total += data.length;
     if (total > SKILL_UPLOAD_LIMIT) throw new Error(mainT().skills.tooLarge);
-    return { name: nested ? e.entryName : `${fallbackTop}/${e.entryName}`, data: e.getData() };
+    return { name: nested ? e.entryName : `${fallbackTop}/${e.entryName}`, data };
   });
 }
 

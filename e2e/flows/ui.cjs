@@ -62,7 +62,10 @@ module.exports = async function ui(ctx) {
   await w.click(".settings-nav button:has-text('クレジット')");
   await w.click(".settings-close"); await w.waitForSelector(".settings", { state: "detached" });
   await until(() => w.evaluate(() => getComputedStyle(document.body).backgroundColor), v => v === "rgb(250, 249, 245)", { message: "light theme background" });
-  assert.equal(await text(w.locator(".welcome h1")), "こんにちは、Shotaさん");
+  // The greeting depends on the time of day (same rule as the app).
+  const h = new Date().getHours();
+  const greeting = h < 5 ? "夜更かしですね" : h < 11 ? "おはようございます" : h < 18 ? "こんにちは" : "こんばんは";
+  assert.equal(await text(w.locator(".welcome h1")), `${greeting}、Shotaさん`);
   assert.equal(await text(w.locator(".who")), "ShotaMax 20x プラン");
 
   // Delete through the row menu and the confirm dialog.
