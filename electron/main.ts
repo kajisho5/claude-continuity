@@ -229,10 +229,27 @@ function parseExportText(text: string, source: string): NormalizedConversation[]
 }
 
 
+// ---- File dialogs ----
+// Since Electron 43 the OS no longer reopens the folder used last (dialogs start in Downloads), so the app
+// remembers it for the session: save dialogs suggest their file name there, open dialogs start there.
+let lastDialogDir: string | null = null;
+async function saveDialog(options: Electron.SaveDialogOptions) {
+  const name = options.defaultPath ? path.basename(options.defaultPath) : undefined;
+  const dir = lastDialogDir ?? app.getPath("downloads");
+  const result = await dialog.showSaveDialog({ ...options, defaultPath: name ? path.join(dir, name) : dir });
+  if (!result.canceled && result.filePath) lastDialogDir = path.dirname(result.filePath);
+  return result;
+}
+async function openDialog(options: Electron.OpenDialogOptions) {
+  const result = await dialog.showOpenDialog({ ...options, defaultPath: options.defaultPath ?? lastDialogDir ?? undefined });
+  const first = result.filePaths?.[0];
+  if (!result.canceled && first) lastDialogDir = options.properties?.includes("openDirectory") ? first : path.dirname(first);
+  return result;
+}
 ipcMain.handle("dialog:export-chat", async (_event, payload: { fileName: string; data: string; format?: "json" | "html" }) => {
   const ext = payload?.format === "html" ? "html" : "json";
   const safeName = String(payload?.fileName ?? "claude-conversation").replace(/[\\\\/:*?"<>|]/g, "_").slice(0, 100) || "claude-conversation";
-  const result = await dialog.showSaveDialog({
+  const result = await saveDialog({
     title: ext === "html" ? mainT().main.exportHtmlTitle : mainT().main.exportJsonTitle,
     defaultPath: safeName.endsWith("." + ext) ? safeName : safeName + "." + ext,
     filters: [ext === "html" ? { name: "HTML", extensions: ["html"] } : { name: "JSON", extensions: ["json"] }]
@@ -243,7 +260,7 @@ ipcMain.handle("dialog:export-chat", async (_event, payload: { fileName: string;
 });
 
 ipcMain.handle("dialog:import-export", async () => {
-  const result = await dialog.showOpenDialog({
+  const result = await openDialog({
     title: mainT().main.importTitle, properties: ["openFile"],
     filters: [{ name: "Claude export (JSON / ZIP)", extensions: ["json", "zip"] }, { name: mainT().main.allFiles, extensions: ["*"] }]
   });
@@ -364,7 +381,7 @@ ipcMain.handle("usage:load", async () => {
 // ---- Backup and restore of everything except the device-bound API key ----
 const stamp = () => new Date().toISOString().slice(0, 19).replace(/[-:]/g, "").replace("T", "-");
 ipcMain.handle("data:backup", async () => {
-  const result = await dialog.showSaveDialog({
+  const result = await saveDialog({
     title: mainT().main.backupTitle, defaultPath: `claude-continuity-backup-${stamp()}.zip`,
     filters: [{ name: "ZIP", extensions: ["zip"] }]
   });
@@ -388,7 +405,7 @@ ipcMain.handle("data:openFolder", async () => {
 // (otherwise a reply finishing or a pending debounce would write the old chats over the restored ones).
 const staleWindows = new WeakSet<Electron.WebContents>();
 ipcMain.handle("data:restore", async event => {
-  const result = await dialog.showOpenDialog({ title: mainT().main.restoreTitle, properties: ["openFile"], filters: [{ name: "ZIP", extensions: ["zip"] }] });
+  const result = await openDialog({ title: mainT().main.restoreTitle, properties: ["openFile"], filters: [{ name: "ZIP", extensions: ["zip"] }] });
   if (result.canceled || !result.filePaths[0]) return { canceled: true };
   const stat = await fs.stat(result.filePaths[0]);
   if (stat.size > 2 * 1024 * 1024 * 1024) throw new Error(mainT().main.backupFileTooLarge);
@@ -471,7 +488,7 @@ async function listSkills() {
 }
 /** Picks a skill folder, SKILL.md or .zip/.skill archive and uploads it; the new skill is turned on. */
 ipcMain.handle("skills:upload", async (_event, kind: "folder" | "file") => {
-  const result = await dialog.showOpenDialog(kind === "folder"
+  const result = await openDialog(kind === "folder"
     ? { title: mainT().skills.pickTitle, properties: ["openDirectory"] }
     : { title: mainT().skills.pickTitle, properties: ["openFile"], filters: [{ name: "Skill", extensions: ["zip", "skill", "md"] }] });
   if (result.canceled || !result.filePaths[0]) return null;
@@ -495,7 +512,7 @@ ipcMain.handle("skills:delete", async (_event, id: string) => {
 });
 
 ipcMain.handle("mcp:pickFolder", async () => {
-  const result = await dialog.showOpenDialog({ title: mainT().main.mcpFolderTitle, properties: ["openDirectory", "multiSelections"] });
+  const result = await openDialog({ title: mainT().main.mcpFolderTitle, properties: ["openDirectory", "multiSelections"] });
   return result.canceled ? [] : result.filePaths;
 });
 type UsageEntry = { model: string; inputTokens: number; outputTokens: number; cacheCreationInputTokens: number; cacheReadInputTokens: number; webSearchRequests: number; batch?: boolean };
@@ -509,10 +526,13 @@ function recordUsage(entry: UsageEntry) {
     await writeFileAtomic(usageFile(), JSON.stringify(rows.slice(-10000)));
   });
 }
+// The OS key store through safeStorage's async methods (the synchronous ones are deprecated in Electron 45 and
+// removed in 46). Data written by the old encryptString is read by decryptStringAsync.
+const canEncrypt = () => safeStorage.isAsyncEncryptionAvailable().catch(() => false);
 ipcMain.handle("key:save", async (_event, apiKey: string) => {
-  if (!safeStorage.isEncryptionAvailable()) throw new Error(mainT().main.keyStorageUnavailable);
+  if (!(await canEncrypt())) throw new Error(mainT().main.keyStorageUnavailable);
   if (!apiKey || !apiKey.startsWith("sk-ant-")) throw new Error(mainT().main.badKey);
-  await saveFile(keyFile(), safeStorage.encryptString(apiKey));
+  await saveFile(keyFile(), await safeStorage.encryptStringAsync(apiKey));
   // Uploaded files and custom Skills belong to the key's workspace: files are uploaded again when used, and
   // turned-on Skills the new key cannot see are dropped.
   await attachments().clearFileIds().catch(() => {});
@@ -521,14 +541,17 @@ ipcMain.handle("key:save", async (_event, apiKey: string) => {
 });
 ipcMain.handle("key:status", async () => {
   try {
-    if (!safeStorage.isEncryptionAvailable()) return { configured: false, secureStorage: false };
+    if (!(await canEncrypt())) return { configured: false, secureStorage: false };
     const encrypted = await fs.readFile(keyFile());
     return { configured: encrypted.length > 0, secureStorage: true };
-  } catch { return { configured: false, secureStorage: safeStorage.isEncryptionAvailable() }; }
+  } catch { return { configured: false, secureStorage: await canEncrypt() }; }
 });
 async function getApiKey() {
-  if (!safeStorage.isEncryptionAvailable()) throw new Error(mainT().main.secureStorageUnavailable);
-  return safeStorage.decryptString(await fs.readFile(keyFile()));
+  if (!(await canEncrypt())) throw new Error(mainT().main.secureStorageUnavailable);
+  const { result, shouldReEncrypt } = await safeStorage.decryptStringAsync(await fs.readFile(keyFile()));
+  // The OS rotated the key (or offers a stronger one): store the key again under it.
+  if (shouldReEncrypt) await saveFile(keyFile(), await safeStorage.encryptStringAsync(result)).catch(() => {});
+  return result;
 }
 type ModelSummary = {
   id: string; displayName: string; createdAt?: string;
@@ -718,7 +741,7 @@ ipcMain.handle("projects:save", async (event, list: unknown) => {
 // ---- Attachments ----
 const attachments = () => new AttachmentStore(path.join(dataDir(), "attachments"));
 ipcMain.handle("attachments:pick", async () => {
-  const result = await dialog.showOpenDialog({ title: mainT().main.attachTitle, properties: ["openFile", "multiSelections"] });
+  const result = await openDialog({ title: mainT().main.attachTitle, properties: ["openFile", "multiSelections"] });
   if (result.canceled) return { added: [], errors: [] };
   return addAttachmentPaths(result.filePaths);
 });
@@ -806,26 +829,26 @@ async function readStoredConnectors(): Promise<StoredConnector[]> {
 const writeStoredConnectors = (list: StoredConnector[]) => saveFile(connectorsFile(), JSON.stringify(list));
 /** Read-modify-write of connectors.json, one at a time (an "always allow" during a save is not lost). */
 const withConnectors = <T>(fn: () => Promise<T>) => withFileLock(connectorsFile() + ":update", fn);
-const decrypt = (value?: string) => {
-  try { if (value && safeStorage.isEncryptionAvailable()) return safeStorage.decryptString(Buffer.from(value, "base64")); } catch {}
+const decrypt = async (value?: string) => {
+  try { if (value && await canEncrypt()) return (await safeStorage.decryptStringAsync(Buffer.from(value, "base64"))).result; } catch {}
   return undefined;
 };
-const encrypt = (value: string, unavailable: string) => {
-  if (!safeStorage.isEncryptionAvailable()) throw new Error(unavailable);
-  return safeStorage.encryptString(value).toString("base64");
+const encrypt = async (value: string, unavailable: string) => {
+  if (!(await canEncrypt())) throw new Error(unavailable);
+  return (await safeStorage.encryptStringAsync(value)).toString("base64");
 };
 /** Tokens and environment variables are encrypted with the OS key store like the API key and only decrypted when needed. */
 async function loadConnectors(): Promise<Connector[]> {
-  return (await readStoredConnectors()).map(c => {
-    const token = decrypt(c.tokenEnc);
+  return Promise.all((await readStoredConnectors()).map(async c => {
+    const token = await decrypt(c.tokenEnc);
     let env: Record<string, string> = {};
-    try { env = c.envEnc ? JSON.parse(decrypt(c.envEnc) ?? "{}") : {}; } catch {}
+    try { env = c.envEnc ? JSON.parse((await decrypt(c.envEnc)) ?? "{}") : {}; } catch {}
     return {
       id: c.id, name: String(c.name ?? ""), enabled: c.enabled !== false, transport: isLocal(c) ? "local" as const : "remote" as const,
       url: c.url ?? "", ...(token ? { token } : {}),
       ...(isLocal(c) ? { command: c.command, args: Array.isArray(c.args) ? c.args.map(String) : [], env, allowedTools: c.allowedTools ?? [] } : {})
     };
-  });
+  }));
 }
 const viewOf = (c: StoredConnector): ConnectorView => ({
   id: c.id, name: String(c.name ?? ""), enabled: c.enabled !== false, transport: isLocal(c) ? "local" : "remote", url: c.url ?? "", hasToken: !!c.tokenEnc,
@@ -846,7 +869,7 @@ ipcMain.handle("connectors:save", (_event, input: ConnectorInput) => withConnect
     else if (typeof input.env === "string") {
       const env = parseEnv(input.env);
       envKeys = Object.keys(env);
-      envEnc = envKeys.length ? encrypt(JSON.stringify(env), mainT().localMcp.envStorageUnavailable) : undefined;
+      envEnc = envKeys.length ? await encrypt(JSON.stringify(env), mainT().localMcp.envStorageUnavailable) : undefined;
     }
     // A changed command may be a different program: forget its "always allow" choices.
     const same = previous && isLocal(previous) && previous.command === command && JSON.stringify(previous.args ?? []) === JSON.stringify(args);
@@ -856,7 +879,7 @@ ipcMain.handle("connectors:save", (_event, input: ConnectorInput) => withConnect
     let tokenEnc = previous?.tokenEnc;
     // undefined keeps the saved token, "" or null clears it, any other string replaces it.
     if (input?.token === "" || input?.token === null) tokenEnc = undefined;
-    else if (typeof input?.token === "string") tokenEnc = encrypt(input.token.trim().slice(0, 8000), mainT().connectors.tokenStorageUnavailable);
+    else if (typeof input?.token === "string") tokenEnc = await encrypt(input.token.trim().slice(0, 8000), mainT().connectors.tokenStorageUnavailable);
     next = { id, name, url, enabled: input?.enabled !== false, ...(tokenEnc ? { tokenEnc } : {}) };
   }
   const saved = previous ? list.map(c => c.id === id ? next : c) : [...list, next];
@@ -896,7 +919,7 @@ ipcMain.handle("connectors:importDesktop", () => withConnectors(async () => {
     if (list.some(c => isLocal(c) && c.name === server.name && c.command === server.command)) continue;
     const envKeys = Object.keys(server.env);
     list.push({ id: randomUUID().replace(/-/g, "").slice(0, 12), name: server.name, enabled: true, transport: "local", command: server.command, args: server.args,
-      ...(envKeys.length ? { envEnc: encrypt(JSON.stringify(server.env), mainT().localMcp.envStorageUnavailable), envKeys } : {}) });
+      ...(envKeys.length ? { envEnc: await encrypt(JSON.stringify(server.env), mainT().localMcp.envStorageUnavailable), envKeys } : {}) });
     added++;
   }
   await writeStoredConnectors(list);
@@ -940,7 +963,7 @@ ipcMain.handle("connectors:test", async (_event, id: string) => {
 ipcMain.handle("files:save", async (_event, payload: { fileId: string; name: string }) => {
   const fileId = String(payload?.fileId ?? "");
   if (!/^file_[A-Za-z0-9_-]+$/.test(fileId)) throw new Error(mainT().main.badFileId);
-  const result = await dialog.showSaveDialog({ title: mainT().main.saveFileTitle, defaultPath: String(payload?.name ?? "output").replace(/[\\/:*?"<>|]/g, "_").slice(0, 150) });
+  const result = await saveDialog({ title: mainT().main.saveFileTitle, defaultPath: String(payload?.name ?? "output").replace(/[\\/:*?"<>|]/g, "_").slice(0, 150) });
   if (result.canceled || !result.filePath) return { canceled: true };
   const client = new Anthropic({ apiKey: await getApiKey() });
   const response = await client.files.download(fileId);

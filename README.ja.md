@@ -68,6 +68,10 @@ Max プランなどに付く**月間 API クレジット**を、Claude アプリ
 
 Max プランなどの月間 API クレジットは請求サイクルの終わりに失効します。最新の条件は Anthropic の案内で確認してください。
 
+## 動作環境
+
+Windows 10 以降（64 ビット）、macOS 13 Ventura 以降（Apple シリコン・Intel）、Linux x64（AppImage）。土台にしている Electron 45 の対応範囲に合わせています。
+
 ## インストール（Windows）
 
 1. [Releases](https://github.com/kajisho5/claude-continuity/releases) から `Claude-Continuity-Setup-<version>.exe` をダウンロードして実行します。

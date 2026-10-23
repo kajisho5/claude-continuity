@@ -76,7 +76,8 @@ module.exports = async function projects(ctx) {
 
   // Attachment viewers (v2 keeps the attachments).
   await w.locator(".message.user .attachment-chip.kind-text .chip-open").first().click(); await w.waitForSelector(".viewer-text");
-  assert.ok((await w.locator(".viewer-text").textContent()).startsWith("month,sales\n7,100"));
+  // The text is read after the viewer opens ("loading" until then).
+  await until(() => w.locator(".viewer-text").textContent(), t => t.startsWith("month,sales\n7,100"), { message: "the text viewer shows the file" });
   await w.keyboard.press("Escape");
   await w.locator(".message.user .attachment-chip.kind-image .chip-open").first().click(); await w.waitForSelector(".viewer-box img");
   await w.keyboard.press("Escape");
