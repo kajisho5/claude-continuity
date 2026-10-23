@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, nativeTheme, safeStorage, shell } from "electron";
+import { app, BrowserWindow, desktopCapturer, dialog, globalShortcut, ipcMain, nativeTheme, safeStorage, screen, shell } from "electron";
 import path from "node:path";
 import fs from "node:fs/promises";
 import { randomUUID } from "node:crypto";
@@ -49,11 +49,56 @@ app.whenReady().then(async () => {
   nativeTheme.themeSource = prefs.theme;
   applyLanguage(prefs.language);
   createWindow();
+  applyQuickShortcut(prefs.quickShortcut);
   setupUpdater(() => mainWindow, { enabled: async () => (await loadPrefs()).checkUpdates });
   app.on("activate", () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
 });
 app.on("window-all-closed", () => { if (process.platform !== "darwin") app.quit(); });
-app.on("will-quit", () => { void localPool.closeAll(); });
+app.on("will-quit", () => { globalShortcut.unregisterAll(); void localPool.closeAll(); });
+
+// ---- Quick access: a global shortcut and screenshots ----
+const showWindow = () => {
+  if (!mainWindow || mainWindow.isDestroyed()) createWindow();
+  const win = mainWindow!;
+  if (win.isMinimized()) win.restore();
+  win.show(); win.focus();
+  return win;
+};
+let quickShortcutError = "";
+/** Registers the chosen shortcut; another app may already own it, which is reported in Settings. */
+function applyQuickShortcut(accelerator: QuickShortcut) {
+  globalShortcut.unregisterAll();
+  quickShortcutError = "";
+  if (!accelerator) return;
+  const ok = globalShortcut.register(accelerator, () => {
+    const win = showWindow();
+    const send = () => win.webContents.send("app:quick");
+    if (win.webContents.isLoading()) win.webContents.once("did-finish-load", send); else send();
+  });
+  if (!ok) quickShortcutError = mainT().main.shortcutTaken(accelerator.replace("CommandOrControl", process.platform === "darwin" ? "Cmd" : "Ctrl"));
+}
+ipcMain.handle("shortcut:status", () => quickShortcutError);
+const sleepMs = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+/** Captures the display under the mouse pointer (with this window hidden) and adds it as an image attachment. */
+ipcMain.handle("capture:screen", async () => {
+  const win = mainWindow;
+  const display = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
+  const wasVisible = !!win && win.isVisible();
+  try {
+    if (wasVisible) { win!.hide(); await sleepMs(350); }
+    const size = { width: Math.round(display.size.width * display.scaleFactor), height: Math.round(display.size.height * display.scaleFactor) };
+    const sources = await desktopCapturer.getSources({ types: ["screen"], thumbnailSize: size });
+    const source = sources.find(s => s.display_id === String(display.id)) ?? sources[0];
+    // macOS returns an empty image until the app is allowed under Privacy & Security > Screen Recording.
+    if (!source || source.thumbnail.isEmpty()) return { added: [], errors: [mainT().main.captureFailed] };
+    const stamp = new Date().toISOString().replace(/[-:]/g, "").replace("T", "-").slice(0, 15);
+    return { added: [await attachments().add(`screenshot-${stamp}.png`, source.thumbnail.toPNG())], errors: [] };
+  } catch (e) {
+    return { added: [], errors: [mainT().main.captureFailed + (e instanceof Error ? ` (${e.message})` : "")] };
+  } finally {
+    if (wasVisible) showWindow();
+  }
+});
 
 const localPool = new LocalMcpPool({ name: "claude-continuity", version: app.getVersion() });
 const localServer = (c: Connector): LocalServer => ({ id: c.id, name: c.name, command: c.command ?? "", args: c.args ?? [], env: c.env ?? {} });
@@ -290,6 +335,7 @@ ipcMain.handle("data:restore", async () => {
   const restoredPrefs = await loadPrefs();
   nativeTheme.themeSource = restoredPrefs.theme;
   applyLanguage(restoredPrefs.language);
+  applyQuickShortcut(restoredPrefs.quickShortcut);
   return { canceled: false, count: entries.length, safetyPath };
 });
 ipcMain.handle("mcp:info", () => {
@@ -401,8 +447,11 @@ const prefsFile = () => path.join(dataDir(), "prefs.json");
 type Theme = "system" | "light" | "dark";
 type ChatFont = "serif" | "sans" | "system";
 type CustomStyle = { id: string; name: string; prompt: string };
-type Prefs = { autoTitle: boolean; customStyle: string; customStyles: CustomStyle[]; displayName: string; theme: Theme; chatFont: ChatFont; shareName: boolean; preferences: string; searchPastChats: boolean; notifyOnReply: boolean; checkUpdates: boolean; language: Language };
+type Prefs = { autoTitle: boolean; customStyle: string; customStyles: CustomStyle[]; displayName: string; theme: Theme; chatFont: ChatFont; shareName: boolean; preferences: string; searchPastChats: boolean; notifyOnReply: boolean; checkUpdates: boolean; language: Language; quickShortcut: QuickShortcut };
 type Language = "system" | "ja" | "en";
+/** Global shortcut that brings the app forward with a new chat ("" = off). */
+type QuickShortcut = "" | "CommandOrControl+Alt+Space" | "CommandOrControl+Shift+Space" | "Alt+Space";
+const QUICK_SHORTCUTS: QuickShortcut[] = ["", "CommandOrControl+Alt+Space", "CommandOrControl+Shift+Space", "Alt+Space"];
 const THEMES: Theme[] = ["system", "light", "dark"];
 const LANGUAGES: Language[] = ["system", "ja", "en"];
 const FONTS: ChatFont[] = ["serif", "sans", "system"];
@@ -431,7 +480,8 @@ function sanitizePrefs(raw: any): Prefs {
     searchPastChats: raw?.searchPastChats !== false,
     notifyOnReply: raw?.notifyOnReply !== false,
     checkUpdates: raw?.checkUpdates !== false,
-    language: LANGUAGES.includes(raw?.language) ? raw.language : "system"
+    language: LANGUAGES.includes(raw?.language) ? raw.language : "system",
+    quickShortcut: QUICK_SHORTCUTS.includes(raw?.quickShortcut) ? raw.quickShortcut : "CommandOrControl+Alt+Space"
   };
 }
 async function loadPrefs(): Promise<Prefs> {
@@ -448,6 +498,7 @@ ipcMain.handle("prefs:save", async (_event, value: unknown) => {
   await fs.writeFile(prefsFile(), JSON.stringify(prefs), "utf8");
   nativeTheme.themeSource = prefs.theme;
   applyLanguage(prefs.language);
+  applyQuickShortcut(prefs.quickShortcut);
   return prefs;
 });
 const projectsFile = () => path.join(dataDir(), "projects.json");

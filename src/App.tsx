@@ -118,6 +118,8 @@ export default function App() {
  const [updateDismissed,setUpdateDismissed]=useState("");
  const pendingRef=useRef<Pending|null>(null);
  const composerRef=useRef<ComposerHandle>(null);
+ // Latest newChat for listeners registered once at startup.
+ const quickRef=useRef<()=>void>(()=>{});
  const searchRef=useRef<HTMLInputElement>(null);
  const messagesRef=useRef<HTMLElement>(null);
  const busy=pending!==null;
@@ -142,6 +144,8 @@ export default function App() {
      const next=event.kind==="activity"?{...current,activity:event.delta}:{...current,[event.kind]:current[event.kind]+event.delta,...(event.kind==="text"?{activity:"",firstTextAt:current.firstTextAt??Date.now()}:{})};
      pendingRef.current=next;setPending(next);
    });
+   // The global shortcut brings the window forward; start a fresh chat ready for typing.
+   const offQuick=window.continuity.onQuick(()=>quickRef.current());
    const offApproval=window.continuity.onApproval(approval=>{
      const current=pendingRef.current;
      if(!current||current.requestId!==approval.requestId){void window.continuity.answerApproval(approval.approvalId,"deny");return;}
@@ -149,7 +153,7 @@ export default function App() {
    });
    const offUpdate=window.continuity.onUpdateStatus(setUpdate);
    window.continuity.listConnectors().then(setConnectors).catch(()=>{});
-   return ()=>{window.clearInterval(timer);unsubscribe();offApproval();offUpdate();};
+   return ()=>{window.clearInterval(timer);unsubscribe();offQuick();offApproval();offUpdate();};
  },[]);
  function answerApproval(decision:ApprovalDecision){
    const current=pendingRef.current;
@@ -397,6 +401,7 @@ export default function App() {
      onStar={()=>patchChat(c.id,x=>({...x,starred:!x.starred}))} onRename={()=>setRenaming(c.id)} onExport={()=>void exportChat(c.id)} onExportHtml={()=>void exportHtml(c.id)}
      onDelete={()=>requestDelete(c.id)} onMoveProject={id=>patchChat(c.id,x=>({...x,projectId:id}))}/>;
  }
+ quickRef.current=()=>{setSettings(null);newChat();};
  function newChat(projectId?:string){
    // Reuse an untouched empty chat instead of stacking blank ones, as the Claude apps do.
    const blank=chats.find(c=>c.messages.length===0&&!c.incognito&&NEW_CHAT_TITLES.has(c.title)&&(c.projectId??null)===(projectId??null));
@@ -438,7 +443,7 @@ export default function App() {
  const lastAssistant=chat.messages.length-1;
  const fresh=chat.messages.length===0&&!showPending;
  const composer=(variant:"welcome"|"footer")=><Composer ref={composerRef} variant={variant} incognito={!!chat.incognito} draft={draft} onDraft={setDraft} attachments={pendingAttachments}
-   onRemoveAttachment={id=>setPendingAttachments(list=>list.filter(x=>x.id!==id))} onPickFiles={()=>void window.continuity.pickAttachments().then(addAttachments)}
+   onRemoveAttachment={id=>setPendingAttachments(list=>list.filter(x=>x.id!==id))} onPickFiles={()=>void window.continuity.pickAttachments().then(addAttachments)} onScreenshot={()=>void window.continuity.captureScreen().then(addAttachments)}
    onPaste={e=>void onPaste(e)} onSend={()=>void send()} onStop={stop} busy={busy}
    tools={chat.incognito?{...chat.tools,memory:false}:chat.tools??{}} onTools={tools=>patchChat(chat.id,c=>({...c,tools}))} projectMemory={chatProject?.memory}
    style={chat.style==="custom"?"custom:custom":chat.style??"standard"} styles={[...STYLE_IDS.map(id=>({value:id,label:t.app.styles[id]})),...prefs.customStyles.map(st=>({value:"custom:"+st.id,label:st.name}))]} onStyle={v=>patchChat(chat.id,c=>({...c,style:v}))}

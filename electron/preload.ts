@@ -16,6 +16,13 @@ contextBridge.exposeInMainWorld("continuity", {
   restoreData: () => ipcRenderer.invoke("data:restore"),
   openDataFolder: () => ipcRenderer.invoke("data:openFolder"),
   focusWindow: () => ipcRenderer.invoke("window:focus"),
+  captureScreen: () => ipcRenderer.invoke("capture:screen"),
+  shortcutStatus: () => ipcRenderer.invoke("shortcut:status"),
+  onQuick: (listener: () => void) => {
+    const handler = () => listener();
+    ipcRenderer.on("app:quick", handler);
+    return () => { ipcRenderer.removeListener("app:quick", handler); };
+  },
   listConnectors: () => ipcRenderer.invoke("connectors:list"),
   saveConnector: (input: unknown) => ipcRenderer.invoke("connectors:save", input),
   deleteConnector: (id: string) => ipcRenderer.invoke("connectors:delete", id),

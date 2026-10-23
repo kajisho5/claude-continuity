@@ -50,6 +50,9 @@ declare global {
       restoreData: () => Promise<{ canceled: true } | { canceled: false; count: number; safetyPath: string }>;
       openDataFolder: () => Promise<boolean>;
       focusWindow: () => Promise<boolean>;
+      captureScreen: () => Promise<AttachResult>;
+      shortcutStatus: () => Promise<string>;
+      onQuick: (listener: () => void) => () => void;
       listConnectors: () => Promise<ContinuityConnector[]>;
       saveConnector: (input: { id?: string; name: string; enabled?: boolean; transport?: "remote" | "local"; url?: string; token?: string | null; command?: string; args?: string; env?: string | null }) => Promise<ContinuityConnector[]>;
       importDesktopConnectors: () => Promise<{ list: ContinuityConnector[]; added: number; found: number; file: string }>;

@@ -1,5 +1,5 @@
 import { forwardRef, useImperativeHandle, useLayoutEffect, useRef } from "react";
-import { ArrowUp, Plus, Square } from "lucide-react";
+import { ArrowUp, Camera, Plus, Square } from "lucide-react";
 import ToolsMenu, { type ConnectorOption, type Tools } from "./ToolsMenu";
 import ModelMenu from "./ModelMenu";
 import { AttachmentChip } from "./MessageItem";
@@ -13,7 +13,7 @@ type Option = { value: string; label: string };
 export type ComposerHandle = { focus: () => void };
 type Props = {
   draft: string; onDraft: (text: string) => void;
-  attachments: Attachment[]; onRemoveAttachment: (id: string) => void; onPickFiles: () => void;
+  attachments: Attachment[]; onRemoveAttachment: (id: string) => void; onPickFiles: () => void; onScreenshot: () => void;
   onPaste: (e: React.ClipboardEvent) => void;
   onSend: () => void; onStop: () => void; busy: boolean;
   tools: Tools; onTools: (tools: Tools) => void; projectMemory?: boolean;
@@ -53,6 +53,7 @@ const Composer = forwardRef<ComposerHandle, Props>(function Composer(p, ref) {
       onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); if (!p.busy && canSend) p.onSend(); } }} />
     <div className="composer-bar mt-[10px] flex items-center gap-[4px]">
       <button className="round-btn tip" data-tip={t.composer.attachFiles} aria-label={t.composer.attachFiles} onClick={p.onPickFiles} disabled={p.busy}><Plus size={17} /></button>
+      <button className="round-btn screenshot tip" data-tip={t.composer.screenshot} aria-label={t.composer.screenshot} onClick={p.onScreenshot} disabled={p.busy}><Camera size={16} /></button>
       <ToolsMenu tools={p.tools} onChange={p.onTools} disabled={p.busy} projectMemory={p.projectMemory}
         style={p.style} styles={p.styles} onStyle={p.onStyle} placement={p.placement} connectors={p.connectors} onManageConnectors={p.onManageConnectors} />
       <span className="spacer flex-1" />

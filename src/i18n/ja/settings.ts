@@ -30,6 +30,9 @@ export const settings = {
     notifyOnReply: "回答が終わったら通知する",
     notifyOnReplyHint: "アプリが前面にないとき、OS の通知でお知らせします。通知をクリックするとその会話を開きます。",
     checkUpdates: "アップデートを自動で確認する",
+    quickShortcut: "呼び出しショートカット",
+    quickShortcutHint: "ほかのアプリを使っていても、このキーでアプリを前面に出して新しい会話を始めます",
+    quickShortcutOff: "使わない",
     checkUpdatesHint: "起動時と数時間ごとに新しいバージョンを確認し、見つかったら通知します。ダウンロードはボタンを押したときだけです。",
     autoTitle: "会話タイトルを自動で付ける",
     autoTitleHint: "最初の回答のあと、Haiku で短いタイトルを付けます（ごく少額のクレジットを使います）"

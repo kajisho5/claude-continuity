@@ -32,6 +32,9 @@ export const settings: typeof Ja = {
     notifyOnReply: "Response completions",
     notifyOnReplyHint: "Get a system notification when Claude finishes a response while the app is in the background. Click it to open the chat.",
     checkUpdates: "Check for updates automatically",
+    quickShortcut: "Quick access shortcut",
+    quickShortcutHint: "Brings the app forward with a new chat from any app",
+    quickShortcutOff: "Off",
     checkUpdatesHint: "Checks for a new version at launch and every few hours, and lets you know when one is found. Downloads only happen when you press the button.",
     autoTitle: "Title chats automatically",
     autoTitleHint: "After the first reply, Haiku gives the chat a short title (uses a tiny amount of credit)"

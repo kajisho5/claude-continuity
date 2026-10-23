@@ -8,8 +8,14 @@ import DataSection from "./DataSection";
 import UpdateSection from "./UpdateSection";
 import ConnectorsSection from "./ConnectorsSection";
 import type { CreditSettings } from "../lib/credit";
-import { type Prefs } from "../lib/prefs";
+import { QUICK_SHORTCUTS, type Prefs, type QuickShortcut } from "../lib/prefs";
 import { useT, type LanguagePref, type Messages } from "../i18n";
+
+const IS_MAC = typeof navigator !== "undefined" && /mac/i.test(navigator.platform);
+/** "CommandOrControl+Alt+Space" → "⌘ ⌥ Space" on macOS, "Ctrl + Alt + Space" elsewhere. */
+const shortcutLabel = (accelerator: string) => IS_MAC
+  ? accelerator.replace("CommandOrControl", "⌘").replace("Shift", "⇧").replace("Alt", "⌥").split("+").join(" ")
+  : accelerator.replace("CommandOrControl", "Ctrl").split("+").join(" + ");
 
 export type SettingsTab = "general" | "api" | "credit" | "responses" | "connectors" | "data" | "mcp" | "about";
 const TABS: { id: SettingsTab; icon: typeof KeyRound }[] = [
@@ -66,6 +72,9 @@ export default function SettingsPage(p: Props) {
     return () => window.removeEventListener("keydown", onKey, true);
   }, [p.onClose]);
   const update = (patch: Partial<Prefs>) => void p.onSavePrefs({ ...p.prefs, ...patch });
+  // Registration happens in the main process after saving; another app may already own the keys.
+  const [shortcutError, setShortcutError] = useState("");
+  useEffect(() => { void window.continuity.shortcutStatus().then(setShortcutError).catch(() => {}); }, [p.prefs.quickShortcut]);
   async function saveKey() {
     try { await p.onSaveKey(key.trim()); setKey(""); setKeyMessage(t.settings.api.savedMessage); }
     catch (e) { setKeyMessage(e instanceof Error ? e.message : String(e)); }
@@ -108,6 +117,11 @@ export default function SettingsPage(p: Props) {
             {LANGUAGES.map(l => <button key={l.id} role="radio" aria-checked={p.prefs.language === l.id} className={themeCard(p.prefs.language === l.id)} onClick={() => update({ language: l.id })}>
               <span className="font-preview grid h-[64px] w-full place-items-center rounded-[8px] border border-line bg-inset text-[22px] text-ink" lang={l.id === "system" ? undefined : l.id}>{l.sample}</span>{languageLabel(t, l.id)}</button>)}
           </div>
+          <label className="toggle-row quick-shortcut"><span><b>{t.settings.general.quickShortcut}</b><small>{t.settings.general.quickShortcutHint}</small>{shortcutError && <small className="text-warn">{shortcutError}</small>}</span>
+            <select className="rounded-[6px] border border-line-input bg-surface-2 px-[8px] py-[5px] text-[12.5px] text-ink" value={p.prefs.quickShortcut} aria-label={t.settings.general.quickShortcut}
+              onChange={e => update({ quickShortcut: e.target.value as QuickShortcut })}>
+              {QUICK_SHORTCUTS.map(s => <option key={s} value={s}>{s ? shortcutLabel(s) : t.settings.general.quickShortcutOff}</option>)}
+            </select></label>
           <label className="toggle-row"><span><b>{t.settings.general.searchPastChats}</b><small>{t.settings.general.searchPastChatsHint}</small></span>
             <input type="checkbox" className="switch" checked={p.prefs.searchPastChats} onChange={e => update({ searchPastChats: e.target.checked })} /></label>
           <label className="toggle-row"><span><b>{t.settings.general.notifyOnReply}</b><small>{t.settings.general.notifyOnReplyHint}</small></span>

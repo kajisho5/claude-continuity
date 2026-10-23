@@ -111,6 +111,8 @@ export const ja = {
     readyBody: (version: string) => `再起動するとバージョン ${version} になります。`
   },
   main: {
+    shortcutTaken: (keys: string) => `${keys} はほかのアプリが使っているため登録できませんでした。別の組み合わせを選んでください。`,
+    captureFailed: "画面を取り込めませんでした。macOS では、システム設定 →「プライバシーとセキュリティ」→「画面収録」でこのアプリを許可してください。",
     importedChat: "インポートした会話",
     exportHtmlTitle: "会話を HTML で書き出す",
     exportJsonTitle: "会話をJSONでエクスポート",
