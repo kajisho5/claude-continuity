@@ -20,6 +20,7 @@ A local-first Electron desktop app for importing Claude conversation exports and
 - Projects with custom instructions and knowledge files, response styles, and optional memory (`memory_20250818`, stored locally)
 - Tools per conversation: web search and URL fetch with numbered sources, Skills (Excel/Word/PowerPoint/PDF creation with download), and data analysis via code execution
 - Regenerate (with version switching), edit-and-resend, automatic titles, sandboxed HTML/SVG artifact preview, and automatic prompt caching
+- Bundled MCP server (`delegate_task`, `credit_status`) so Claude Code / Claude Desktop can hand heavy reading and reasoning to the API credit and get back only a summary
 - Monthly API credit tracker for Max/Team plans: first-run setup (plan → grant day → API key with connection test), estimated remaining credit, expiry countdown, daily budget, and pace warnings; optional calibration from the Console balance
 - Store conversation history and API usage records locally
 - Search conversations by title and message text
@@ -60,6 +61,24 @@ A local-first Electron desktop app for importing Claude conversation exports and
 npm install
 npm run dev
 ```
+
+## MCP 連携（Claude Code / Claude Desktop から API に作業を任せる）
+
+`npm run build` で `dist-mcp/server.js` が作られます。アプリの「API設定 › MCP 連携」で、読ませてよいフォルダを選ぶと登録コマンドを生成できます。
+
+| ツール | 内容 |
+|---|---|
+| `delegate_task` | 指示とファイルパスを受け取り、サーバーがファイルを直接読んで Messages API で処理し、要約だけを返す。事前に `count_tokens` で費用を見積もり、1回の上限を超えると実行しない |
+| `credit_status` | アプリと MCP の利用記録から、今月の推定残額・失効日・1日の目安を返す |
+
+| 環境変数 | 内容 |
+|---|---|
+| `ANTHROPIC_API_KEY` | この用途専用のキー（MCP 設定に平文で残るため、期限と支出上限のあるワークスペースのキーを推奨） |
+| `CONTINUITY_MCP_ROOTS` | 読み込みを許可するフォルダ（Windows は `;`、macOS/Linux は `:` 区切り） |
+| `CONTINUITY_DATA_DIR` | アプリのデータフォルダ（利用記録とクレジット設定の共有に使う） |
+| `CONTINUITY_MCP_MODEL` | 既定のモデル（既定 `claude-opus-5-5`） |
+| `CONTINUITY_MCP_MAX_USD_PER_CALL` | 1回あたりの費用上限（既定 2） |
+| `ELECTRON_RUN_AS_NODE=1` | アプリ本体の実行ファイルを Node として使う（Node.js のインストール不要） |
 
 ## Tests
 

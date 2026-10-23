@@ -1,7 +1,7 @@
 import { PLAN_LABELS, formatShortDate, type CreditSummary } from "../lib/credit";
 import { formatUsd } from "../lib/pricing";
 
-type Totals = { inputTokens: number; outputTokens: number; calls: number };
+type Totals = { inputTokens: number; outputTokens: number; calls: number; mcpCalls?: number };
 type Props = { summary: CreditSummary | null; totals: Totals; onConfigure: () => void };
 
 const PACE_LABEL = { under: "余りそうなペース", on: "順調なペース", over: "使いすぎペース" } as const;
@@ -13,7 +13,7 @@ function compactTokens(n: number): string {
 }
 
 export default function CreditCard({ summary, totals, onConfigure }: Props) {
-  const device = `この端末 ${totals.calls}回 · ${compactTokens(totals.inputTokens + totals.outputTokens)} tokens`;
+  const device = `この端末 ${totals.calls}回${totals.mcpCalls ? `（うち MCP ${totals.mcpCalls}回）` : ""} · ${compactTokens(totals.inputTokens + totals.outputTokens)} tokens`;
   if (!summary) {
     return <section className="credit-card">
       <div className="credit-head"><span>今月のAPIクレジット</span></div>

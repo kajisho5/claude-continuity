@@ -8,6 +8,7 @@ import MessageItem, { AttachmentChip, type Msg } from "./components/MessageItem"
 import ToolsMenu, { type Tools } from "./components/ToolsMenu";
 import ProjectModal, { type Project } from "./components/ProjectModal";
 import PreferencesSection from "./components/PreferencesSection";
+import McpSection from "./components/McpSection";
 import ArtifactPanel from "./components/ArtifactPanel";
 import { summarizeCredit, type CreditSettings, type UsageRow } from "./lib/credit";
 import { costOf, formatUsd, priceHint } from "./lib/pricing";
@@ -33,7 +34,7 @@ function toUsageRows(rows: Awaited<ReturnType<typeof window.continuity.loadUsage
   return rows.filter(row => row && typeof row.model === "string" && typeof row.createdAt === "string").map(row => ({
     model: row.model, createdAt: row.createdAt, inputTokens: Number(row.inputTokens) || 0, outputTokens: Number(row.outputTokens) || 0,
     cacheCreationInputTokens: Number(row.cacheCreationInputTokens) || 0, cacheReadInputTokens: Number(row.cacheReadInputTokens) || 0,
-    webSearchRequests: Number(row.webSearchRequests) || 0
+    webSearchRequests: Number(row.webSearchRequests) || 0, ...(row.source==="mcp"?{source:"mcp"}:{})
   }));
 }
 function snapshot(m: Msg): Reply {
@@ -74,7 +75,7 @@ export default function App() {
  const chat=chats.find(c=>c.id===active)??chats[0]??welcome;
  const chatProject=projects.find(p=>p.id===chat.projectId)??null;
  const currentModel=availableModels.find(m=>m.id===model);
- const usageTotal=useMemo(()=>usageRows.reduce((acc,row)=>({inputTokens:acc.inputTokens+row.inputTokens,outputTokens:acc.outputTokens+row.outputTokens,calls:acc.calls+1}),{inputTokens:0,outputTokens:0,calls:0}),[usageRows]);
+ const usageTotal=useMemo(()=>usageRows.reduce((acc,row)=>({inputTokens:acc.inputTokens+row.inputTokens,outputTokens:acc.outputTokens+row.outputTokens,calls:acc.calls+1,mcpCalls:acc.mcpCalls+(row.source==="mcp"?1:0)}),{inputTokens:0,outputTokens:0,calls:0,mcpCalls:0}),[usageRows]);
  const summary=useMemo(()=>summarizeCredit(usageRows,credit,new Date(now)),[usageRows,credit,now]);
 
  useEffect(()=>{
@@ -103,6 +104,12 @@ export default function App() {
    finally{setModelsLoading(false);}
  }
  useEffect(()=>{ if(configured) void refreshModels(); },[configured]);
+ useEffect(()=>{
+   // MCP usage is written by another process; pick it up when the window regains focus.
+   const reload=()=>{window.continuity.loadUsage().then(rows=>setUsageRows(toUsageRows(rows))).catch(()=>{});};
+   window.addEventListener("focus",reload);
+   return ()=>window.removeEventListener("focus",reload);
+ },[]);
  useEffect(()=>{ if(effort&&currentModel&&!currentModel.effortLevels.includes(effort)) setEffort(""); },[currentModel,effort]);
  useEffect(()=>{
    if(!loaded)return;
@@ -311,6 +318,7 @@ export default function App() {
    <div className="actions"><button className="btn-secondary" onClick={()=>setSettings(false)}>キャンセル</button><button className="btn-primary" disabled={!key.trim()} onClick={()=>void saveKey()}>保存</button></div>
    <CreditSettingsForm value={credit} onSave={saveCredit}/>
    <PreferencesSection prefs={prefs} onSave={savePrefs}/>
+   <McpSection/>
    <div className="credit-guide"><b>Maxプランの月間APIクレジットを使う</b><p>Max 5x は月 $100、Max 20x は月 $200 相当。請求サイクル末で失効し、繰り越されません。Claude Code では使えません（API・Agent SDK・Playground が対象）。</p><a href="https://platform.claude.com/docs/en/about-claude/api-credits-for-subscribers" target="_blank" rel="noreferrer">公式設定手順</a><a href="https://platform.claude.com/settings/billing" target="_blank" rel="noreferrer">ConsoleのBillingを開く</a><button className="link" onClick={()=>{setSettings(false);setOnboarding(true);}}>初期設定をやり直す</button></div>
    <small className="fineprint">このアプリはAPIキーでAnthropic APIを呼び出します。リンク済み組織のクレジットが利用されます。購入済み残高への自動リロードはこのアプリから設定・変更しません。送信した会話文脈と添付ファイルはAnthropic APIへ送られます。</small></div></div>}
   {projectModal&&<ProjectModal project={projectModal.project} isNew={projectModal.isNew} onSave={upsertProject} onDelete={()=>deleteProject(projectModal.project.id)} onClose={()=>setProjectModal(null)}/>}

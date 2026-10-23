@@ -21,7 +21,7 @@ type ContinuityProject = { id: string; name: string; instructions: string; knowl
 type ContinuityPrefs = { autoTitle: boolean; customStyle: string };
 type ContinuityUsage = {
   model: string; inputTokens: number; outputTokens: number;
-  cacheCreationInputTokens: number; cacheReadInputTokens: number; webSearchRequests?: number;
+  cacheCreationInputTokens: number; cacheReadInputTokens: number; webSearchRequests?: number; source?: string;
 };
 type ContinuityModel = {
   id: string; displayName: string; createdAt?: string; maxTokens?: number; maxInputTokens?: number;
@@ -53,6 +53,8 @@ declare global {
       listMemory: () => Promise<{ path: string; size: number; content: string }[]>;
       deleteMemory: (path: string) => Promise<boolean>;
       saveGeneratedFile: (fileId: string, name: string) => Promise<{ canceled: boolean; filePath?: string }>;
+      mcpInfo: () => Promise<{ serverPath: string; runtimePath: string; dataDir: string; platform: string }>;
+      pickMcpFolders: () => Promise<string[]>;
       listModels: () => Promise<ContinuityModel[]>;
       reply: (payload: {
         requestId: string; messages: { role: "user" | "assistant"; content: string; attachments?: ContinuityAttachment[] }[];

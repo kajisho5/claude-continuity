@@ -9,7 +9,7 @@ export type CreditSettings = {
   calibration?: { balanceUsd: number; observedAt: string };
   onboardingDone: boolean;
 };
-export type UsageRow = UsageTokens & { model: string; createdAt: string; sessionId?: string };
+export type UsageRow = UsageTokens & { model: string; createdAt: string; sessionId?: string; source?: string };
 export type Pace = "under" | "on" | "over";
 export type CreditSummary = {
   plan: PlanId;

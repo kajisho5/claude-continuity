@@ -196,10 +196,24 @@ ipcMain.handle("chats:save", async (_event, chats: unknown[]) => {
 
 const usageFile = () => path.join(dataDir(), "usage.json");
 ipcMain.handle("usage:load", async () => {
+  let rows: any[] = [];
+  try { const data = JSON.parse(await fs.readFile(usageFile(), "utf8")); if (Array.isArray(data)) rows = data; } catch {}
+  // Usage recorded by the bundled MCP server (append-only JSON lines) counts toward the same credit.
   try {
-    const data = JSON.parse(await fs.readFile(usageFile(), "utf8"));
-    return Array.isArray(data) ? data : [];
-  } catch { return []; }
+    const lines = (await fs.readFile(path.join(dataDir(), "usage-mcp.jsonl"), "utf8")).split("\n").filter(Boolean);
+    for (const line of lines) { try { rows.push({ ...JSON.parse(line), source: "mcp" }); } catch {} }
+  } catch {}
+  return rows;
+});
+ipcMain.handle("mcp:info", () => {
+  // Packaged builds unpack dist-mcp from the asar archive so the Electron binary can run it as Node.
+  const appPath = app.getAppPath();
+  const base = app.isPackaged ? appPath.replace(/app\.asar$/, "app.asar.unpacked") : appPath;
+  return { serverPath: path.join(base, "dist-mcp", "server.js"), runtimePath: process.execPath, dataDir: dataDir(), platform: process.platform };
+});
+ipcMain.handle("mcp:pickFolder", async () => {
+  const result = await dialog.showOpenDialog({ title: "MCP サーバーに読ませてよいフォルダ", properties: ["openDirectory", "multiSelections"] });
+  return result.canceled ? [] : result.filePaths;
 });
 type UsageEntry = { model: string; inputTokens: number; outputTokens: number; cacheCreationInputTokens: number; cacheReadInputTokens: number; webSearchRequests: number };
 async function recordUsage(entry: UsageEntry) {

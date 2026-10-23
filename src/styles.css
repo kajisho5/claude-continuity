@@ -324,3 +324,7 @@ h3.spaced{margin-top:22px}
 .memory-list summary{cursor:pointer;display:flex;gap:8px;align-items:center;font-size:10.5px}
 .memory-list summary small{color:var(--subtle);margin-left:auto}
 .memory-list pre{white-space:pre-wrap;font:10.5px/1.6 var(--mono);color:var(--muted);max-height:200px;overflow:auto;margin:8px 0 2px}
+.snippet{margin-top:12px;border:1px solid var(--border);border-radius:9px;overflow:hidden;background:#1A1918}
+.snippet-head{display:flex;justify-content:space-between;align-items:center;padding:6px 8px 6px 12px;background:var(--surface);font-size:10.5px}
+.snippet pre{margin:0;padding:10px 12px;font:10px/1.6 var(--mono);color:var(--text-3);white-space:pre-wrap;word-break:break-all;max-height:220px;overflow:auto}
+.credit-form code{font-family:var(--mono);font-size:.9em;background:var(--surface);border-radius:4px;padding:.05em .35em}

@@ -22,6 +22,8 @@ contextBridge.exposeInMainWorld("continuity", {
   listMemory: () => ipcRenderer.invoke("memory:list"),
   deleteMemory: (path: string) => ipcRenderer.invoke("memory:delete", path),
   saveGeneratedFile: (fileId: string, name: string) => ipcRenderer.invoke("files:save", { fileId, name }),
+  mcpInfo: () => ipcRenderer.invoke("mcp:info"),
+  pickMcpFolders: () => ipcRenderer.invoke("mcp:pickFolder"),
   listModels: () => ipcRenderer.invoke("claude:models"),
   reply: (payload: unknown) => ipcRenderer.invoke("claude:reply", payload),
   generateTitle: (user: string, assistant: string) => ipcRenderer.invoke("claude:title", { user, assistant }),

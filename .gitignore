@@ -14,3 +14,4 @@ coverage/
 *.db
 claude-export*
 conversation-export*
+dist-mcp/
