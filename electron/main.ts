@@ -215,7 +215,7 @@ ipcMain.handle("chats:save", async (_event, chats: unknown[]) => {
     ...(typeof chat.projectId === "string" ? { projectId: chat.projectId.slice(0, 100) } : {}),
     ...(chat.starred === true ? { starred: true } : {}),
     ...isoDate(chat.updatedAt),
-    ...(typeof chat.style === "string" ? { style: chat.style.slice(0, 40) } : {}),
+    ...(typeof chat.style === "string" ? { style: chat.style.slice(0, 60) } : {}),
     ...(chat.tools && typeof chat.tools === "object" ? { tools: Object.fromEntries(["webSearch", "webFetch", "files", "analysis", "memory"].map(k => [k, chat.tools[k] === true])) } : {}),
     ...(chat.container && typeof chat.container.id === "string" ? { container: { id: chat.container.id.slice(0, 200), expiresAt: str(chat.container.expiresAt, 60) } } : {}),
     messages: Array.isArray(chat.messages) ? chat.messages.slice(-5000).map((m: any) => sanitizeMessage(m, 0)) : []
@@ -384,13 +384,26 @@ ipcMain.handle("credit:save", async (_event, value: any) => {
 const prefsFile = () => path.join(dataDir(), "prefs.json");
 type Theme = "system" | "light" | "dark";
 type ChatFont = "serif" | "sans" | "system";
-type Prefs = { autoTitle: boolean; customStyle: string; displayName: string; theme: Theme; chatFont: ChatFont; shareName: boolean; preferences: string; searchPastChats: boolean; notifyOnReply: boolean; checkUpdates: boolean };
+type CustomStyle = { id: string; name: string; prompt: string };
+type Prefs = { autoTitle: boolean; customStyle: string; customStyles: CustomStyle[]; displayName: string; theme: Theme; chatFont: ChatFont; shareName: boolean; preferences: string; searchPastChats: boolean; notifyOnReply: boolean; checkUpdates: boolean };
 const THEMES: Theme[] = ["system", "light", "dark"];
 const FONTS: ChatFont[] = ["serif", "sans", "system"];
+function sanitizeStyles(raw: any): CustomStyle[] {
+  if (Array.isArray(raw?.customStyles)) {
+    return raw.customStyles.slice(0, 20).map((st: any, i: number) => ({
+      id: String(st?.id ?? `s${i}`).replace(/[^\w-]/g, "").slice(0, 40) || `s${i}`,
+      name: String(st?.name ?? "").trim().slice(0, 40) || `スタイル ${i + 1}`,
+      prompt: String(st?.prompt ?? "").slice(0, 4000)
+    })).filter((st: CustomStyle) => st.prompt.trim());
+  }
+  // Earlier versions kept a single custom style; carry it over as "カスタム" (its chats used style "custom").
+  return typeof raw?.customStyle === "string" && raw.customStyle.trim() ? [{ id: "custom", name: "カスタム", prompt: raw.customStyle.slice(0, 4000) }] : [];
+}
 function sanitizePrefs(raw: any): Prefs {
   return {
     autoTitle: raw?.autoTitle !== false,
     customStyle: typeof raw?.customStyle === "string" ? raw.customStyle.slice(0, 4000) : "",
+    customStyles: sanitizeStyles(raw),
     displayName: typeof raw?.displayName === "string" ? raw.displayName.trim().slice(0, 40) : "",
     theme: THEMES.includes(raw?.theme) ? raw.theme : "dark",
     chatFont: FONTS.includes(raw?.chatFont) ? raw.chatFont : "serif",
@@ -508,7 +521,7 @@ ipcMain.handle("files:save", async (_event, payload: { fileId: string; name: str
 // ---- Replies ----
 type ReplyPayload = {
   requestId: string; messages: ChatTurn[]; model?: string; effort?: string;
-  style?: StyleId; projectId?: string; tools?: ToolFlags; containerId?: string; chatId?: string; incognito?: boolean;
+  style?: string; projectId?: string; tools?: ToolFlags; containerId?: string; chatId?: string; incognito?: boolean;
 };
 const activeReplies = new Map<string, AbortController>();
 const MAX_LOOP = 8;
@@ -560,7 +573,11 @@ ipcMain.handle("claude:reply", async (event, payload: ReplyPayload) => {
   };
   const built = await buildMessages(turns, project?.knowledge ?? [], loader, { containerUploads: codeOn, caps });
   const messages: MessageParam[] = built.messages;
-  const system = buildSystem(payload.style, prefs.customStyle, project, { ...(prefs.shareName ? { name: prefs.displayName } : {}), preferences: prefs.preferences });
+  // Custom styles are chosen as "custom:<id>"; the bare "custom" of earlier versions maps to id "custom".
+  const customId = payload.style === "custom" ? "custom" : payload.style?.startsWith("custom:") ? payload.style.slice(7) : null;
+  const customPrompt = customId ? prefs.customStyles.find(st => st.id === customId)?.prompt ?? "" : "";
+  const style = (customId ? "custom" : payload.style) as StyleId | undefined;
+  const system = buildSystem(style, customPrompt, project, { ...(prefs.shareName ? { name: prefs.displayName } : {}), preferences: prefs.preferences });
   const containerId = typeof payload.containerId === "string" && payload.containerId ? payload.containerId : undefined;
 
   const controller = new AbortController();
@@ -698,6 +715,25 @@ ipcMain.handle("handoff:open", async (_event, payload: { text: string; target: "
   if (!fitsHandoff(text, process.platform)) throw new Error("内容が長すぎます。短くしてから開いてください。");
   await shell.openExternal(HANDOFF_PREFIX + encodeURIComponent(text));
   return true;
+});
+ipcMain.handle("style:fromSample", async (_event, payload: { sample: string; model: string }) => {
+  // Like the Claude apps' "create a style from a writing sample": turn a sample into reusable instructions.
+  const sample = String(payload?.sample ?? "").slice(0, 30_000);
+  if (sample.trim().length < 40) throw new Error("サンプルの文章が短すぎます（40文字以上）。");
+  const model = String(payload?.model ?? "");
+  const info = modelCache.get(model);
+  const client = new Anthropic({ apiKey: await getApiKey() });
+  const response = await client.messages.create({
+    model, max_tokens: 1200,
+    ...(info?.adaptiveThinking ? { thinking: { type: "disabled" as const } } : {}),
+    system: "渡された文章サンプルの書き方（語調、文の長さ、構成、記号や箇条書きの使い方、専門用語の扱い、読者との距離感）を分析し、別の AI がその書き方を再現するための指示文を日本語で書いてください。内容や固有の事実には触れず、書き方だけを、命令形の箇条書き 5〜10 項目で出力してください。前置きは不要です。",
+    messages: [{ role: "user", content: `<sample>\n${sample}\n</sample>` }]
+  });
+  await recordUsage({
+    model: response.model, inputTokens: response.usage.input_tokens, outputTokens: response.usage.output_tokens,
+    cacheCreationInputTokens: response.usage.cache_creation_input_tokens ?? 0, cacheReadInputTokens: response.usage.cache_read_input_tokens ?? 0, webSearchRequests: 0
+  });
+  return { prompt: response.content.filter(b => b.type === "text").map(b => b.text).join("").trim().slice(0, 4000), usage: { model: response.model, inputTokens: response.usage.input_tokens, outputTokens: response.usage.output_tokens, cacheCreationInputTokens: response.usage.cache_creation_input_tokens ?? 0, cacheReadInputTokens: response.usage.cache_read_input_tokens ?? 0 } };
 });
 ipcMain.handle("claude:title", async (_event, payload: { user: string; assistant: string }) => {
   // Use the cheapest small model without thinking so a tiny max_tokens still yields text.

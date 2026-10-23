@@ -101,6 +101,7 @@ export default function App() {
  const [atBottom,setAtBottom]=useState(true);
  const [renaming,setRenaming]=useState<string|null>(null);
  const [confirmDelete,setConfirmDelete]=useState<string|null>(null);
+ const [confirmBulk,setConfirmBulk]=useState<string[]|null>(null);
  const [handoff,setHandoff]=useState(false);
  const [update,setUpdate]=useState<UpdateStatus>({state:"idle"});
  const [updateDismissed,setUpdateDismissed]=useState("");
@@ -334,6 +335,15 @@ export default function App() {
  async function exportChat(id=active){const target=chats.find(c=>c.id===id);if(!target)return;try{const result=await window.continuity.exportChat({fileName:target.title.replace(/[^\p{L}\p{N} _-]/gu,"").slice(0,80)||"conversation",data:JSON.stringify(target,null,2)});if(!result.canceled){setStatus("会話をJSONにエクスポートしました");toast("JSON に書き出しました");}}catch(e){setStatus("エクスポートエラー: "+err(e));toast("書き出しに失敗しました: "+err(e),"error");}}
  function requestDelete(id:string){if(busy){setStatus("応答中は削除できません。");return;}if(chats.length<=1){setStatus("最後の会話は削除できません。");return;}setConfirmDelete(id);}
  function deleteChat(id:string){const remaining=chats.filter(c=>c.id!==id);if(!remaining.length)return;setChats(remaining);if(id===active){setActive(remaining[0].id);setArtifact(null);}setStatus("会話を削除しました");toast("会話を削除しました");}
+ function deleteMany(ids:string[]){
+   if(busy){toast("応答中は削除できません","error");return;}
+   const drop=new Set(ids);
+   const remaining=chats.filter(c=>!drop.has(c.id));
+   const next=remaining.length?remaining:[{id:"chat-"+Date.now(),title:"新しい会話",messages:[]} as Chat];
+   setChats(next);
+   if(drop.has(active)){setActive(next[0].id);setArtifact(null);}
+   toast(`${ids.length} 件の会話を削除しました`);
+ }
  function chatMenu(c:Chat,variant:"row"|"title"){
    return <ChatMenu title={c.title} starred={!!c.starred} variant={variant} projects={projects} projectId={c.projectId}
      onStar={()=>patchChat(c.id,x=>({...x,starred:!x.starred}))} onRename={()=>setRenaming(c.id)} onExport={()=>void exportChat(c.id)}
@@ -374,7 +384,7 @@ export default function App() {
    onRemoveAttachment={id=>setPendingAttachments(list=>list.filter(x=>x.id!==id))} onPickFiles={()=>void window.continuity.pickAttachments().then(addAttachments)}
    onPaste={e=>void onPaste(e)} onSend={()=>void send()} onStop={stop} busy={busy}
    tools={chat.incognito?{...chat.tools,memory:false}:chat.tools??{}} onTools={tools=>patchChat(chat.id,c=>({...c,tools}))} projectMemory={chatProject?.memory}
-   style={chat.style??"standard"} styles={STYLES.filter(s=>s.id!=="custom"||prefs.customStyle.trim()).map(s=>({value:s.id,label:s.label}))} onStyle={v=>patchChat(chat.id,c=>({...c,style:v}))}
+   style={chat.style==="custom"?"custom:custom":chat.style??"standard"} styles={[...STYLES.filter(s=>s.id!=="custom").map(s=>({value:s.id,label:s.label})),...prefs.customStyles.map(st=>({value:"custom:"+st.id,label:st.name}))]} onStyle={v=>patchChat(chat.id,c=>({...c,style:v}))}
    model={model} models={availableModels.length?availableModels.map(m=>({value:m.id,label:m.displayName})):[{value:model,label:modelsLoading?"取得中…":model}]} onModel={setModel} modelsLoading={modelsLoading} onRefreshModels={()=>void refreshModels(true)}
    effort={effort} efforts={currentModel?.effortLevels.length?[{value:"",label:"思考: 既定"},...currentModel.effortLevels.map(l=>({value:l,label:`思考: ${EFFORT_LABELS[l]??l}`}))]:[]} onEffort={setEffort}
    placeholder={chat.incognito?"シークレットチャット（保存されません）":fresh?"今日はどんなお手伝いをしましょうか？":"返信…"} placement={fresh?"down":"up"}/>;
@@ -415,7 +425,7 @@ export default function App() {
    {view==="projects"?<div className="workspace"><ProjectsPage projects={projects} chats={chatRows} now={now} onCreate={newProject} onOpen={id=>{setOpenProject(id);setView("project");}}/></div>:
     view==="project"&&openProjectData?<div className="workspace"><ProjectPage project={openProjectData} chats={chatRows} now={now} onBack={()=>setView("projects")}
       onEdit={()=>setProjectModal({project:openProjectData,isNew:false})} onStart={()=>newChat(openProjectData.id)} onOpenChat={id=>{setActive(id);setView("chat");}}/></div>:
-   view==="chats"?<div className="workspace"><ChatsPage now={now} onNew={()=>newChat()} onOpen={id=>{setActive(id);setView("chat");}}
+   view==="chats"?<div className="workspace"><ChatsPage now={now} onNew={()=>newChat()} onDelete={ids=>setConfirmBulk(ids)} onOpen={id=>{setActive(id);setView("chat");}}
      chats={chatRows.map(c=>({...c,projectName:projects.find(p=>p.id===c.projectId)?.name}))}/></div>:
    <div className="workspace">
     <div className={"conversation"+(fresh?" fresh":"")+(chat.incognito?" incognito":"")}>
@@ -461,7 +471,8 @@ export default function App() {
    {dragging&&<div className="drop-hint">ここにドロップして添付</div>}
   </main>
   {settings&&<SettingsPage initialTab={settings} prefs={prefs} onSavePrefs={savePrefs} configured={configured} onSaveKey={saveKey}
-    credit={credit} onSaveCredit={saveCredit} onRestartOnboarding={()=>{setSettings(null);setOnboarding(true);}} onClose={()=>setSettings(null)} onNotice={toast}/>}
+    credit={credit} onSaveCredit={saveCredit} onRestartOnboarding={()=>{setSettings(null);setOnboarding(true);}} onClose={()=>setSettings(null)} onNotice={toast}
+    model={model} onUsage={usage=>setUsageRows(rows=>[...rows,{...usage,createdAt:new Date().toISOString()}])}/>}
   {handoff&&<HandoffDialog title={chat.title} turns={chat.messages.map(m=>({role:m.role,content:m.content}))} model={model} modelLabel={currentModel?.displayName??model} configured={configured}
     onUsage={usage=>setUsageRows(rows=>[...rows,{...usage,createdAt:new Date().toISOString()}])} onNotice={toast} onClose={()=>setHandoff(false)}/>}
   {shortcuts&&<ShortcutsDialog onClose={()=>setShortcuts(false)}/>}
@@ -469,6 +480,8 @@ export default function App() {
   {renaming&&<RenameDialog initial={chats.find(c=>c.id===renaming)?.title??""} onSave={title=>patchChat(renaming,c=>({...c,title}))} onClose={()=>setRenaming(null)}/>}
   {confirmDelete&&<ConfirmDialog title="会話を削除しますか？" body={`「${chats.find(c=>c.id===confirmDelete)?.title??""}」を端末内の履歴から削除します。元に戻せません。`} confirm="削除"
     onConfirm={()=>deleteChat(confirmDelete)} onClose={()=>setConfirmDelete(null)}/>}
+  {confirmBulk&&<ConfirmDialog title={`${confirmBulk.length} 件の会話を削除しますか？`} body="選んだ会話を端末内の履歴から削除します。元に戻せません（バックアップがあれば復元できます）。" confirm="削除"
+    onConfirm={()=>deleteMany(confirmBulk)} onClose={()=>setConfirmBulk(null)}/>}
   {projectModal&&<ProjectModal project={projectModal.project} isNew={projectModal.isNew} onSave={upsertProject} onDelete={()=>deleteProject(projectModal.project.id)} onClose={()=>setProjectModal(null)}/>}
   {onboarding&&loaded&&<OnboardingWizard keyConfigured={configured} onFinish={finishOnboarding} onSkip={skipOnboarding}/>}
  </div></ArtifactContext.Provider>;

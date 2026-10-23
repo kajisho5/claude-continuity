@@ -16,6 +16,7 @@ contextBridge.exposeInMainWorld("continuity", {
   restoreData: () => ipcRenderer.invoke("data:restore"),
   openDataFolder: () => ipcRenderer.invoke("data:openFolder"),
   focusWindow: () => ipcRenderer.invoke("window:focus"),
+  styleFromSample: (payload: unknown) => ipcRenderer.invoke("style:fromSample", payload),
   attachmentText: (id: string) => ipcRenderer.invoke("attachments:text", id),
   openAttachmentPdf: (id: string, name: string) => ipcRenderer.invoke("attachments:openPdf", id, name),
   appVersion: () => ipcRenderer.invoke("app:version"),

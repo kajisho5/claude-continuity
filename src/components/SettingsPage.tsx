@@ -31,6 +31,7 @@ type Props = {
   configured: boolean; onSaveKey: (key: string) => Promise<void>;
   credit: CreditSettings | null; onSaveCredit: (next: CreditSettings) => Promise<void>; onRestartOnboarding: () => void;
   onClose: () => void; onNotice: (text: string, kind?: "ok" | "error") => void;
+  model: string; onUsage: (usage: Awaited<ReturnType<typeof window.continuity.styleFromSample>>["usage"]) => void;
 };
 
 /** Settings with a left-hand section list, like the Claude apps. Appearance changes apply immediately. */
@@ -109,7 +110,7 @@ export default function SettingsPage(p: Props) {
             <a href="https://platform.claude.com/settings/billing" target="_blank" rel="noreferrer">Console の Billing を開く</a>
             <button className="link" onClick={p.onRestartOnboarding}>初期設定をやり直す</button></div>
         </>}
-        {tab === "responses" && <PreferencesSection prefs={p.prefs} onSave={p.onSavePrefs} />}
+        {tab === "responses" && <PreferencesSection prefs={p.prefs} onSave={p.onSavePrefs} model={p.model} onUsage={p.onUsage} />}
         {tab === "data" && <DataSection onNotice={p.onNotice} />}
         {tab === "mcp" && <McpSection />}
         {tab === "about" && <>

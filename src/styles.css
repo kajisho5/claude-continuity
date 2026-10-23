@@ -854,3 +854,16 @@ html,body{overflow:hidden}
 .viewer-head small{font-size:11px;color:var(--subtle);flex:1;white-space:nowrap}
 .viewer-box img{display:block;max-width:100%;max-height:calc(92vh - 52px);object-fit:contain;margin:auto;background:repeating-conic-gradient(#0000 0 25%,#8881 0 50%) 0 0/16px 16px}
 .viewer-text{margin:0;padding:14px 16px;overflow:auto;font:12.5px/1.7 var(--mono);color:var(--text-3);white-space:pre-wrap;word-break:break-word}
+.chats-toolbar{display:flex;align-items:center;gap:8px;margin:16px 2px 6px}
+.chats-toolbar .chats-count{flex:1;margin:0}
+.btn-danger.small{display:inline-flex;align-items:center;gap:6px;padding:6px 10px;font-size:11.5px}
+.btn-danger:disabled{opacity:.45}
+.chats-list li.selected button{background:color-mix(in srgb,var(--accent) 10%,transparent)}
+.chats-title .check{color:var(--subtle);flex-shrink:0}
+.chats-title .check.on{color:var(--accent)}
+.style-editor-list{display:flex;flex-direction:column;gap:10px;margin-top:10px}
+.style-editor{display:flex;flex-direction:column;gap:6px;padding:10px;border:1px solid var(--border);border-radius:10px;background:var(--input)}
+.style-editor-head{display:flex;gap:6px;align-items:center}
+.style-editor-head .text-input{padding:7px 10px;font-weight:600}
+.style-editor textarea.text-input{min-height:60px}
+.style-sample{margin-top:10px;padding:12px;border:1px dashed var(--border-strong);border-radius:10px}
