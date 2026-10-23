@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowDown, ArrowUpRight, Plus, FileUp, FolderOpen, MessagesSquare, Pencil, PanelLeftClose, PanelLeftOpen, Search } from "lucide-react";
+import { ArrowDown, ArrowUpRight, Plus, FileUp, FolderOpen, MessagesSquare, PanelLeftClose, PanelLeftOpen, Search } from "lucide-react";
 import CreditCard from "./components/CreditCard";
 import LogoMark, { LogoGlyph } from "./components/LogoMark";
 import OnboardingWizard from "./components/OnboardingWizard";
@@ -11,6 +11,8 @@ import ProjectModal, { type Project } from "./components/ProjectModal";
 import SettingsPage, { type SettingsTab } from "./components/SettingsPage";
 import Toaster, { type Toast } from "./components/Toaster";
 import ChatsPage from "./components/ChatsPage";
+import { ProjectPage, ProjectsPage } from "./components/ProjectsPage";
+import ShortcutsDialog from "./components/ShortcutsDialog";
 import HandoffDialog from "./components/HandoffDialog";
 import ArtifactPanel from "./components/ArtifactPanel";
 import ChatMenu from "./components/ChatMenu";
@@ -73,7 +75,9 @@ export default function App() {
  const [modelsLoading,setModelsLoading]=useState(false);
  const [configured,setConfigured]=useState(false);
  const [settings,setSettings]=useState<SettingsTab|null>(null);
- const [view,setView]=useState<"chat"|"chats">("chat");
+ const [view,setView]=useState<"chat"|"chats"|"projects"|"project">("chat");
+ const [openProject,setOpenProject]=useState<string|null>(null);
+ const [shortcuts,setShortcuts]=useState(false);
  const [toasts,setToasts]=useState<Toast[]>([]);
  const [pending,setPending]=useState<Pending|null>(null);
  const [status,setStatus]=useState("準備完了");
@@ -84,7 +88,6 @@ export default function App() {
  const [onboarding,setOnboarding]=useState(false);
  const [now,setNow]=useState(()=>Date.now());
  const [projects,setProjects]=useState<Project[]>([]);
- const [projectFilter,setProjectFilter]=useState<string|null>(null);
  const [projectModal,setProjectModal]=useState<{project:Project;isNew:boolean}|null>(null);
  const [prefs,setPrefs]=useState<Prefs>(DEFAULT_PREFS);
  const [artifact,setArtifact]=useState<ArtifactRequest|null>(null);
@@ -160,6 +163,8 @@ export default function App() {
    const onKey=(e:KeyboardEvent)=>{
      const mod=e.metaKey||e.ctrlKey;
      if(mod&&e.shiftKey&&e.key.toLowerCase()==="o"){e.preventDefault();newChat();}
+     else if(mod&&e.shiftKey&&(e.key==="?"||e.code==="Slash")){e.preventDefault();setShortcuts(true);}
+     else if(mod&&e.shiftKey&&e.key.toLowerCase()==="s"){e.preventDefault();setSidebarOpen(v=>!v);}
      else if(mod&&!e.shiftKey&&e.key.toLowerCase()==="k"){e.preventDefault();setSidebarOpen(true);setTimeout(()=>searchRef.current?.focus(),0);}
      else if(mod&&e.key==="/"){e.preventDefault();composerRef.current?.focus();}
      else if(e.key==="Escape"){
@@ -305,22 +310,29 @@ export default function App() {
      onStar={()=>patchChat(c.id,x=>({...x,starred:!x.starred}))} onRename={()=>setRenaming(c.id)} onExport={()=>void exportChat(c.id)}
      onDelete={()=>requestDelete(c.id)} onMoveProject={id=>patchChat(c.id,x=>({...x,projectId:id}))}/>;
  }
- function newChat(){
+ function newChat(projectId?:string){
    // Reuse an untouched empty chat instead of stacking blank ones, as the Claude apps do.
-   const blank=chats.find(c=>c.messages.length===0&&c.title==="新しい会話"&&(c.projectId??null)===(projectFilter??null));
+   const blank=chats.find(c=>c.messages.length===0&&c.title==="新しい会話"&&(c.projectId??null)===(projectId??null));
    if(blank){setActive(blank.id);}
-   else{const id="chat-"+Date.now();setChats(cs=>[{id,title:"新しい会話",messages:[],...(projectFilter?{projectId:projectFilter}:{})},...cs]);setActive(id);}
+   else{const id="chat-"+Date.now();setChats(cs=>[{id,title:"新しい会話",messages:[],...(projectId?{projectId}:{})},...cs]);setActive(id);}
    setArtifact(null);setView("chat");setTimeout(()=>composerRef.current?.focus(),0);
  }
  function newProject(){setProjectModal({project:{id:crypto.randomUUID(),name:"",instructions:"",knowledge:[],memory:false},isNew:true});}
- async function upsertProject(project:Project){ await saveProjects(projects.some(p=>p.id===project.id)?projects.map(p=>p.id===project.id?project:p):[...projects,project]); }
- function deleteProject(id:string){ void saveProjects(projects.filter(p=>p.id!==id)); setChats(cs=>cs.map(c=>c.projectId===id?{...c,projectId:undefined}:c)); if(projectFilter===id)setProjectFilter(null); }
+ async function upsertProject(project:Project){
+   const exists=projects.some(p=>p.id===project.id);
+   await saveProjects(exists?projects.map(p=>p.id===project.id?project:p):[...projects,project]);
+   if(!exists){setOpenProject(project.id);setView("project");toast("プロジェクトを作成しました");}
+ }
+ function deleteProject(id:string){ void saveProjects(projects.filter(p=>p.id!==id)); setChats(cs=>cs.map(c=>c.projectId===id?{...c,projectId:undefined}:c)); if(openProject===id){setOpenProject(null);setView("projects");} }
 
  const hint=priceHint(model);
  const showPending=pending&&pending.chatId===chat.id;
  const query=search.toLowerCase();
  // Untouched new chats stay out of the lists until the first message, as in the Claude apps.
- const visibleChats=chats.filter(c=>c.messages.length>0&&(!projectFilter||c.projectId===projectFilter)&&(c.title.toLowerCase().includes(query)||c.messages.some(m=>m.content.toLowerCase().includes(query))));
+ const visibleChats=chats.filter(c=>c.messages.length>0&&(c.title.toLowerCase().includes(query)||c.messages.some(m=>m.content.toLowerCase().includes(query))));
+ const chatRows=chats.filter(c=>c.messages.length>0).map(c=>({id:c.id,title:c.title,projectId:c.projectId,updatedAt:c.updatedAt,starred:c.starred,
+   preview:([...c.messages].reverse().find(m=>m.role==="assistant")?.content??c.messages[0]?.content??"").replace(/```[\s\S]*?(```|$)/g," ").replace(/\[(\d+)\]/g,"").replace(/[#>*`|_~]/g,"").replace(/\s+/g," ").trim().slice(0,140)}));
+ const openProjectData=projects.find(p=>p.id===openProject)??null;
  const starredChats=visibleChats.filter(c=>c.starred);
  const recentChats=visibleChats.filter(c=>!c.starred);
  const chatRow=(c:Chat)=><div key={c.id} className={"chatrow"+(c.id===active&&view==="chat"?" active":"")}>
@@ -341,43 +353,38 @@ export default function App() {
   <aside aria-hidden={!sidebarOpen}>
    <div className="brand"><span className="mark"><LogoMark size={30} title="Claude Continuity"/></span><b>Claude Continuity</b>
     <button className="ghost-btn tip tip-below" data-tip="サイドバーを閉じる" aria-label="サイドバーを閉じる" onClick={()=>setSidebarOpen(false)}><PanelLeftClose size={17}/></button></div>
-   <button className="new-chat" onClick={newChat}><span className="plus-dot"><Plus size={15} strokeWidth={2.6}/></span>新しい会話<kbd>{KEYS.newChat}</kbd></button>
+   <button className="new-chat" onClick={()=>newChat()}><span className="plus-dot"><Plus size={15} strokeWidth={2.6}/></span>新しい会話<kbd>{KEYS.newChat}</kbd></button>
    <div className="search-box"><Search size={14}/><input ref={searchRef} className="chat-search" value={search} onChange={e=>setSearch(e.target.value)} placeholder="会話を検索" aria-label="会話を検索"/><kbd>{KEYS.search}</kbd></div>
    <button className={"side-nav"+(view==="chats"?" active":"")} onClick={()=>{setView("chats");setArtifact(null);}}><MessagesSquare size={16}/>チャット</button>
+   <button className={"side-nav"+(view==="projects"||view==="project"?" active":"")} onClick={()=>{setView("projects");setArtifact(null);}}><FolderOpen size={16}/>プロジェクト</button>
    <div className="side-scroll">
-    <div className="label row">プロジェクト<button className="ghost-btn small tip" data-tip="プロジェクトを作成" onClick={newProject} aria-label="プロジェクトを作成"><Plus size={14}/></button></div>
-    <div className="projectlist">
-     {projects.length===0&&<p className="hint tight">指示とナレッジをまとめて、会話ごとに自動で付けられます。</p>}
-     {projects.map(p=><div key={p.id} className={"projectlink "+(projectFilter===p.id?"active":"")}>
-       <button className="chatlink" onClick={()=>setProjectFilter(f=>f===p.id?null:p.id)}><FolderOpen size={15}/><span>{p.name}</span><small>{chats.filter(c=>c.projectId===p.id).length}</small></button>
-       <button className="ghost-btn small" onClick={()=>setProjectModal({project:p,isNew:false})} aria-label={`${p.name} を編集`}><Pencil size={13}/></button>
-     </div>)}
-    </div>
     {starredChats.length>0&&<><div className="label">スター付き</div>
      <div className="chatlist">{starredChats.map(c=>chatRow(c))}</div></>}
-    <div className="label">{projectFilter?`${projects.find(p=>p.id===projectFilter)?.name??""} の会話`:"最近の会話"}</div>
+    <div className="label">最近の会話</div>
     <div className="chatlist">{recentChats.map(c=>chatRow(c))}{recentChats.length===0&&<p className="hint tight">{search?"一致する会話はありません。":"まだ会話はありません。"}</p>}</div>
    </div>
    <CreditCard summary={summary} totals={usageTotal} onConfigure={()=>setOnboarding(true)}/>
    <AccountMenu name={prefs.displayName} plan={credit?.plan?`${PLAN_LABELS[credit.plan]} プラン`:"プラン未設定"} configured={configured}
-    onSettings={()=>setSettings("general")} onImport={()=>void importExport()} onOnboarding={()=>setOnboarding(true)}/>
+    onSettings={()=>setSettings("general")} onShortcuts={()=>setShortcuts(true)} onImport={()=>void importExport()} onOnboarding={()=>setOnboarding(true)}/>
   </aside>
   <main className={dragging?"dragging":""} onDragOver={e=>{e.preventDefault();setDragging(true);}} onDragLeave={e=>{if(e.currentTarget===e.target)setDragging(false);}} onDrop={e=>void onDrop(e)}>
    <header>
     {!sidebarOpen&&<button className="ghost-btn tip tip-below" data-tip="サイドバーを開く" aria-label="サイドバーを開く" onClick={()=>setSidebarOpen(true)}><PanelLeftOpen size={17}/></button>}
     <span className="crumbs">
-     {view==="chats"?null:fresh
+     {view!=="chat"?null:fresh
       ? <select className="project-select" value={chat.projectId??""} onChange={e=>patchChat(chat.id,c=>({...c,projectId:e.target.value||undefined}))} aria-label="この会話のプロジェクト">
          <option value="">プロジェクトなし</option>{projects.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select>
-      : <>{chatProject&&<><button className="crumb-project" onClick={()=>setProjectFilter(chatProject.id)}><FolderOpen size={14}/>{chatProject.name}</button><span className="crumb-sep">/</span></>}{chatMenu(chat,"title")}</>}
+      : <>{chatProject&&<><button className="crumb-project" onClick={()=>{setOpenProject(chatProject.id);setView("project");setArtifact(null);}}><FolderOpen size={14}/>{chatProject.name}</button><span className="crumb-sep">/</span></>}{chatMenu(chat,"title")}</>}
     </span>
     <div className="header-actions">
      {view==="chat"&&!fresh&&<button className="btn-secondary small handoff-btn tip tip-below" data-tip="Claude アプリの新しいチャットに文脈を渡す" onClick={()=>setHandoff(true)}><ArrowUpRight size={14}/>Claude で続ける</button>}
      {!configured&&<button className="btn-secondary small" onClick={()=>setSettings("api")}><span className="dot"/>APIキーを設定</button>}
     </div></header>
-   {view==="chats"?<div className="workspace"><ChatsPage now={now} onNew={newChat} onOpen={id=>{setActive(id);setView("chat");}}
-     chats={chats.filter(c=>c.messages.length>0).map(c=>({id:c.id,title:c.title,updatedAt:c.updatedAt,starred:c.starred,projectName:projects.find(p=>p.id===c.projectId)?.name,
-       preview:([...c.messages].reverse().find(m=>m.role==="assistant")?.content??c.messages[0]?.content??"").replace(/\s+/g," ").slice(0,140)}))}/></div>:
+   {view==="projects"?<div className="workspace"><ProjectsPage projects={projects} chats={chatRows} now={now} onCreate={newProject} onOpen={id=>{setOpenProject(id);setView("project");}}/></div>:
+    view==="project"&&openProjectData?<div className="workspace"><ProjectPage project={openProjectData} chats={chatRows} now={now} onBack={()=>setView("projects")}
+      onEdit={()=>setProjectModal({project:openProjectData,isNew:false})} onStart={()=>newChat(openProjectData.id)} onOpenChat={id=>{setActive(id);setView("chat");}}/></div>:
+   view==="chats"?<div className="workspace"><ChatsPage now={now} onNew={()=>newChat()} onOpen={id=>{setActive(id);setView("chat");}}
+     chats={chatRows.map(c=>({...c,projectName:projects.find(p=>p.id===c.projectId)?.name}))}/></div>:
    <div className="workspace">
     <div className={"conversation"+(fresh?" fresh":"")}>
      {fresh
@@ -415,6 +422,7 @@ export default function App() {
     credit={credit} onSaveCredit={saveCredit} onRestartOnboarding={()=>{setSettings(null);setOnboarding(true);}} onClose={()=>setSettings(null)} onNotice={toast}/>}
   {handoff&&<HandoffDialog title={chat.title} turns={chat.messages.map(m=>({role:m.role,content:m.content}))} model={model} modelLabel={currentModel?.displayName??model} configured={configured}
     onUsage={usage=>setUsageRows(rows=>[...rows,{...usage,createdAt:new Date().toISOString()}])} onNotice={toast} onClose={()=>setHandoff(false)}/>}
+  {shortcuts&&<ShortcutsDialog onClose={()=>setShortcuts(false)}/>}
   <Toaster toasts={toasts} onDismiss={id=>setToasts(list=>list.filter(t=>t.id!==id))}/>
   {renaming&&<RenameDialog initial={chats.find(c=>c.id===renaming)?.title??""} onSave={title=>patchChat(renaming,c=>({...c,title}))} onClose={()=>setRenaming(null)}/>}
   {confirmDelete&&<ConfirmDialog title="会話を削除しますか？" body={`「${chats.find(c=>c.id===confirmDelete)?.title??""}」を端末内の履歴から削除します。元に戻せません。`} confirm="削除"

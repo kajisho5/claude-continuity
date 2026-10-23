@@ -1,7 +1,7 @@
-import { ChevronsUpDown, FileUp, RotateCcw, Settings2 } from "lucide-react";
+import { ChevronsUpDown, FileUp, Keyboard, RotateCcw, Settings2 } from "lucide-react";
 import { usePopover } from "./Popover";
 
-type Props = { name: string; plan: string; configured: boolean; onSettings: () => void; onImport: () => void; onOnboarding: () => void };
+type Props = { name: string; plan: string; configured: boolean; onSettings: () => void; onShortcuts: () => void; onImport: () => void; onOnboarding: () => void };
 
 /** Account row at the bottom of the sidebar; opens upward like the Claude apps. */
 export default function AccountMenu(p: Props) {
@@ -12,6 +12,7 @@ export default function AccountMenu(p: Props) {
     {open && <div className="menu account-pop up" role="menu">
       <div className="menu-label">{p.name || "ユーザー"}<small>{p.configured ? "API キー設定済み" : "API キー未設定"}</small></div>
       <button className="menu-item" role="menuitem" onClick={run(p.onSettings)}><Settings2 size={15} />設定<span className={"dot menu-tail " + (p.configured ? "green" : "")} /></button>
+      <button className="menu-item" role="menuitem" onClick={run(p.onShortcuts)}><Keyboard size={15} />キーボードショートカット</button>
       <button className="menu-item" role="menuitem" onClick={run(p.onImport)}><FileUp size={15} />エクスポートを読み込む</button>
       <button className="menu-item" role="menuitem" onClick={run(p.onOnboarding)}><RotateCcw size={15} />初期設定をやり直す</button>
     </div>}
