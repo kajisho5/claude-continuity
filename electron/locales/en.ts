@@ -65,13 +65,22 @@ export const en: typeof Ja = {
     viewTruncated: "\n…(truncated because it is long; use view_range to see the rest)"
   },
   pastChats: {
-    toolDescription: "Searches the user's past conversations (the history saved in this app) by keyword and returns the title, date and an excerpt of each matching conversation. Use it when the user refers to an earlier topic, decision or deliverable, or when past context would help.",
+    toolDescription: "Searches the user's past conversations (the history saved in this app) by keyword and returns the title, date and an excerpt of each matching conversation. Use it only when the user explicitly refers to an earlier conversation (for example \"what we discussed before\"). Otherwise do not use it; just answer.",
     queryDescription: "Keywords for what to look for (separate several with spaces)",
     maxResultsDescription: "Maximum number of conversations to return (1–10, default 5)",
     noHits: "No matching past conversations were found.",
     hitHeading: (n: number, title: string, date?: string) => `${n}. "${title}"${date ? ` (${date})` : ""}`
   },
   request: {
+    appContext: (on: string[], off: string[]) => [
+      "# About this app",
+      "This conversation takes place in Claude Continuity, a desktop app that uses the Anthropic API.",
+      "- The user can attach files (images, PDFs, text, code and more) with the composer's \"+\" button, drag and drop or paste, and can send screenshots. Attached files reach this conversation.",
+      "- Tools are turned on and off in the composer's tools menu.",
+      on.length ? `- Tools available for this reply: ${on.join(", ")}` : "- No tools are available for this reply.",
+      off.length ? `- Tools that are off: ${off.join(", ")}. When a request needs one of them, don't say you can't; tell the user to turn it on in the tools menu.` : ""
+    ].filter(Boolean).join("\n"),
+    toolNames: { webSearch: "Web search", webFetch: "Read URLs", files: "File creation (Skills)", analysis: "Data analysis (code execution)", research: "Research", memory: "Memory" },
     stylePrompts: {
       concise: "Keep your answers concise. Lead with the conclusion and key points, and skip preambles, repetition and unnecessary extras.",
       detailed: "Give detailed answers. Explain carefully, including background, reasoning, concrete examples and caveats.",

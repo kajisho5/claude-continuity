@@ -7,7 +7,7 @@ module.exports = async function research(ctx) {
   await w.click(".new-chat"); await w.click(".tools .round-btn");
   assert.equal(await text(w.locator(".tools-item b").first()), "リサーチ");
   await w.locator(".tools-item").first().locator("input").check(); await w.keyboard.press("Escape");
-  assert.deepEqual(await w.locator(".tool-chip").allTextContents(), ["リサーチ"]);
+  assert.deepEqual(await w.locator(".tool-chip").allTextContents(), ["リサーチ", "Web検索", "URL読込"]);
 
   await w.fill(".composer textarea", "EV の市場動向を調べて"); await w.keyboard.press("Enter");
   await w.waitForSelector(".message.pending", { timeout: 3000 }).catch(() => {});

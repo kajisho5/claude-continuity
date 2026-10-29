@@ -29,7 +29,7 @@ export const settings: typeof Ja = {
     fonts: { serif: "Default", sans: "Sans", system: "System" },
     languageHint: "Switch the display language (言語)",
     searchPastChats: "Search and reference chats",
-    searchPastChatsHint: "When it's relevant, Claude searches past chats saved on this PC and uses them as context. Chats in a project only search within that project. Not used in incognito chats.",
+    searchPastChatsHint: "When on, Claude searches the chats saved on this PC when you refer to an earlier conversation. Chats in a project only search within that project. Not used in incognito chats.",
     notifyOnReply: "Response completions",
     notifyOnReplyHint: "Get a system notification when Claude finishes a response while the app is in the background. Click it to open the chat.",
     checkUpdates: "Check for updates automatically",

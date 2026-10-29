@@ -140,7 +140,7 @@ export default function SettingsPage(p: Props) {
               {QUICK_SHORTCUTS.map(s => <option key={s} value={s}>{s ? shortcutLabel(s) : t.settings.general.quickShortcutOff}</option>)}
             </select></label>
           <label className="toggle-row"><span><b>{t.settings.general.searchPastChats}</b><small>{t.settings.general.searchPastChatsHint}</small></span>
-            <input type="checkbox" className="switch" checked={p.prefs.searchPastChats} onChange={e => update({ searchPastChats: e.target.checked })} /></label>
+            <input type="checkbox" className="switch" checked={p.prefs.referencePastChats} onChange={e => update({ referencePastChats: e.target.checked })} /></label>
           <label className="toggle-row"><span><b>{t.settings.general.notifyOnReply}</b><small>{t.settings.general.notifyOnReplyHint}</small></span>
             <input type="checkbox" className="switch" checked={p.prefs.notifyOnReply} onChange={e => update({ notifyOnReply: e.target.checked })} /></label>
           <label className="toggle-row"><span><b>{t.settings.general.checkUpdates}</b><small>{t.settings.general.checkUpdatesHint}</small></span>

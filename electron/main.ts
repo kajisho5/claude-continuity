@@ -646,7 +646,7 @@ const prefsFile = () => path.join(dataDir(), "prefs.json");
 type Theme = "system" | "light" | "dark";
 type ChatFont = "serif" | "sans" | "system";
 type CustomStyle = { id: string; name: string; prompt: string };
-type Prefs = { autoTitle: boolean; customStyle: string; customStyles: CustomStyle[]; displayName: string; theme: Theme; chatFont: ChatFont; shareName: boolean; preferences: string; searchPastChats: boolean; notifyOnReply: boolean; checkUpdates: boolean; language: Language; quickShortcut: QuickShortcut; enabledSkills: string[]; lastModel: string; lastEffort: string;
+type Prefs = { autoTitle: boolean; customStyle: string; customStyles: CustomStyle[]; displayName: string; theme: Theme; chatFont: ChatFont; shareName: boolean; preferences: string; referencePastChats: boolean; notifyOnReply: boolean; checkUpdates: boolean; language: Language; quickShortcut: QuickShortcut; enabledSkills: string[]; lastModel: string; lastEffort: string;
   compactLongChats: boolean; limitPerMessageUsd: number | null; limitDailyUsd: number | null; limitMode: "confirm" | "block"; suggestDismissedCycle: string };
 type Language = "system" | "ja" | "en";
 /** Global shortcut that brings the app forward with a new chat ("" = off). */
@@ -678,7 +678,8 @@ function sanitizePrefs(raw: any): Prefs {
     // The display name stays local unless the user opts in to Claude using it.
     shareName: raw?.shareName === true,
     preferences: typeof raw?.preferences === "string" ? raw.preferences.slice(0, 4000) : "",
-    searchPastChats: raw?.searchPastChats !== false,
+    // Searching past chats is opt-in, like the Claude apps. A new key, so the old default-on value is not carried over.
+    referencePastChats: raw?.referencePastChats === true,
     notifyOnReply: raw?.notifyOnReply !== false,
     checkUpdates: raw?.checkUpdates !== false,
     language: LANGUAGES.includes(raw?.language) ? raw.language : "system",
@@ -1088,6 +1089,12 @@ ipcMain.handle("connectors:resetAllowed", async (_event, id: string) => {
   return list.map(viewOf);
 });
 
+/** Tells the model what the app can do and which tools are on, so it does not claim it cannot attach files or browse. */
+function appContext(flags: ToolFlags) {
+  const t = mainT().request;
+  const keys = ["webSearch", "webFetch", "files", "analysis", "research", "memory"] as const;
+  return t.appContext(keys.filter(k => flags[k]).map(k => t.toolNames[k]), keys.filter(k => !flags[k]).map(k => t.toolNames[k]));
+}
 async function pastChatsOutcome(input: { query?: unknown; max_results?: unknown }, chatId?: string, projectId?: string) {
   const query = typeof input?.query === "string" ? input.query.slice(0, 500) : "";
   if (!query.trim()) return { content: "Error: query is required", isError: true };
@@ -1127,7 +1134,7 @@ async function prepareRequest(payload: ReplyPayload, mode: RequestMode, signal?:
   const notices: string[] = [];
   // Incognito chats neither remember nor look back, as in the Claude apps. Memory and past-chat search run on
   // this computer, so a batch cannot use them.
-  const flags: ToolFlags = { ...(payload.tools ?? {}), memory: onThisComputer && !incognito && (payload.tools?.memory === true || project?.memory === true), pastChats: onThisComputer && !incognito && prefs.searchPastChats };
+  const flags: ToolFlags = { ...(payload.tools ?? {}), memory: onThisComputer && !incognito && (payload.tools?.memory === true || project?.memory === true), pastChats: onThisComputer && !incognito && prefs.referencePastChats };
   const { tools, skills, unavailable } = buildTools(flags, caps);
   // Custom Skills run in the code execution container, so turning one on brings code execution with it.
   const customSkills = caps.codeExecution ? prefs.enabledSkills : [];
@@ -1166,6 +1173,7 @@ async function prepareRequest(payload: ReplyPayload, mode: RequestMode, signal?:
   const research = flags.research === true;
   const system = [
     buildSystem(style, customPrompt, project, { ...(prefs.shareName ? { name: prefs.displayName } : {}), preferences: prefs.preferences }, { research }),
+    appContext(flags),
     knowledge.index ? mainT().knowledge.systemNote(knowledge.searched.map(name => `- ${name}`).join("\n")) : ""
   ].filter(Boolean).join("\n\n") || undefined;
   // Long chats: the turns that no longer fit are summarized (once, then reused) instead of being dropped.

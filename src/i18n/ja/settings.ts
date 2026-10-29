@@ -27,7 +27,7 @@ export const settings = {
     fonts: { serif: "明朝（既定）", sans: "ゴシック", system: "システム" },
     languageHint: "表示言語を切り替えます（Language）",
     searchPastChats: "過去の会話を検索して参照する",
-    searchPastChatsHint: "関連しそうなとき、Claude がこの PC に保存された過去の会話を検索して文脈に使います。プロジェクト内の会話はそのプロジェクトの中だけを検索します。シークレットチャットでは使いません。",
+    searchPastChatsHint: "オンにすると、「前に話した件」のように過去の会話に触れたとき、Claude がこの PC に保存された会話を検索して使います。プロジェクト内の会話はそのプロジェクトの中だけを検索します。シークレットチャットでは使いません。",
     notifyOnReply: "回答が終わったら通知する",
     notifyOnReplyHint: "アプリが前面にないとき、OS の通知でお知らせします。通知をクリックするとその会話を開きます。",
     checkUpdates: "アップデートを自動で確認する",
