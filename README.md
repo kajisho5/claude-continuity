@@ -28,7 +28,7 @@ A desktop app (Windows / macOS / Linux, Electron + React) for continuing Claude 
 - Code execution and file creation (Excel / Word / PowerPoint / PDF, Anthropic's Skills)
 - **Custom Skills**: upload a folder with SKILL.md, or a .zip, to the Skills API from Settings → Skills; Claude uses the ones you turn on (they run in the code execution environment)
 - Memory (stored on this computer)
-- Search past chats
+- Search past chats (when turned on in Settings, only when you refer to an earlier chat)
 - Connectors (MCP servers); see [below](#connectors-mcp-servers)
 
 **Artifacts**
