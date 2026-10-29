@@ -113,7 +113,8 @@ module.exports = async function creditTools(ctx) {
   assert.ok((await w.locator(".tool-chip").allTextContents()).includes("リサーチ"));
   await w.click(".suggest-dismiss");
   await w.waitForSelector(".credit-suggestions", { state: "detached" });
-  assert.ok((await w.evaluate(() => window.continuity.loadPrefs())).suggestDismissedCycle, "dismissed for this cycle");
+  // The card goes away at once; the preference is saved right after, so wait for it.
+  await until(() => w.evaluate(() => window.continuity.loadPrefs()), p => !!p.suggestDismissedCycle, { message: "dismissed for this cycle" });
 
   // A connector can be turned off without being deleted.
   await w.evaluate(() => window.continuity.saveConnector({ transport: "local", name: "echo-x", command: "node", args: "server.js" }));
