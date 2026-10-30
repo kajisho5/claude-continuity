@@ -18,4 +18,6 @@ module.exports = async function pastChats(ctx) {
   assert.equal(await text(w.locator(".message.assistant .markdown").last()), "以前の会話では売上が +12% でした。");
   const tools = ctx.mock.log.find(l => l.startsWith("tools "));
   assert.ok(tools && JSON.parse(tools.slice(6)).includes("search_past_chats"), "search_past_chats is offered to the model");
+  // Web search, URL reading and code execution are offered in every chat without turning anything on.
+  for (const name of ["web_search", "web_fetch", "code_execution"]) assert.ok(JSON.parse(tools.slice(6)).includes(name), `${name} is always offered`);
 };

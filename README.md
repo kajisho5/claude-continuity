@@ -24,8 +24,8 @@ A desktop app (Windows / macOS / Linux, Electron + React) for continuing Claude 
 
 **Tools** (on or off per chat)
 - **Research**: repeated web searches and page reads (it stops continuing once about 20 of either have been used), then a cited report: conclusion, details per angle, and remaining uncertainties
-- Web search and web fetch (numbered sources)
-- Code execution and file creation (Excel / Word / PowerPoint / PDF, Anthropic's Skills)
+- Web search and web fetch (numbered sources), always available: Claude decides when to use them
+- Code execution and file creation (Excel / Word / PowerPoint / PDF, Anthropic's Skills), always available; any attached file can be read
 - **Custom Skills**: upload a folder with SKILL.md, or a .zip, to the Skills API from Settings → Skills; Claude uses the ones you turn on (they run in the code execution environment)
 - Memory (stored on this computer)
 - Search past chats (when turned on in Settings, only when you refer to an earlier chat)
