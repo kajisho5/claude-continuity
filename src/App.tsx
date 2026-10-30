@@ -40,9 +40,6 @@ import { continuePrompt, mergeContinuation } from "./lib/continue";
 import { plainPreview } from "./lib/time";
 import { editUserMessage, selectUserVersion } from "./lib/versions";
 
-// New chats start like the Claude apps: web search, URL reading, and code execution with file creation
-// (so any attached file can be read and files can be made).
-const DEFAULT_TOOLS: Tools = { webSearch: true, webFetch: true, files: true };
 type Attachment = NonNullable<Msg["attachments"]>[number];
 type Summary = NonNullable<Awaited<ReturnType<typeof window.continuity.reply>>["compaction"]>;
 type BatchJob = Awaited<ReturnType<typeof window.continuity.listBatches>>[number];
@@ -628,7 +625,7 @@ export default function App() {
    // Reuse an untouched empty chat instead of stacking blank ones, as the Claude apps do.
    const blank=chats.find(c=>c.messages.length===0&&!c.incognito&&NEW_CHAT_TITLES.has(c.title)&&(c.projectId??null)===(projectId??null));
    if(blank){setActive(blank.id);}
-   else{const id="chat-"+Date.now();setChats(cs=>[{id,title:t.app.newChat,messages:[],tools:{...DEFAULT_TOOLS},...(projectId?{projectId}:{})},...cs]);setActive(id);}
+   else{const id="chat-"+Date.now();setChats(cs=>[{id,title:t.app.newChat,messages:[],...(projectId?{projectId}:{})},...cs]);setActive(id);}
    setArtifact(null);setView("chat");setTimeout(()=>composerRef.current?.focus(),0);
  }
  /** A new chat with these tools on and the draft filled in (used by the before-expiry suggestions). */

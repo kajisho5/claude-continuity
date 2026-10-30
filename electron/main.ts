@@ -1147,7 +1147,9 @@ async function prepareRequest(payload: ReplyPayload, mode: RequestMode, signal?:
   const notices: string[] = [];
   // Incognito chats neither remember nor look back, as in the Claude apps. Memory and past-chat search run on
   // this computer, so a batch cannot use them.
-  const flags: ToolFlags = { ...(payload.tools ?? {}), memory: onThisComputer && !incognito && (payload.tools?.memory === true || project?.memory === true), pastChats: onThisComputer && !incognito && prefs.referencePastChats };
+  // Web search, URL reading and code execution with file creation are always available, like the Claude apps:
+  // Claude decides when to use them. Research, memory, Batch and connectors stay the user's choice.
+  const flags: ToolFlags = { ...(payload.tools ?? {}), always: true, webSearch: true, webFetch: true, files: true, memory: onThisComputer && !incognito && (payload.tools?.memory === true || project?.memory === true), pastChats: onThisComputer && !incognito && prefs.referencePastChats };
   const { tools, skills, unavailable } = buildTools(flags, caps);
   // Custom Skills run in the code execution container, so turning one on brings code execution with it.
   const customSkills = caps.codeExecution ? prefs.enabledSkills : [];

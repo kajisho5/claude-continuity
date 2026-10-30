@@ -31,11 +31,11 @@ module.exports = async function projects(ctx) {
   assert.equal(await w.locator(".composer .attachment-chip").count(), 2);
   assert.equal(await w.locator(".composer .attachment-chip img").count(), 1, "the image chip has a thumbnail");
 
+  // Web search, URL reading and file creation are always on, so the menu has no switch for them.
   await w.click(".tools .round-btn");
-  // New chats start with web search, URL reading and file creation on; turn URL reading off.
-  await w.click(".tools-item:has-text('URL の読み込み') input");
+  assert.equal(await w.locator(".tools-item:has-text('Web 検索')").count(), 0);
   await w.keyboard.press("Escape");
-  assert.deepEqual(await w.locator(".tool-chip").allTextContents(), ["Web検索", "ファイル作成", "メモリ"]);
+  assert.deepEqual(await w.locator(".tool-chip").allTextContents(), ["メモリ"]);
   await w.click(".tools .round-btn"); await w.click(".tools-style"); await w.click(".style-list .menu-item:has-text('簡潔')");
   assert.equal(await text(w.locator(".style-chip")), "簡潔");
 

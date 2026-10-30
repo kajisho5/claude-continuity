@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { BarChart3, Brain, Check, ChevronRight, FileSpreadsheet, Globe, PenLine, Plug, Plus, Search, SlidersHorizontal, Telescope, Timer } from "lucide-react";
+import { Brain, Check, ChevronRight, PenLine, Plug, Plus, Search, SlidersHorizontal, Telescope, Timer } from "lucide-react";
 import { usePopover } from "./Popover";
 import { useT, type Messages } from "../i18n";
 
@@ -9,10 +9,7 @@ type Key = Exclude<keyof Tools, "connectors">;
 type Option = { value: string; label: string };
 const items = ({ menus: { tools: m }, spend: { batch: b } }: Messages): { key: Key; title: string; desc: string; icon: typeof Search; chip: string }[] => [
   { key: "research", title: m.researchTitle, desc: m.researchDesc, icon: Telescope, chip: m.researchChip },
-  { key: "webSearch", title: m.webSearchTitle, desc: m.webSearchDesc, icon: Search, chip: m.webSearchChip },
-  { key: "webFetch", title: m.webFetchTitle, desc: m.webFetchDesc, icon: Globe, chip: m.webFetchChip },
-  { key: "files", title: m.filesTitle, desc: m.filesDesc, icon: FileSpreadsheet, chip: m.filesChip },
-  { key: "analysis", title: m.analysisTitle, desc: m.analysisDesc, icon: BarChart3, chip: m.analysisChip },
+  // Web search, URL reading and code execution / file creation are always on (no switch), so they are not listed.
   { key: "memory", title: m.memoryTitle, desc: m.memoryDesc, icon: Brain, chip: m.memoryChip },
   // Not a tool for Claude: how the message is sent (Message Batches API, half price, the reply arrives later).
   { key: "batch", title: b.tool, desc: b.toolDesc, icon: Timer, chip: b.chip }

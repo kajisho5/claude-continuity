@@ -2,7 +2,7 @@ import type { ContentBlockParam, MessageParam, ToolUnion } from "@anthropic-ai/s
 import type { Attachment } from "./attachments";
 
 export type ChatTurn = { role: "user" | "assistant"; content: string; attachments?: Attachment[] };
-export type ToolFlags = { research?: boolean; webSearch?: boolean; webFetch?: boolean; files?: boolean; analysis?: boolean; memory?: boolean; pastChats?: boolean; connectors?: string[] };
+export type ToolFlags = { always?: boolean; research?: boolean; webSearch?: boolean; webFetch?: boolean; files?: boolean; analysis?: boolean; memory?: boolean; pastChats?: boolean; connectors?: string[] };
 export type ModelCaps = { webSearch: boolean; codeExecution: boolean; imageInput: boolean; pdfInput: boolean };
 export type Project = { id: string; name: string; instructions: string; knowledge: Attachment[]; memory: boolean };
 export type StyleId = "standard" | "concise" | "detailed" | "explanatory" | "custom";
@@ -178,18 +178,21 @@ export function buildTools(flags: ToolFlags, caps: ModelCaps): { tools: ToolUnio
   const unavailable: string[] = [];
   // Research turns both on with a larger budget: many searches, then reading the most useful pages.
   const uses = flags.research ? RESEARCH_MAX_USES : 5;
+  // Tools that are always on ("always") are left out quietly for a model without them; only a choice the user made is reported.
+  const quiet = flags.always === true;
   if (flags.webSearch || flags.research) {
     if (caps.webSearch) tools.push({ type: "web_search_20250305", name: "web_search", max_uses: uses });
-    else unavailable.push(flags.research ? t.research : t.webSearch);
+    else if (flags.research) unavailable.push(t.research);
+    else if (!quiet) unavailable.push(t.webSearch);
   }
   if (flags.webFetch || flags.research) {
     if (caps.webSearch) tools.push({ type: "web_fetch_20250910", name: "web_fetch", max_uses: uses });
-    else if (!flags.research) unavailable.push(t.webFetch);
+    else if (!flags.research && !quiet) unavailable.push(t.webFetch);
   }
   const wantsCode = flags.files || flags.analysis;
   if (wantsCode) {
     if (caps.codeExecution) tools.push({ type: "code_execution_20250825", name: "code_execution" });
-    else unavailable.push(flags.files ? t.files : t.analysis);
+    else if (!quiet) unavailable.push(flags.files ? t.files : t.analysis);
   }
   if (flags.memory) tools.push({ type: "memory_20250818", name: "memory" });
   if (flags.pastChats) tools.push(pastChatsTool());
