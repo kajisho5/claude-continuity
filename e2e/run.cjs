@@ -12,7 +12,7 @@ const { closeApp, REPO } = require("./lib.cjs");
 const FLOWS = [
   "ui", "projects", "math-and-stops", "profile-incognito", "past-chats", "notifications-updates",
   "styles-bulk-delete", "artifacts", "remote-mcp", "export-html", "handoff", "backup",
-  "react", "local-mcp", "research", "skills", "rag", "quick", "english", "credit-tools"
+  "react", "local-mcp", "research", "skills", "rag", "quick", "english", "credit-tools", "browser"
 ];
 const FLOW_TIMEOUT = 240000;
 

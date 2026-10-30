@@ -13,6 +13,7 @@ import { createBackup, readBackup, restoreEntries } from "./backup";
 import { entryData } from "./zipSafe";
 import { formatHits, searchPastChats } from "./pastChats";
 import { setupUpdater } from "./updater";
+import { InAppBrowser, pageDocument, type Bounds } from "./browser";
 import { getMainLocale, mainT, resolveMainLocale, setMainLocale } from "./i18n";
 import { drainFileWrites, readJsonFile, saveFile, withFileLock, withFileLocks, writeFileAtomic } from "./fileStore";
 import { connectorRequest, MCP_CONNECTOR_BETA, serverName, validateConnector, type Connector, type ConnectorView } from "./connectors";
@@ -40,6 +41,11 @@ ipcMain.handle = ((channel: string, listener: (event: Electron.IpcMainInvokeEven
     return listener(event, ...args);
   })) as typeof ipcMain.handle;
 let mainWindow: BrowserWindow | null = null;
+// Whether links in replies open in the in-app browser (the "openLinksInApp" preference, cached for the window handler).
+let linksInApp = true;
+const browser = new InAppBrowser(() => mainWindow && !mainWindow.isDestroyed() ? mainWindow : null, state => {
+  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send("browser:state", state);
+});
 const dataDir = () => path.join(app.getPath("userData"), "claude-continuity");
 const sessionId = randomUUID();
 const keyFile = () => path.join(dataDir(), "api-key.bin");
@@ -51,9 +57,13 @@ function createWindow() {
     backgroundColor: nativeTheme.shouldUseDarkColors ? "#262522" : "#FAF9F5", title: "Claude Continuity",
     webPreferences: { preload: path.join(__dirname, "preload.js"), contextIsolation: true, nodeIntegration: false, sandbox: true }
   });
-  // Links in replies and guides open in the system browser; the app window never navigates away.
+  // Links in replies and guides open in the in-app browser panel (or the system browser, per the setting);
+  // the app window never navigates away.
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    if (/^https?:\/\//i.test(url)) void shell.openExternal(url);
+    if (/^https?:\/\//i.test(url)) {
+      if (linksInApp) mainWindow?.webContents.send("browser:openRequest", url);
+      else void shell.openExternal(url);
+    }
     return { action: "deny" };
   });
   mainWindow.webContents.on("will-navigate", (event, url) => {
@@ -66,7 +76,7 @@ function createWindow() {
   });
   // On macOS the app outlives its window; a closed window must not be used (it throws once destroyed).
   const created = mainWindow;
-  created.on("closed", () => { if (mainWindow === created) mainWindow = null; });
+  created.on("closed", () => { browser.close(); if (mainWindow === created) mainWindow = null; });
   if (isDev) void mainWindow.loadURL("http://127.0.0.1:5173");
   else void mainWindow.loadFile(path.join(__dirname, "../dist/index.html"));
 }
@@ -646,7 +656,7 @@ const prefsFile = () => path.join(dataDir(), "prefs.json");
 type Theme = "system" | "light" | "dark";
 type ChatFont = "serif" | "sans" | "system";
 type CustomStyle = { id: string; name: string; prompt: string };
-type Prefs = { autoTitle: boolean; customStyle: string; customStyles: CustomStyle[]; displayName: string; theme: Theme; chatFont: ChatFont; shareName: boolean; preferences: string; referencePastChats: boolean; notifyOnReply: boolean; checkUpdates: boolean; language: Language; quickShortcut: QuickShortcut; enabledSkills: string[]; lastModel: string; lastEffort: string;
+type Prefs = { autoTitle: boolean; customStyle: string; customStyles: CustomStyle[]; displayName: string; theme: Theme; chatFont: ChatFont; shareName: boolean; preferences: string; referencePastChats: boolean; openLinksInApp: boolean; notifyOnReply: boolean; checkUpdates: boolean; language: Language; quickShortcut: QuickShortcut; enabledSkills: string[]; lastModel: string; lastEffort: string;
   compactLongChats: boolean; limitPerMessageUsd: number | null; limitDailyUsd: number | null; limitMode: "confirm" | "block"; suggestDismissedCycle: string };
 type Language = "system" | "ja" | "en";
 /** Global shortcut that brings the app forward with a new chat ("" = off). */
@@ -680,6 +690,8 @@ function sanitizePrefs(raw: any): Prefs {
     preferences: typeof raw?.preferences === "string" ? raw.preferences.slice(0, 4000) : "",
     // Searching past chats is opt-in, like the Claude apps. A new key, so the old default-on value is not carried over.
     referencePastChats: raw?.referencePastChats === true,
+    // Links in replies open in the in-app browser unless turned off.
+    openLinksInApp: raw?.openLinksInApp !== false,
     notifyOnReply: raw?.notifyOnReply !== false,
     checkUpdates: raw?.checkUpdates !== false,
     language: LANGUAGES.includes(raw?.language) ? raw.language : "system",
@@ -707,10 +719,11 @@ async function loadPrefs(): Promise<Prefs> {
 function applyLanguage(language: Language) {
   setMainLocale(resolveMainLocale(language, app.getLocale()));
 }
-ipcMain.handle("prefs:load", () => loadPrefs());
+ipcMain.handle("prefs:load", async () => { const prefs = await loadPrefs(); linksInApp = prefs.openLinksInApp; return prefs; });
 ipcMain.handle("prefs:save", async (event, value: unknown) => {
   if (staleWindows.has(event.sender)) throw new Error(mainT().main.reloadingAfterRestore);
   const prefs = sanitizePrefs(value);
+  linksInApp = prefs.openLinksInApp;
   await saveFile(prefsFile(), JSON.stringify(prefs));
   nativeTheme.themeSource = prefs.theme;
   applyLanguage(prefs.language);
@@ -1671,4 +1684,32 @@ ipcMain.handle("claude:title", async (_event, payload: { user: string; assistant
   // English titles need more characters than the 20-character Japanese ones.
   const title = response.content.filter(b => b.type === "text").map(b => b.text).join("").trim().replace(/^["「『]|["」』]$/g, "").slice(0, getMainLocale() === "ja" ? 40 : 80);
   return { title: title || null, usage: { model: response.model, inputTokens: response.usage.input_tokens, outputTokens: response.usage.output_tokens } };
+});
+
+// ---- In-app browser ----
+ipcMain.handle("browser:open", (_event, url: unknown) => browser.open(String(url ?? "")));
+ipcMain.handle("browser:layout", (_event, bounds: Bounds, visible: unknown) => {
+  const b = bounds ?? { x: 0, y: 0, width: 0, height: 0 };
+  browser.layout({ x: Number(b.x) || 0, y: Number(b.y) || 0, width: Number(b.width) || 0, height: Number(b.height) || 0 }, visible === true);
+});
+ipcMain.handle("browser:state", () => browser.state());
+ipcMain.handle("browser:back", () => browser.back());
+ipcMain.handle("browser:forward", () => browser.forward());
+ipcMain.handle("browser:reload", () => browser.reload());
+ipcMain.handle("browser:stop", () => browser.stop());
+ipcMain.handle("browser:external", () => browser.openExternal());
+ipcMain.handle("browser:close", () => browser.close());
+ipcMain.handle("browser:clearData", () => browser.clearData());
+// The page as an attachment: its text (as Markdown) or what is visible of it (as an image).
+ipcMain.handle("browser:attachPage", async () => {
+  const page = await browser.pageText();
+  if (!page) return { added: [], errors: [mainT().main.browserNoPage] };
+  const name = (page.title || new URL(page.url).hostname).replace(/[\\/:*?"<>|\s]+/g, "_").slice(0, 60) || "page";
+  return { added: [await attachments().add(`${name}.md`, Buffer.from(pageDocument(page), "utf8"))], errors: [] };
+});
+ipcMain.handle("browser:attachCapture", async () => {
+  const png = await browser.capture();
+  if (!png) return { added: [], errors: [mainT().main.browserNoPage] };
+  const stamp = new Date().toISOString().replace(/[-:]/g, "").replace("T", "-").slice(0, 15);
+  return { added: [await attachments().add(`page-${stamp}.png`, png)], errors: [] };
 });

@@ -21,6 +21,7 @@ import { statusText } from "./components/UpdateSection";
 import type { UpdateStatus } from "./lib/update";
 import HandoffDialog from "./components/HandoffDialog";
 import ArtifactPanel from "./components/ArtifactPanel";
+import BrowserPanel, { type BrowserState } from "./components/BrowserPanel";
 import ChatMenu from "./components/ChatMenu";
 import CostEstimate from "./components/CostEstimate";
 import CostConfirmDialog, { type CostConfirm } from "./components/CostConfirmDialog";
@@ -143,6 +144,14 @@ export default function App() {
  const [projectModal,setProjectModal]=useState<{project:Project;isNew:boolean}|null>(null);
  const [prefs,setPrefs]=useState<Prefs>(DEFAULT_PREFS);
  const [artifact,setArtifact]=useState<ArtifactRequest|null>(null);
+ // The in-app browser panel takes the artifact panel's place; links in replies open there.
+ const [browserOpen,setBrowserOpen]=useState(false);
+ const [browserState,setBrowserState]=useState<BrowserState>({url:"",title:"",canGoBack:false,canGoForward:false,loading:false,error:""});
+ useEffect(()=>{
+  const offState=window.continuity.browser.onState(setBrowserState);
+  const offOpen=window.continuity.browser.onOpenRequest(url=>{setArtifact(null);setView("chat");setBrowserOpen(true);void window.continuity.browser.open(url).catch(()=>{});});
+  return()=>{offState();offOpen();};
+ },[]);
  const [dragging,setDragging]=useState(false);
  const [sidebarOpen,setSidebarOpen]=useState(true);
  const [atBottom,setAtBottom]=useState(true);
@@ -685,7 +694,7 @@ export default function App() {
    <span className="min-w-0 flex-1">{t.app.approvalElsewhere(chats.find(c=>c.id===approvalElsewhere.chatId)?.title??"")}</span>
    <button className="btn-secondary small" onClick={()=>{setActive(approvalElsewhere.chatId);setView("chat");}}>{t.app.openChat}</button></div>}
   <Composer ref={composerRef} variant={variant} incognito={!!chat.incognito} draft={draft} onDraft={setDraft} attachments={pendingAttachments}
-   onRemoveAttachment={id=>setPendingAttachments(list=>list.filter(x=>x.id!==id))} onPickFiles={()=>void window.continuity.pickAttachments().then(addAttachments)} onScreenshot={()=>void window.continuity.captureScreen().then(addAttachments)}
+   onRemoveAttachment={id=>setPendingAttachments(list=>list.filter(x=>x.id!==id))} onPickFiles={()=>void window.continuity.pickAttachments().then(addAttachments)} onScreenshot={()=>void window.continuity.captureScreen().then(addAttachments)} onOpenBrowser={()=>{setArtifact(null);setBrowserOpen(true);}}
    onPaste={e=>void onPaste(e)} onSend={()=>void send()} onStop={stop} busy={busy}
    tools={chat.incognito?{...chat.tools,memory:false}:chat.tools??{}} onTools={tools=>patchChat(chat.id,c=>({...c,tools}))} projectMemory={chatProject?.memory}
    style={chat.style==="custom"?"custom:custom":chat.style??"standard"} styles={[...STYLE_IDS.map(id=>({value:id,label:t.app.styles[id]})),...prefs.customStyles.map(st=>({value:"custom:"+st.id,label:st.name}))]} onStyle={v=>patchChat(chat.id,c=>({...c,style:v}))}
@@ -775,7 +784,9 @@ export default function App() {
        </footer>
       </>}
     </div>
-    {artifact&&<ArtifactPanel artifact={artifact} versions={artifactVersions.length?artifactVersions:[artifact]} onSelect={setArtifact} onClose={()=>setArtifact(null)}/>}
+    {artifact?<ArtifactPanel artifact={artifact} versions={artifactVersions.length?artifactVersions:[artifact]} onSelect={setArtifact} onClose={()=>setArtifact(null)}/>
+     :browserOpen&&<BrowserPanel state={browserState} covered={!!(settings||handoff||shortcuts||costConfirm||renaming||confirmDelete||confirmBulk||projectModal||onboarding)}
+      onClose={()=>{setBrowserOpen(false);void window.continuity.browser.close();}} onAttached={result=>{addAttachments(result);if(result.added.length)toast(t.artifacts.browser.attached);}}/>}
    </div>}
    {(update.state==="available"||update.state==="downloading"||update.state==="ready")&&updateDismissed!==update.state+update.version&&<div className="update-banner absolute top-[58px] left-1/2 z-[6] flex max-w-[min(720px,calc(100%-40px))] animate-toast-in items-center gap-[12px] rounded-[12px] border border-line-strong bg-modal py-[8px] pr-[8px] pl-[16px] text-[12.5px] whitespace-normal text-ink-2 shadow-[0_8px_24px_var(--shadow)] -translate-x-1/2" role="status">
      <span className="update-banner-text flex min-w-0 flex-col gap-px"><b className="text-[13px] text-ink">{update.state==="ready"?t.app.update.ready:t.app.update.available}</b>{statusText(update)}</span>

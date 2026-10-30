@@ -1,4 +1,18 @@
 export const artifacts = {
+  browser: {
+    label: "ブラウザ",
+    back: "戻る",
+    forward: "進む",
+    reload: "再読み込み",
+    stop: "読み込みを止める",
+    address: "URL または検索語",
+    openExternal: "OS のブラウザで開く",
+    empty: "URL を入力するか、返事の中のリンクをクリックしてください。",
+    failed: (reason: string) => `ページを開けませんでした（${reason}）`,
+    sendPage: "このページを Claude に渡す",
+    sendCapture: "見えている部分を画像で渡す",
+    attached: "入力欄に添付しました"
+  },
   panel: {
     label: "アーティファクト",
     diagramFailed: "図を描けませんでした",

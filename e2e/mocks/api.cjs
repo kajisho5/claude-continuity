@@ -53,6 +53,13 @@ function start(port = 8787) {
   const server = http.createServer((req, res) => {
   let body = ""; req.on("data", c => body += c); req.on("end", async () => {
     log.push(`${req.method} ${req.url}`);
+    // Plain web pages for the in-app browser flow.
+    if (req.url === "/page" || req.url === "/page2") {
+      res.setHeader("content-type", "text/html; charset=utf-8");
+      return res.end(req.url === "/page"
+        ? "<!doctype html><title>テストのページ</title><h1>架空カメラの比較</h1><p>A10 は約 9 万円です。</p><a href='/page2'>次へ</a>"
+        : "<!doctype html><title>二ページ目</title><p>Z9X は約 42 万円です。</p>");
+    }
     if (req.url.startsWith("/v1/models")) { res.setHeader("content-type", "application/json"); return res.end(JSON.stringify({ data: models, has_more: false, first_id: models[0].id, last_id: models[2].id })); }
     if (req.url.startsWith("/v1/skills")) {
       

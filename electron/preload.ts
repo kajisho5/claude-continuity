@@ -17,6 +17,30 @@ contextBridge.exposeInMainWorld("continuity", {
   openDataFolder: () => ipcRenderer.invoke("data:openFolder"),
   focusWindow: () => ipcRenderer.invoke("window:focus"),
   captureScreen: () => ipcRenderer.invoke("capture:screen"),
+  browser: {
+    open: (url: string) => ipcRenderer.invoke("browser:open", url),
+    layout: (bounds: { x: number; y: number; width: number; height: number }, visible: boolean) => ipcRenderer.invoke("browser:layout", bounds, visible),
+    state: () => ipcRenderer.invoke("browser:state"),
+    back: () => ipcRenderer.invoke("browser:back"),
+    forward: () => ipcRenderer.invoke("browser:forward"),
+    reload: () => ipcRenderer.invoke("browser:reload"),
+    stop: () => ipcRenderer.invoke("browser:stop"),
+    openExternal: () => ipcRenderer.invoke("browser:external"),
+    close: () => ipcRenderer.invoke("browser:close"),
+    clearData: () => ipcRenderer.invoke("browser:clearData"),
+    attachPage: () => ipcRenderer.invoke("browser:attachPage"),
+    attachCapture: () => ipcRenderer.invoke("browser:attachCapture"),
+    onState: (listener: (state: unknown) => void) => {
+      const handler = (_event: IpcRendererEvent, state: unknown) => listener(state);
+      ipcRenderer.on("browser:state", handler);
+      return () => { ipcRenderer.removeListener("browser:state", handler); };
+    },
+    onOpenRequest: (listener: (url: string) => void) => {
+      const handler = (_event: IpcRendererEvent, url: string) => listener(String(url));
+      ipcRenderer.on("browser:openRequest", handler);
+      return () => { ipcRenderer.removeListener("browser:openRequest", handler); };
+    }
+  },
   shortcutStatus: () => ipcRenderer.invoke("shortcut:status"),
   onQuick: (listener: () => void) => {
     const handler = () => listener();
