@@ -10,6 +10,7 @@ export type StyleId = "standard" | "concise" | "detailed" | "explanatory" | "cus
 /** Built-in style instructions in the current main-process language. */
 export const stylePrompts = (): Record<Exclude<StyleId, "standard" | "custom">, string> => mainT().request.stylePrompts;
 import { pastChatsTool } from "./pastChats";
+import { officeText } from "./officeText";
 import { mainT } from "./i18n";
 import { sniffImage } from "./attachments";
 export const ANTHROPIC_SKILLS = ["xlsx", "docx", "pptx", "pdf"];
@@ -116,7 +117,10 @@ export async function attachmentBlocks(attachments: Attachment[], loader: Attach
     if (opts.containerUploads && (att.kind === "file" || att.kind === "text")) {
       blocks.push({ type: "container_upload", file_id: await loader.uploadForContainer(att) });
     } else if (att.kind === "file") {
-      skipped.push(t.fileNeedsCode(att.name));
+      // Word, PowerPoint and Excel files are read as text when code execution is off.
+      const data = officeText(att.name, await loader.read(att));
+      if (data) blocks.push({ type: "document", title: att.name, source: { type: "text", media_type: "text/plain", data } });
+      else skipped.push(t.fileNeedsCode(att.name));
     }
   }
   return { blocks, skipped };

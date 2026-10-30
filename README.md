@@ -16,7 +16,7 @@ A desktop app (Windows / macOS / Linux, Electron + React) for continuing Claude 
 - Streaming replies, thought process, stop, retry (with version switching), edit and resend
 - Continue cut-off replies, notice on refusals, a log of the tool steps Claude took
 - Markdown, tables, highlighted code, math (KaTeX)
-- Attachments: images, PDFs, text and code; spreadsheets are read through code execution. Add them with the button, drag and drop, or paste.
+- Attachments: images, PDFs, text, code, and Word / PowerPoint / Excel files (their text is read on this PC; with code execution on, the files themselves go to the sandbox). Add them with the button, drag and drop, or paste.
 - Model and thinking effort (`effort`) picker; the model list comes from what your API key can use
 - Styles: Normal, Concise, Detailed and Explanatory, plus any number of custom styles, which can also be made from a writing sample
 - Automatic titles, chat search, stars, a chat history page, incognito chats
