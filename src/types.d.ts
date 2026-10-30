@@ -46,6 +46,7 @@ type ContinuityModel = {
   effortLevels: string[]; adaptiveThinking: boolean; webSearch: boolean; codeExecution: boolean; imageInput: boolean; pdfInput: boolean;
 };
 type AttachResult = { added: ContinuityAttachment[]; errors: string[] };
+type ContinuityBrowserState = { url: string; title: string; canGoBack: boolean; canGoForward: boolean; loading: boolean; error: string };
 type ContinuityCreditSettings = import("./lib/credit").CreditSettings;
 declare global {
   interface Window {
@@ -95,6 +96,16 @@ declare global {
       loadProjects: () => Promise<ContinuityProject[]>;
       saveProjects: (projects: ContinuityProject[]) => Promise<ContinuityProject[]>;
       pickAttachments: () => Promise<AttachResult>;
+      browser: {
+        open: (url: string) => Promise<ContinuityBrowserState>;
+        layout: (bounds: { x: number; y: number; width: number; height: number }, visible: boolean) => Promise<void>;
+        state: () => Promise<ContinuityBrowserState>;
+        back: () => Promise<void>; forward: () => Promise<void>; reload: () => Promise<void>; stop: () => Promise<void>;
+        openExternal: () => Promise<void>; close: () => Promise<void>; clearData: () => Promise<void>;
+        attachPage: () => Promise<AttachResult>; attachCapture: () => Promise<AttachResult>;
+        onState: (listener: (state: ContinuityBrowserState) => void) => () => void;
+        onOpenRequest: (listener: (url: string) => void) => () => void;
+      };
       addAttachmentFiles: (files: File[]) => Promise<AttachResult>;
       addAttachmentData: (name: string, data: Uint8Array) => Promise<AttachResult>;
       attachmentPreview: (id: string, full?: boolean) => Promise<string | null>;

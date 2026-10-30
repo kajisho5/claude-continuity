@@ -37,6 +37,13 @@ A desktop app (Windows / macOS / Linux, Electron + React) for continuing Claude 
   - lucide-react, recharts and Tailwind are bundled for React
 - Versions, saving, and an artifacts page
 
+**In-app browser**
+- Links and sources in replies open in a browser panel on the right (or in your default browser, per the setting)
+- Back, forward, reload, an address bar (or search terms), and "open in your browser"
+- Give the page to Claude as text, or the visible part as an image
+- Pages get their own storage (sign-ins persist); camera, microphone, location and similar permissions are refused; browsing data can be cleared in Settings
+- Claude does not operate the browser (click or type) itself
+
 **Projects**
 - Instructions and knowledge files (cached), and per-project memory
 - When the text of the knowledge (text files and the text layer of PDFs) grows past half of what a chat can hold, Claude searches it for the passages it needs instead of receiving it whole (keyword search that also handles Japanese)

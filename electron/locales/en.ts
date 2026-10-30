@@ -161,6 +161,7 @@ export const en: typeof Ja = {
   },
   main: {
     shortcutTaken: (keys: string) => `${keys} is already used by another app. Choose a different combination.`,
+    browserNoPage: "Open a page in the browser first.",
     captureFailed: "Couldn't capture the screen. On macOS, allow this app under System Settings > Privacy & Security > Screen Recording.",
     importedChat: "Imported conversation",
     exportHtmlTitle: "Export conversation as HTML",

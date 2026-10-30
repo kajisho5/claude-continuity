@@ -139,6 +139,10 @@ export default function SettingsPage(p: Props) {
               onChange={e => update({ quickShortcut: e.target.value as QuickShortcut })}>
               {QUICK_SHORTCUTS.map(s => <option key={s} value={s}>{s ? shortcutLabel(s) : t.settings.general.quickShortcutOff}</option>)}
             </select></label>
+          <label className="toggle-row"><span><b>{t.settings.general.openLinksInApp}</b><small>{t.settings.general.openLinksInAppHint}</small></span>
+            <input type="checkbox" className="switch" checked={p.prefs.openLinksInApp} onChange={e => update({ openLinksInApp: e.target.checked })} /></label>
+          <div className="toggle-row"><span><b>{t.settings.general.clearBrowserData}</b><small>{t.settings.general.clearBrowserDataHint}</small></span>
+            <button className="btn-secondary small clear-browser-data" onClick={() => void window.continuity.browser.clearData().then(() => p.onNotice(t.settings.general.clearBrowserDataDone))}>{t.settings.general.clearBrowserData}</button></div>
           <label className="toggle-row"><span><b>{t.settings.general.searchPastChats}</b><small>{t.settings.general.searchPastChatsHint}</small></span>
             <input type="checkbox" className="switch" checked={p.prefs.referencePastChats} onChange={e => update({ referencePastChats: e.target.checked })} /></label>
           <label className="toggle-row"><span><b>{t.settings.general.notifyOnReply}</b><small>{t.settings.general.notifyOnReplyHint}</small></span>

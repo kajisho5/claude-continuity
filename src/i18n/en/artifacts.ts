@@ -1,6 +1,20 @@
 import type { artifacts as Ja } from "../ja/artifacts";
 
 export const artifacts: typeof Ja = {
+  browser: {
+    label: "Browser",
+    back: "Back",
+    forward: "Forward",
+    reload: "Reload",
+    stop: "Stop loading",
+    address: "URL or search terms",
+    openExternal: "Open in your browser",
+    empty: "Type a URL, or click a link in a reply.",
+    failed: (reason: string) => `Couldn't open the page (${reason})`,
+    sendPage: "Give this page to Claude",
+    sendCapture: "Give the visible part as an image",
+    attached: "Attached to the message box"
+  },
   panel: {
     label: "Artifact",
     diagramFailed: "Couldn't draw the diagram",
