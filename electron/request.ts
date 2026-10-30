@@ -113,14 +113,14 @@ export async function attachmentBlocks(attachments: Attachment[], loader: Attach
       const data = (await loader.read(att)).toString("utf8");
       blocks.push({ type: "document", title: att.name, source: { type: "text", media_type: "text/plain", data } });
     }
-    // Code execution reads files from the container, so spreadsheets/CSVs also go there when it is on.
+    // Word, PowerPoint and Excel files are also sent as their text, so Claude can read them without running code.
+    const office = att.kind === "file" ? officeText(att.name, await loader.read(att)) : null;
+    if (office) blocks.push({ type: "document", title: att.name, source: { type: "text", media_type: "text/plain", data: office } });
+    // Code execution reads files from the container, so any other file (and spreadsheets/CSVs) goes there when it is on.
     if (opts.containerUploads && (att.kind === "file" || att.kind === "text")) {
       blocks.push({ type: "container_upload", file_id: await loader.uploadForContainer(att) });
-    } else if (att.kind === "file") {
-      // Word, PowerPoint and Excel files are read as text when code execution is off.
-      const data = officeText(att.name, await loader.read(att));
-      if (data) blocks.push({ type: "document", title: att.name, source: { type: "text", media_type: "text/plain", data } });
-      else skipped.push(t.fileNeedsCode(att.name));
+    } else if (att.kind === "file" && !office) {
+      skipped.push(t.fileNeedsCode(att.name));
     }
   }
   return { blocks, skipped };

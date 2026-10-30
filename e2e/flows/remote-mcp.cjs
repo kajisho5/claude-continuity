@@ -25,7 +25,7 @@ module.exports = async function remoteMcp(ctx) {
   await w.keyboard.press("Escape");
 
   await w.click(".tools .round-btn"); await w.click(".tools-item:has-text('社内Wiki') input"); await w.keyboard.press("Escape");
-  assert.deepEqual(await w.locator(".tool-chip").allTextContents(), ["Web検索", "URL読込", "社内Wiki"]);
+  assert.deepEqual(await w.locator(".tool-chip").allTextContents(), ["Web検索", "URL読込", "ファイル作成", "社内Wiki"]);
   await ask(w, "wikiで経費精算を調べて");
   assert.equal(await text(w.locator(".steps > summary")), "コネクタ 1 回");
   await w.click(".steps > summary"); await w.locator(".step details > summary").first().click();

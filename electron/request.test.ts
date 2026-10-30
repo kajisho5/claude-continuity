@@ -86,6 +86,19 @@ describe("buildMessages", () => {
       { type: "text", text: "集計して" }
     ]);
   });
+  it("sends an Office file's text, and the file itself too when code tools are on", async () => {
+    const AdmZip = (await import("adm-zip")).default;
+    const zip = new AdmZip();
+    zip.addFile("ppt/slides/slide1.xml", Buffer.from("<p:sld><a:p><a:r><a:t>表紙</a:t></a:r></a:p></p:sld>"));
+    const pptx = { ...loader, read: async () => zip.toBuffer() };
+    const turns = [{ role: "user" as const, content: "要約して", attachments: [att("file", "talk.pptx")] }];
+    const text = { type: "document", title: "talk.pptx", source: { type: "text", media_type: "text/plain", data: "## Slide 1\n表紙" } };
+    const off = await buildMessages(turns, [], pptx, { containerUploads: false, caps });
+    expect(off.skipped).toEqual([]);
+    expect(off.messages[0].content).toEqual([text, { type: "text", text: "要約して" }]);
+    const on = await buildMessages(turns, [], pptx, { containerUploads: true, caps });
+    expect(on.messages[0].content).toEqual([text, { type: "container_upload", file_id: "file_talk.pptx" }, { type: "text", text: "要約して" }]);
+  });
   it("skips inputs the model cannot read", async () => {
     const { skipped } = await buildMessages([{ role: "user", content: "x", attachments: [att("image", "a.png")] }], [], loader,
       { containerUploads: false, caps: { ...caps, imageInput: false } });
