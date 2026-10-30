@@ -40,8 +40,9 @@ import { continuePrompt, mergeContinuation } from "./lib/continue";
 import { plainPreview } from "./lib/time";
 import { editUserMessage, selectUserVersion } from "./lib/versions";
 
-// New chats start with web search and URL reading on, like the Claude apps.
-const DEFAULT_TOOLS: Tools = { webSearch: true, webFetch: true };
+// New chats start like the Claude apps: web search, URL reading, and code execution with file creation
+// (so any attached file can be read and files can be made).
+const DEFAULT_TOOLS: Tools = { webSearch: true, webFetch: true, files: true };
 type Attachment = NonNullable<Msg["attachments"]>[number];
 type Summary = NonNullable<Awaited<ReturnType<typeof window.continuity.reply>>["compaction"]>;
 type BatchJob = Awaited<ReturnType<typeof window.continuity.listBatches>>[number];
